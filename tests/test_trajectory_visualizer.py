@@ -11,6 +11,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
 import tempfile
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from evojump import datacore, jumprope, trajectory_visualizer
 
 

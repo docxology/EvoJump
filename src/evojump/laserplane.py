@@ -118,9 +118,15 @@ class DistributionFitter:
                 params = dist_class.fit(data_pos, floc=0)
             elif distribution == 'beta':
                 # Scale data to [0,1] for beta distribution
+                if np.min(data) == np.max(data):
+                    return {'distribution': None, 'parameters': None, 'aic': np.inf}
                 data_scaled = (data - np.min(data)) / (np.max(data) - np.min(data))
+                if np.any((data_scaled <= 0) | (data_scaled >= 1)):
+                    return {'distribution': None, 'parameters': None, 'aic': np.inf}
                 params = dist_class.fit(data_scaled, floc=0, fscale=1)
             elif distribution == 'uniform':
+                if np.min(data) == np.max(data):
+                    return {'distribution': None, 'parameters': None, 'aic': np.inf}
                 params = dist_class.fit(data, floc=np.min(data), fscale=np.max(data)-np.min(data))
 
             # Calculate AIC for model comparison
@@ -594,3 +600,4 @@ class LaserPlaneAnalyzer:
             logger.info(f"Summary report saved to {output_file}")
 
         return summary_df.to_string()
+

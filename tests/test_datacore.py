@@ -11,6 +11,8 @@ import numpy as np
 from pathlib import Path
 import tempfile
 import os
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from evojump import datacore
 
 

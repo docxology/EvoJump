@@ -9,7 +9,9 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 import sys
-sys.path.insert(0, '/Users/4d/Documents/GitHub/EvoJump/src')
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..' ,'src'))
 from evojump.datacore import DataCore
 from evojump.jumprope import JumpRope
 from evojump.laserplane import LaserPlaneAnalyzer

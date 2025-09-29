@@ -8,6 +8,9 @@ using real data and methods.
 import pytest
 import numpy as np
 import pandas as pd
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from evojump import datacore, jumprope, laserplane
 
 

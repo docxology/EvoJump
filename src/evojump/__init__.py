@@ -45,7 +45,16 @@ from . import evolution_sampler
 from . import analytics_engine
 from . import cli
 
+# Import main classes for direct access
+from .datacore import DataCore, TimeSeriesData, MetadataManager
+from .jumprope import JumpRope, ModelParameters
+from .laserplane import LaserPlaneAnalyzer, CrossSectionResult
+from .trajectory_visualizer import TrajectoryVisualizer, PlotConfig
+from .evolution_sampler import EvolutionSampler, PopulationStatistics
+from .analytics_engine import AnalyticsEngine, TimeSeriesResult
+
 __all__ = [
+    # Modules
     "datacore",
     "jumprope",
     "laserplane",
@@ -53,4 +62,19 @@ __all__ = [
     "evolution_sampler",
     "analytics_engine",
     "cli",
+    # Classes
+    "DataCore",
+    "TimeSeriesData",
+    "MetadataManager",
+    "JumpRope",
+    "ModelParameters",
+    "LaserPlaneAnalyzer",
+    "CrossSectionResult",
+    "TrajectoryVisualizer",
+    "PlotConfig",
+    "EvolutionSampler",
+    "PopulationStatistics",
+    "AnalyticsEngine",
+    "TimeSeriesResult",
 ]
+

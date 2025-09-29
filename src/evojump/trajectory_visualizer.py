@@ -1190,3 +1190,362 @@ class TrajectoryVisualizer:
             logger.info(f"Saved robust statistics plot to {output_dir / 'robust_statistics.png'}")
 
         return fig
+    
+    def plot_heatmap(self,
+                    jump_rope_model,
+                    time_resolution: int = 50,
+                    phenotype_resolution: int = 50,
+                    output_dir: Optional[Path] = None,
+                    interactive: bool = False) -> Union[Figure, go.Figure]:
+        """
+        Plot density heatmap of trajectory evolution.
+        
+        Parameters:
+            jump_rope_model: JumpRope model with trajectories
+            time_resolution: Number of time bins
+            phenotype_resolution: Number of phenotype bins
+            output_dir: Directory to save plots
+            interactive: Create interactive plot
+        
+        Returns:
+            Matplotlib or Plotly figure
+        """
+        logger.info("Creating trajectory density heatmap")
+        
+        if jump_rope_model.trajectories is None:
+            raise ValueError("No trajectories available. Generate trajectories first.")
+        
+        trajectories = jump_rope_model.trajectories
+        time_points = jump_rope_model.time_points
+        
+        # Remove NaN values
+        trajectories_clean = np.nan_to_num(trajectories, nan=0.0, posinf=0.0, neginf=0.0)
+        
+        # Create time and phenotype grids
+        time_edges = np.linspace(time_points.min(), time_points.max(), time_resolution + 1)
+        phenotype_min = np.nanmin(trajectories_clean)
+        phenotype_max = np.nanmax(trajectories_clean)
+        
+        # Handle case where all values are the same
+        if np.isclose(phenotype_min, phenotype_max):
+            phenotype_min -= 1.0
+            phenotype_max += 1.0
+        
+        phenotype_edges = np.linspace(phenotype_min, phenotype_max, phenotype_resolution + 1)
+        
+        # Compute 2D histogram for each time bin
+        density_map = np.zeros((phenotype_resolution, time_resolution))
+        
+        for t_idx in range(time_resolution):
+            # Find closest time point
+            t_center = (time_edges[t_idx] + time_edges[t_idx + 1]) / 2
+            closest_time_idx = np.argmin(np.abs(time_points - t_center))
+            
+            # Get trajectory values at this time
+            values_at_time = trajectories_clean[:, closest_time_idx]
+            
+            # Compute histogram
+            hist, _ = np.histogram(values_at_time, bins=phenotype_edges)
+            density_map[:, t_idx] = hist
+        
+        if interactive:
+            fig = go.Figure(data=go.Heatmap(
+                z=density_map,
+                x=0.5 * (time_edges[:-1] + time_edges[1:]),
+                y=0.5 * (phenotype_edges[:-1] + phenotype_edges[1:]),
+                colorscale='Viridis',
+                colorbar=dict(title='Trajectory Density')
+            ))
+            
+            fig.update_layout(
+                title='Trajectory Density Heatmap',
+                xaxis_title='Developmental Time',
+                yaxis_title='Phenotype Value',
+                width=800,
+                height=600
+            )
+            
+            if output_dir:
+                output_dir.mkdir(parents=True, exist_ok=True)
+                fig.write_html(output_dir / 'density_heatmap.html')
+                logger.info(f"Saved interactive heatmap to {output_dir / 'density_heatmap.html'}")
+            
+            return fig
+        else:
+            fig, ax = plt.subplots(figsize=(12, 8))
+            
+            im = ax.imshow(density_map, aspect='auto', origin='lower',
+                          extent=[time_points.min(), time_points.max(), phenotype_min, phenotype_max],
+                          cmap='viridis', interpolation='bilinear')
+            
+            ax.set_xlabel('Developmental Time')
+            ax.set_ylabel('Phenotype Value')
+            ax.set_title('Trajectory Density Heatmap')
+            
+            cbar = plt.colorbar(im, ax=ax)
+            cbar.set_label('Trajectory Density', rotation=270, labelpad=20)
+            
+            if output_dir:
+                output_dir.mkdir(parents=True, exist_ok=True)
+                plt.savefig(output_dir / 'density_heatmap.png', dpi=self.config.dpi, bbox_inches='tight')
+                logger.info(f"Saved heatmap to {output_dir / 'density_heatmap.png'}")
+            
+            return fig
+    
+    def plot_violin(self,
+                   jump_rope_model,
+                   time_points: Optional[List[float]] = None,
+                   output_dir: Optional[Path] = None) -> Figure:
+        """
+        Plot violin plots showing distribution at multiple time points.
+        
+        Parameters:
+            jump_rope_model: JumpRope model with trajectories
+            time_points: Specific time points to plot (if None, use evenly spaced)
+            output_dir: Directory to save plots
+        
+        Returns:
+            Matplotlib figure
+        """
+        logger.info("Creating violin plots")
+        
+        if jump_rope_model.trajectories is None:
+            raise ValueError("No trajectories available. Generate trajectories first.")
+        
+        trajectories = jump_rope_model.trajectories
+        all_time_points = jump_rope_model.time_points
+        
+        # Select time points
+        if time_points is None:
+            n_points = min(8, len(all_time_points))
+            indices = np.linspace(0, len(all_time_points) - 1, n_points, dtype=int)
+            time_points = all_time_points[indices]
+        else:
+            # Find closest time points
+            indices = [np.argmin(np.abs(all_time_points - t)) for t in time_points]
+            time_points = all_time_points[indices]
+        
+        # Collect data for violin plots
+        data_for_violin = []
+        labels = []
+        for idx in indices:
+            data_for_violin.append(trajectories[:, idx])
+            labels.append(f't={time_points[len(labels)]:.2f}')
+        
+        fig, ax = plt.subplots(figsize=(12, 8))
+        
+        parts = ax.violinplot(data_for_violin, positions=range(len(data_for_violin)),
+                             showmeans=True, showmedians=True)
+        
+        # Color the violin plots
+        for i, pc in enumerate(parts['bodies']):
+            color = self.config.colors[i % len(self.config.colors)]
+            pc.set_facecolor(color)
+            pc.set_alpha(0.7)
+        
+        ax.set_xticks(range(len(labels)))
+        ax.set_xticklabels(labels, rotation=45)
+        ax.set_xlabel('Developmental Time')
+        ax.set_ylabel('Phenotype Value')
+        ax.set_title('Phenotype Distribution Evolution (Violin Plots)')
+        ax.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        
+        if output_dir:
+            output_dir.mkdir(parents=True, exist_ok=True)
+            plt.savefig(output_dir / 'violin_plots.png', dpi=self.config.dpi, bbox_inches='tight')
+            logger.info(f"Saved violin plots to {output_dir / 'violin_plots.png'}")
+        
+        return fig
+    
+    def plot_ridge(self,
+                  jump_rope_model,
+                  n_distributions: int = 10,
+                  output_dir: Optional[Path] = None) -> Figure:
+        """
+        Plot ridge plot (joyplot) showing distribution evolution over time.
+        
+        Parameters:
+            jump_rope_model: JumpRope model with trajectories
+            n_distributions: Number of distributions to show
+            output_dir: Directory to save plots
+        
+        Returns:
+            Matplotlib figure
+        """
+        logger.info("Creating ridge plot")
+        
+        if jump_rope_model.trajectories is None:
+            raise ValueError("No trajectories available. Generate trajectories first.")
+        
+        trajectories = jump_rope_model.trajectories
+        time_points = jump_rope_model.time_points
+        
+        # Select evenly spaced time points
+        n_distributions = min(n_distributions, len(time_points))
+        indices = np.linspace(0, len(time_points) - 1, n_distributions, dtype=int)
+        
+        fig, axes = plt.subplots(n_distributions, 1, figsize=(12, 2 * n_distributions),
+                                sharex=True)
+        
+        if n_distributions == 1:
+            axes = [axes]
+        
+        # Find global min/max for consistent x-axis
+        global_min = trajectories.min()
+        global_max = trajectories.max()
+        x_range = np.linspace(global_min, global_max, 200)
+        
+        for i, (ax, idx) in enumerate(zip(axes, indices)):
+            time = time_points[idx]
+            values = trajectories[:, idx]
+            
+            # Compute KDE
+            from scipy.stats import gaussian_kde
+            try:
+                kde = gaussian_kde(values)
+                density = kde(x_range)
+                
+                # Fill the area under the curve
+                color = self.config.colors[i % len(self.config.colors)]
+                ax.fill_between(x_range, 0, density, alpha=0.7, color=color)
+                ax.plot(x_range, density, color=color, linewidth=2)
+                
+                # Add time label
+                ax.text(0.02, 0.75, f't = {time:.2f}', transform=ax.transAxes,
+                       fontsize=10, verticalalignment='top',
+                       bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+                
+                # Formatting
+                ax.set_xlim(global_min, global_max)
+                ax.set_ylim(0, None)
+                ax.set_yticks([])
+                ax.spines['left'].set_visible(False)
+                ax.spines['top'].set_visible(False)
+                ax.spines['right'].set_visible(False)
+                
+                if i < len(axes) - 1:
+                    ax.spines['bottom'].set_visible(False)
+                    ax.set_xticks([])
+            except Exception as e:
+                logger.warning(f"Could not create KDE for time {time}: {e}")
+                ax.hist(values, bins=30, alpha=0.7, color=color, density=True)
+        
+        # Only show x-axis label on bottom plot
+        axes[-1].set_xlabel('Phenotype Value')
+        axes[-1].spines['bottom'].set_visible(True)
+        
+        fig.suptitle('Phenotype Distribution Evolution (Ridge Plot)', fontsize=16, y=0.995)
+        plt.tight_layout()
+        
+        if output_dir:
+            output_dir.mkdir(parents=True, exist_ok=True)
+            plt.savefig(output_dir / 'ridge_plot.png', dpi=self.config.dpi, bbox_inches='tight')
+            logger.info(f"Saved ridge plot to {output_dir / 'ridge_plot.png'}")
+        
+        return fig
+    
+    def plot_phase_portrait(self,
+                           jump_rope_model,
+                           derivative_method: str = 'finite_difference',
+                           output_dir: Optional[Path] = None,
+                           interactive: bool = False) -> Union[Figure, go.Figure]:
+        """
+        Plot phase portrait (phenotype vs. rate of change).
+        
+        Parameters:
+            jump_rope_model: JumpRope model with trajectories
+            derivative_method: Method to compute derivatives ('finite_difference', 'spline')
+            output_dir: Directory to save plots
+            interactive: Create interactive plot
+        
+        Returns:
+            Matplotlib or Plotly figure
+        """
+        logger.info("Creating phase portrait")
+        
+        if jump_rope_model.trajectories is None:
+            raise ValueError("No trajectories available. Generate trajectories first.")
+        
+        trajectories = jump_rope_model.trajectories
+        time_points = jump_rope_model.time_points
+        
+        # Compute derivatives
+        if derivative_method == 'finite_difference':
+            dt = np.diff(time_points)
+            derivatives = np.diff(trajectories, axis=1) / dt
+            # Use midpoint values for phenotype
+            phenotype_values = (trajectories[:, :-1] + trajectories[:, 1:]) / 2
+        elif derivative_method == 'spline':
+            from scipy.interpolate import UnivariateSpline
+            derivatives = np.zeros_like(trajectories)
+            phenotype_values = trajectories
+            
+            for i in range(trajectories.shape[0]):
+                try:
+                    spline = UnivariateSpline(time_points, trajectories[i, :], s=0.1)
+                    derivatives[i, :] = spline.derivative()(time_points)
+                except:
+                    # Fallback to finite differences
+                    dt = np.diff(time_points)
+                    derivatives[i, :-1] = np.diff(trajectories[i, :]) / dt
+                    derivatives[i, -1] = derivatives[i, -2]
+        else:
+            raise ValueError(f"Unknown derivative method: {derivative_method}")
+        
+        if interactive:
+            # Create interactive scatter plot with color gradient for time
+            time_colors = np.repeat(time_points[:phenotype_values.shape[1]], phenotype_values.shape[0])
+            
+            fig = go.Figure(data=go.Scattergl(
+                x=phenotype_values.flatten(),
+                y=derivatives.flatten(),
+                mode='markers',
+                marker=dict(
+                    size=3,
+                    color=time_colors,
+                    colorscale='Viridis',
+                    colorbar=dict(title='Time'),
+                    opacity=0.5
+                )
+            ))
+            
+            fig.update_layout(
+                title='Phase Portrait: Phenotype vs. Rate of Change',
+                xaxis_title='Phenotype Value',
+                yaxis_title='Rate of Change (dP/dt)',
+                width=800,
+                height=600
+            )
+            
+            if output_dir:
+                output_dir.mkdir(parents=True, exist_ok=True)
+                fig.write_html(output_dir / 'phase_portrait.html')
+                logger.info(f"Saved interactive phase portrait to {output_dir / 'phase_portrait.html'}")
+            
+            return fig
+        else:
+            fig, ax = plt.subplots(figsize=(10, 8))
+            
+            # Create scatter plot with color gradient
+            for i in range(0, phenotype_values.shape[0], max(1, phenotype_values.shape[0] // 100)):
+                scatter = ax.scatter(phenotype_values[i, :], derivatives[i, :],
+                                   c=time_points[:phenotype_values.shape[1]],
+                                   cmap='viridis', alpha=0.5, s=20)
+            
+            cbar = plt.colorbar(scatter, ax=ax)
+            cbar.set_label('Developmental Time', rotation=270, labelpad=20)
+            
+            ax.set_xlabel('Phenotype Value')
+            ax.set_ylabel('Rate of Change (dP/dt)')
+            ax.set_title('Phase Portrait: Phenotype vs. Rate of Change')
+            ax.grid(True, alpha=0.3)
+            ax.axhline(y=0, color='black', linestyle='--', alpha=0.5)
+            
+            if output_dir:
+                output_dir.mkdir(parents=True, exist_ok=True)
+                plt.savefig(output_dir / 'phase_portrait.png', dpi=self.config.dpi, bbox_inches='tight')
+                logger.info(f"Saved phase portrait to {output_dir / 'phase_portrait.png'}")
+            
+            return fig

@@ -18,14 +18,19 @@ EvoJump represents a groundbreaking analytical framework that conceptualizes evo
 ### Visualization and Interaction
 - **Interactive Developmental Landscapes**: 3D visualization of phenotypic evolution over time
 - **Temporal Animation Systems**: Animated visualization of developmental processes
+- **Advanced Visualizations**: Heatmaps, violin plots, ridge plots, phase portraits
 - **Comparative Visualization Tools**: Multi-condition, multi-genotype trajectory comparison
 - **Real-Time Analysis Interface**: Interactive parameter adjustment with immediate feedback
+- **Publication-Quality Graphics**: High-resolution exports for scientific publications
 
 ### Statistical and Analytical Methods
-- **Time Series Analysis**: Trend analysis, seasonality detection, change point analysis
-- **Multivariate Analysis**: PCA, CCA, cluster analysis for complex phenotypic datasets
-- **Stochastic Process Modeling**: Jump-diffusion processes, Lévy processes, fractional Brownian motion
-- **Machine Learning Integration**: Deep learning, ensemble methods, automated ML pipelines
+- **Time Series Analysis**: Trend analysis, seasonality detection, change point analysis, ARIMA modeling
+- **Multivariate Analysis**: PCA, CCA, cluster analysis, TSNE, UMAP for complex phenotypic datasets
+- **Stochastic Process Modeling**: Jump-diffusion, Lévy processes, Fractional Brownian Motion, Cox-Ingersoll-Ross
+- **Advanced Analytics**: Wavelet analysis, copula methods, extreme value theory, regime switching detection
+- **Machine Learning Integration**: Deep learning, ensemble methods, Gaussian processes, automated ML pipelines
+- **Bayesian Methods**: Bayesian inference, posterior sampling, credible intervals
+- **Network Analysis**: Graph theory, community detection, centrality measures
 
 ## 📦 Installation
 
@@ -37,6 +42,10 @@ EvoJump represents a groundbreaking analytical framework that conceptualizes evo
 - Matplotlib ≥ 3.5.0
 - Plotly ≥ 5.0.0
 - Scikit-learn ≥ 1.0.0
+- PyWavelets ≥ 1.3.0
+- NetworkX ≥ 2.6.0
+- StatsModels ≥ 0.13.0
+- Seaborn ≥ 0.11.0
 
 ### Quick Install
 ```bash
@@ -81,6 +90,57 @@ results = analyzer.analyze_cross_section(time_point=3.0)
 visualizer = ej.TrajectoryVisualizer()
 visualizer.plot_trajectories(model)
 visualizer.plot_cross_sections(model)
+```
+
+## 🎯 Advanced Features
+
+### Advanced Stochastic Process Models
+
+```python
+# Fractional Brownian Motion (long-range dependence)
+fbm_model = ej.JumpRope.fit(data_core, model_type='fractional-brownian', hurst=0.7)
+
+# Cox-Ingersoll-Ross (mean-reverting, non-negative)
+cir_model = ej.JumpRope.fit(data_core, model_type='cir', equilibrium=15.0)
+
+# Levy Process (heavy-tailed distributions)
+levy_model = ej.JumpRope.fit(data_core, model_type='levy', levy_alpha=1.5)
+```
+
+### Advanced Visualizations
+
+```python
+visualizer = ej.TrajectoryVisualizer()
+
+# Trajectory density heatmap
+visualizer.plot_heatmap(model, time_resolution=50, phenotype_resolution=50)
+
+# Violin plots showing distribution evolution
+visualizer.plot_violin(model, time_points=[1, 3, 5, 7, 9])
+
+# Ridge plot (joyplot) for temporal distributions
+visualizer.plot_ridge(model, n_distributions=10)
+
+# Phase portrait (phenotype vs. rate of change)
+visualizer.plot_phase_portrait(model, derivative_method='finite_difference')
+```
+
+### Advanced Statistical Methods
+
+```python
+analytics = ej.AnalyticsEngine(data, time_column='time')
+
+# Wavelet analysis for time-frequency patterns
+wavelet_result = analytics.wavelet_analysis('phenotype', wavelet='morl')
+
+# Copula analysis for dependence structure
+copula_result = analytics.copula_analysis('phenotype1', 'phenotype2')
+
+# Extreme value analysis
+extreme_result = analytics.extreme_value_analysis('phenotype')
+
+# Regime switching detection
+regime_result = analytics.regime_switching_analysis('phenotype', n_regimes=3)
 ```
 
 ## 📊 Command Line Interface
@@ -242,3 +302,4 @@ EvoJump builds upon decades of research in developmental biology, evolutionary t
 ---
 
 *EvoJump: Illuminating the dynamics of evolutionary development*
+

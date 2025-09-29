@@ -85,7 +85,7 @@ class TimeSeriesData:
                 self.data[col] = self.data[col].interpolate(method=method)
 
         # Forward fill remaining missing values
-        self.data[numeric_columns] = self.data[numeric_columns].fillna(method='ffill')
+        self.data[numeric_columns] = self.data[numeric_columns].ffill()
 
         logger.info(f"Interpolated missing data using {method} method")
 
@@ -519,3 +519,4 @@ class DataCore:
                 ts.data = ts.data[mask].copy()
 
         logger.info(f"Filtered data by {phenotype_column} range [{min_val}, {max_val}]")
+
