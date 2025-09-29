@@ -1,0 +1,226 @@
+# EvoJump Development Rules and Guidelines
+
+This file contains development rules, best practices, and guidelines for the EvoJump project. These rules ensure code quality, consistency, and maintainability across the entire codebase.
+
+## Code Style and Organization
+
+### Python Standards
+- Follow PEP 8 style guidelines for all Python code
+- Use 4 spaces for indentation (no tabs)
+- Limit line length to 88 characters for code, 72 for comments
+- Use meaningful variable and function names
+- Write docstrings for all public classes, methods, and functions
+- Use type hints for function parameters and return values
+
+### Module Organization
+- Keep modules focused on a single responsibility
+- Use clear, descriptive module and package names
+- Organize imports: standard library, third-party, local imports
+- Group related functionality within classes
+- Separate concerns: data, logic, visualization, I/O
+
+### Documentation Standards
+- Write comprehensive docstrings using Google/NumPy style
+- Include examples in docstrings for complex functions
+- Document all parameters, return values, and exceptions
+- Maintain README files for each major module
+- Keep API documentation synchronized with code
+
+## Testing Requirements
+
+### Test-Driven Development (TDD)
+- Write tests before implementing new functionality
+- Maintain test coverage above 95% for core modules
+- Use descriptive test method names (test_*)
+- Test both positive and negative cases
+- Include edge cases and error conditions
+
+### Test Data and Methods
+- Use real data and methods in tests (no mocks)
+- Create synthetic data that mimics real biological data
+- Test with various data sizes and conditions
+- Validate numerical accuracy of algorithms
+- Test error handling and edge cases
+
+### Test Organization
+- Group related tests in test classes
+- Use descriptive test class and method names
+- Include setup and teardown methods when needed
+- Test integration between modules
+- Run tests regularly during development
+
+## Scientific Computing Standards
+
+### Numerical Methods
+- Use established numerical libraries (NumPy, SciPy)
+- Validate numerical algorithms with known test cases
+- Handle floating-point precision issues appropriately
+- Document convergence criteria and numerical stability
+- Include references to scientific literature
+
+### Statistical Methods
+- Use appropriate statistical tests for biological data
+- Validate statistical assumptions
+- Report effect sizes and confidence intervals
+- Use multiple testing correction when appropriate
+- Document statistical power considerations
+
+### Biological Data Handling
+- Support common biological data formats
+- Handle missing data appropriately
+- Validate data quality and integrity
+- Support metadata and provenance tracking
+- Enable reproducible analysis workflows
+
+## Performance and Efficiency
+
+### Computational Efficiency
+- Use vectorized operations when possible
+- Optimize algorithms for large datasets
+- Consider memory usage for large-scale analyses
+- Use appropriate data structures
+- Profile code for performance bottlenecks
+
+### Scalability
+- Design for datasets ranging from small to large scale
+- Use streaming algorithms for large datasets
+- Support parallel processing when beneficial
+- Implement efficient caching strategies
+- Consider distributed computing for very large datasets
+
+## Error Handling and Validation
+
+### Input Validation
+- Validate all user inputs
+- Check data types and ranges
+- Handle missing or invalid data gracefully
+- Provide informative error messages
+- Include data quality checks
+
+### Exception Handling
+- Use specific exception types
+- Provide context in error messages
+- Handle recoverable errors gracefully
+- Log errors appropriately
+- Allow users to recover from errors
+
+## Version Control and Collaboration
+
+### Git Practices
+- Use meaningful commit messages
+- Create feature branches for new development
+- Keep branches up to date with main
+- Use pull requests for code review
+- Tag releases appropriately
+
+### Code Review
+- Review all code changes before merging
+- Check for adherence to coding standards
+- Verify test coverage for new code
+- Ensure documentation is updated
+- Validate scientific correctness
+
+## API Design Principles
+
+### User Interface
+- Design intuitive, user-friendly interfaces
+- Provide both simple and advanced usage modes
+- Include comprehensive help and examples
+- Support both programmatic and command-line interfaces
+- Allow customization while maintaining defaults
+
+### Backward Compatibility
+- Maintain backward compatibility when possible
+- Deprecate old interfaces before removing them
+- Provide migration guides for breaking changes
+- Version APIs appropriately
+- Communicate changes clearly
+
+## Scientific Integrity
+
+### Reproducibility
+- Ensure all analyses are reproducible
+- Use random seeds where appropriate
+- Document all parameters and settings
+- Save complete analysis workflows
+- Enable result validation
+
+### Validation
+- Validate methods against known datasets
+- Compare with existing tools when possible
+- Document limitations and assumptions
+- Include uncertainty quantification
+- Provide confidence measures
+
+## Documentation and Communication
+
+### Internal Documentation
+- Comment complex algorithms
+- Document design decisions
+- Include references to scientific literature
+- Maintain change logs
+- Document data structures and formats
+
+### User Documentation
+- Write clear, accessible documentation
+- Include tutorials and examples
+- Provide API reference documentation
+- Maintain up-to-date installation instructions
+- Document system requirements
+
+## Development Workflow
+
+### Planning
+- Define clear requirements before implementation
+- Plan module interfaces and dependencies
+- Consider integration with existing tools
+- Think about scalability and future extensions
+- Document design decisions
+
+### Implementation
+- Implement core functionality first
+- Add tests as you implement
+- Refactor for clarity and efficiency
+- Optimize performance after correctness
+- Document as you implement
+
+### Quality Assurance
+- Run all tests before committing
+- Check code style and formatting
+- Validate documentation completeness
+- Test on different platforms when possible
+- Profile performance for bottlenecks
+
+## Ethical Considerations
+
+### Scientific Ethics
+- Ensure scientific accuracy and validity
+- Acknowledge limitations and uncertainties
+- Avoid overinterpreting results
+- Maintain data privacy and confidentiality
+- Follow ethical guidelines for biological research
+
+### Open Science
+- Support reproducible research
+- Share code and methods openly
+- Document methods transparently
+- Enable collaboration and extension
+- Contribute to the scientific community
+
+## Maintenance and Support
+
+### Code Maintenance
+- Keep dependencies up to date
+- Monitor for security vulnerabilities
+- Maintain compatibility with new Python versions
+- Fix bugs promptly
+- Improve performance regularly
+
+### Community Support
+- Respond to user questions and issues
+- Maintain documentation and tutorials
+- Support both novice and expert users
+- Foster community contributions
+- Acknowledge user feedback and contributions
+
+These rules ensure that EvoJump maintains high standards of code quality, scientific integrity, and usability throughout its development and evolution.
