@@ -119,6 +119,11 @@ class TimeSeriesAnalyzer:
         for col in self.phenotype_columns:
             series_data = self.data[col].dropna()
 
+            # Ensure numeric data
+            if not pd.api.types.is_numeric_dtype(series_data):
+                logger.warning(f"Skipping non-numeric column: {col}")
+                continue
+
             if method == 'linear':
                 # Linear regression
                 time_numeric = np.arange(len(series_data))
@@ -170,6 +175,11 @@ class TimeSeriesAnalyzer:
 
         for col in self.phenotype_columns:
             series_data = self.data[col].dropna()
+
+            # Ensure numeric data
+            if not pd.api.types.is_numeric_dtype(series_data):
+                logger.warning(f"Skipping non-numeric column in seasonality: {col}")
+                continue
 
             if period is None:
                 # Auto-detect period using autocorrelation
@@ -227,6 +237,10 @@ class TimeSeriesAnalyzer:
         for col in self.phenotype_columns:
             series_data = self.data[col].dropna()
 
+            # Ensure numeric data
+            if not pd.api.types.is_numeric_dtype(series_data):
+                continue
+
             if len(series_data) < 10:
                 continue
 
@@ -240,10 +254,11 @@ class TimeSeriesAnalyzer:
                 max_deviation = cusum[max_idx]
 
                 if abs(max_deviation) > 2 * np.std(series_data):
+                    time_val = self.data[self.time_column].iloc[max_idx] if self.time_column in self.data.columns else max_idx
                     change_points.append({
                         'variable': col,
                         'time_index': max_idx,
-                        'time_value': self.data[self.time_column].iloc[max_idx],
+                        'time_value': time_val,
                         'cusum_value': max_deviation,
                         'confidence': min(abs(max_deviation) / (3 * np.std(series_data)), 1.0),
                         'method': 'cusum'
@@ -262,10 +277,11 @@ class TimeSeriesAnalyzer:
                     var_series = pd.Series(variances)
                     var_change_idx = var_series.idxmax()
 
+                    time_val = self.data[self.time_column].iloc[var_change_idx] if self.time_column in self.data.columns else var_change_idx
                     change_points.append({
                         'variable': col,
                         'time_index': var_change_idx,
-                        'time_value': self.data[self.time_column].iloc[var_change_idx],
+                        'time_value': time_val,
                         'variance_ratio': variances[var_change_idx] / np.mean(variances),
                         'confidence': 0.8  # Placeholder
                     })
@@ -616,6 +632,10 @@ class ChangePointDetector:
         for col in self.phenotype_columns:
             series_data = self.data[col].dropna()
 
+            # Ensure numeric data
+            if not pd.api.types.is_numeric_dtype(series_data):
+                continue
+
             if len(series_data) < 10:
                 continue
 
@@ -631,10 +651,11 @@ class ChangePointDetector:
                 significant_changes = np.where(z_scores > threshold)[0]
 
                 for change_idx in significant_changes:
+                    time_val = self.data[self.time_column].iloc[change_idx] if self.time_column in self.data.columns else change_idx
                     change_points.append({
                         'variable': col,
                         'time_index': change_idx,
-                        'time_value': self.data[self.time_column].iloc[change_idx],
+                        'time_value': time_val,
                         'change_magnitude': differences[change_idx],
                         'z_score': z_scores[change_idx],
                         'method': 'statistical'

@@ -1,0 +1,10 @@
+{
+  "figures_generated": 3,
+  "output_directory": "/Users/4d/Documents/GitHub/EvoJump/paper/figures",
+  "figure_paths": {
+    "sweep": "/Users/4d/Documents/GitHub/EvoJump/paper/figures/figure_drosophila_sweep.png",
+    "network": "/Users/4d/Documents/GitHub/EvoJump/paper/figures/figure_drosophila_network.png",
+    "cross_sections": "/Users/4d/Documents/GitHub/EvoJump/paper/figures/figure_drosophila_cross_sections.png"
+  },
+  "timestamp": "2025-10-01T06:27:06.869677"
+}

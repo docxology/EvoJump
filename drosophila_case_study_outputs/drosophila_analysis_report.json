@@ -1,0 +1,51 @@
+{
+  "metadata": {
+    "title": "Drosophila melanogaster Selective Sweep Analysis",
+    "description": "Comprehensive analysis of selective sweeps and genetic hitchhiking in fruit fly populations",
+    "population_size": "100",
+    "generations": 100,
+    "initial_red_eyed": "10",
+    "analysis_timestamp": "2025-09-30T06:09:07.982565"
+  },
+  "population_dynamics": {
+    "final_allele_frequency": 0.97,
+    "allele_frequency_change": 0.87,
+    "generations_to_fixation": 30,
+    "selection_coefficient": 0.15
+  },
+  "phenotypic_evolution": {
+    "initial_mean_eye_size": 10.166922786084726,
+    "final_mean_eye_size": 12.428307114308884,
+    "eye_size_variance": 1.514549735932831
+  },
+  "selective_sweep_analysis": {
+    "markers_analyzed": 5,
+    "generations_analyzed": 100,
+    "average_ld": 0.6974382798649738
+  },
+  "evolutionary_patterns": {
+    "effective_population_size": 10000.0,
+    "mean_heritability": NaN,
+    "change_points_detected": 7
+  },
+  "statistical_analysis": {
+    "bayesian_model_evidence": 0.0,
+    "network_density": 0.0,
+    "pca_explained_variance": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "scientific_conclusions": {
+    "selective_sweep_detected": "True",
+    "hitchhiking_evidence": "True",
+    "evolutionary_rate": 0.02284226594165817,
+    "population_genetic_parameters": {
+      "effective_population_size": 100.0,
+      "narrow_sense_heritability": 0.5,
+      "selection_coefficient": 0.15,
+      "additive_genetic_variance": 0.7572748679664155
+    }
+  }
+}

@@ -1,0 +1,21 @@
+% Additional author information for title page
+\makeatletter
+\let\old@maketitle\@maketitle
+\renewcommand{\@maketitle}{
+  \old@maketitle
+  \vspace{2em}
+  \begin{center}
+    \begin{minipage}{0.8\textwidth}
+      \centering
+      {\small
+      \textbf{Author Information} \\
+      ORCID: 0000-0001-6232-9096 \\
+      Email: daniel@activeinference.institute \\
+      DOI: \href{https://doi.org/10.5281/zenodo.17229925}{10.5281/zenodo.17229925} \\
+      Active Inference Institute
+      }
+    \end{minipage}
+  \end{center}
+}
+\makeatother
+

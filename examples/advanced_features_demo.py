@@ -61,8 +61,8 @@ def demonstrate_advanced_models():
         time_column='time'
     )
     
-    output_dir = Path("advanced_outputs")
-    output_dir.mkdir(exist_ok=True)
+    output_dir = Path("outputs/figures")
+    output_dir.mkdir(parents=True, exist_ok=True)
     
     # Test Fractional Brownian Motion
     print("1. Fitting Fractional Brownian Motion (long-range dependence)...")

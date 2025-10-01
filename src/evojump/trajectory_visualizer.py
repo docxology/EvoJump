@@ -612,6 +612,308 @@ class TrajectoryVisualizer:
 
         return anim
 
+    def plot_model_comparison(self,
+                             models: List[Any],
+                             model_names: List[str],
+                             output_dir: Optional[Path] = None) -> Figure:
+        """
+        Create comprehensive multi-panel model comparison visualization.
+
+        Parameters:
+            models: List of JumpRope models
+            model_names: Names for each model
+            output_dir: Directory to save plots
+
+        Returns:
+            Matplotlib figure with multiple panels
+        """
+        logger.info("Creating comprehensive model comparison visualization")
+
+        if len(models) != len(model_names):
+            raise ValueError("Number of models must match number of names")
+
+        # Create figure with subplots
+        fig = plt.figure(figsize=(20, 16))
+
+        # Panel 1: Mean trajectories comparison
+        ax1 = plt.subplot(3, 3, 1)
+        colors = self.config.colors[:len(models)]
+
+        for i, (model, name) in enumerate(zip(models, model_names)):
+            if model.trajectories is None:
+                continue
+
+            color = colors[i % len(colors)]
+            mean_traj = np.mean(model.trajectories, axis=0)
+            ax1.plot(model.time_points, mean_traj,
+                    label=name, color=color, linewidth=self.config.linewidth)
+
+            # Add confidence intervals
+            std_traj = np.std(model.trajectories, axis=0)
+            ax1.fill_between(model.time_points,
+                           mean_traj - std_traj,
+                           mean_traj + std_traj,
+                           alpha=0.2, color=color)
+
+        ax1.set_xlabel('Developmental Time')
+        ax1.set_ylabel('Phenotype Value')
+        ax1.set_title('Mean Trajectories\nwith Confidence Intervals')
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+
+        # Panel 2: Final distribution comparison
+        ax2 = plt.subplot(3, 3, 2)
+        for i, (model, name) in enumerate(zip(models, model_names)):
+            if model.trajectories is None:
+                continue
+
+            color = colors[i % len(colors)]
+            final_dist = model.compute_cross_sections(-1)
+            ax2.hist(final_dist, bins=30, alpha=0.6,
+                    label=name, color=color, density=True)
+
+        ax2.set_xlabel('Phenotype Value')
+        ax2.set_ylabel('Density')
+        ax2.set_title('Final Distributions')
+        ax2.legend()
+        ax2.grid(True, alpha=0.3)
+
+        # Panel 3: Jump pattern comparison
+        ax3 = plt.subplot(3, 3, 3)
+        for i, (model, name) in enumerate(zip(models, model_names)):
+            if model.trajectories is None:
+                continue
+
+            jump_times = model.estimate_jump_times()
+            if len(jump_times) > 0:
+                ax3.scatter(jump_times, [i] * len(jump_times),
+                           label=name, color=colors[i % len(colors)],
+                           s=self.config.markersize * 10, alpha=0.7)
+
+        ax3.set_xlabel('Time')
+        ax3.set_ylabel('Model')
+        ax3.set_title('Jump Pattern Detection')
+        ax3.set_yticks(range(len(model_names)))
+        ax3.set_yticklabels(model_names)
+        ax3.grid(True, alpha=0.3)
+
+        # Panel 4: Statistical properties comparison
+        ax4 = plt.subplot(3, 3, 4)
+        stats_data = []
+        for model, name in zip(models, model_names):
+            if model.trajectories is None:
+                continue
+
+            final_dist = model.compute_cross_sections(-1)
+            stats = {
+                'Model': name,
+                'Mean': np.mean(final_dist),
+                'Std': np.std(final_dist),
+                'CV': np.std(final_dist) / np.mean(final_dist) if np.mean(final_dist) != 0 else 0,
+                'Skewness': self._compute_skewness(final_dist),
+                'Kurtosis': self._compute_kurtosis(final_dist)
+            }
+            stats_data.append(stats)
+
+        if stats_data:
+            df_stats = pd.DataFrame(stats_data)
+            metrics = ['Mean', 'Std', 'CV', 'Skewness', 'Kurtosis']
+            x_pos = np.arange(len(metrics))
+
+            for i, (_, row) in enumerate(df_stats.iterrows()):
+                ax4.plot(x_pos, [row[metric] for metric in metrics],
+                        marker='o', label=row['Model'],
+                        color=colors[i % len(colors)])
+
+            ax4.set_xticks(x_pos)
+            ax4.set_xticklabels(metrics, rotation=45)
+            ax4.set_ylabel('Value')
+            ax4.set_title('Statistical Properties')
+            ax4.legend()
+            ax4.grid(True, alpha=0.3)
+
+        # Panel 5: Trajectory variability
+        ax5 = plt.subplot(3, 3, 5)
+        for i, (model, name) in enumerate(zip(models, model_names)):
+            if model.trajectories is None:
+                continue
+
+            std_over_time = np.std(model.trajectories, axis=0)
+            ax5.plot(model.time_points, std_over_time,
+                    label=name, color=colors[i % len(colors)],
+                    linewidth=self.config.linewidth)
+
+        ax5.set_xlabel('Time')
+        ax5.set_ylabel('Standard Deviation')
+        ax5.set_title('Trajectory Variability')
+        ax5.legend()
+        ax5.grid(True, alpha=0.3)
+
+        # Panel 6: Model parameters comparison
+        ax6 = plt.subplot(3, 3, 6)
+        param_comparison = []
+        for model, name in zip(models, model_names):
+            if hasattr(model, 'fitted_parameters') and model.fitted_parameters:
+                params = model.fitted_parameters
+                if hasattr(params, '__dict__'):
+                    for param_name, param_value in params.__dict__.items():
+                        if isinstance(param_value, (int, float)):
+                            param_comparison.append({
+                                'Model': name,
+                                'Parameter': param_name,
+                                'Value': param_value
+                            })
+
+        if param_comparison:
+            df_params = pd.DataFrame(param_comparison)
+            models_in_plot = df_params['Model'].unique()
+
+            for i, model_name in enumerate(models_in_plot):
+                model_params = df_params[df_params['Model'] == model_name]
+                param_names = model_params['Parameter'].tolist()
+                param_values = model_params['Value'].tolist()
+
+                y_pos = [j + i*0.2 for j in range(len(param_names))]
+                ax6.barh(y_pos, param_values, alpha=0.7,
+                        label=model_name, color=colors[i % len(colors)],
+                        height=0.15)
+
+            ax6.set_yticks([j + 0.1 for j in range(len(param_names))])
+            ax6.set_yticklabels(param_names)
+            ax6.set_xlabel('Parameter Value')
+            ax6.set_title('Model Parameters')
+            ax6.legend()
+            ax6.grid(True, alpha=0.3)
+
+        # Panel 7: Trajectory clustering
+        ax7 = plt.subplot(3, 3, 7)
+        all_trajectories = []
+        all_labels = []
+
+        for i, (model, name) in enumerate(zip(models, model_names)):
+            if model.trajectories is not None:
+                # Take a subset for clustering visualization
+                subset = model.trajectories[:min(20, model.trajectories.shape[0])]
+                all_trajectories.extend(subset)
+                all_labels.extend([name] * len(subset))
+
+        if len(all_trajectories) > 0:
+            trajectories_array = np.array(all_trajectories)
+
+            # Simple clustering based on final values
+            final_values = trajectories_array[:, -1]
+            clusters = np.argsort(final_values)
+
+            for i, traj in enumerate(trajectories_array[clusters]):
+                color_idx = i % len(colors)
+                ax7.plot(model.time_points, traj,
+                        alpha=0.6, color=colors[color_idx], linewidth=1)
+
+        ax7.set_xlabel('Time')
+        ax7.set_ylabel('Phenotype')
+        ax7.set_title('Trajectory Clustering\nby Final Value')
+        ax7.grid(True, alpha=0.3)
+
+        # Panel 8: Model performance metrics
+        ax8 = plt.subplot(3, 3, 8)
+        performance_data = []
+
+        for i, (model, name) in enumerate(zip(models, model_names)):
+            if model.trajectories is not None:
+                trajectories = model.trajectories
+                final_dist = model.compute_cross_sections(-1)
+
+                # Compute some basic performance metrics
+                stability = 1 / (1 + np.std(final_dist))  # Higher is more stable
+                predictability = 1 / (1 + np.mean(np.abs(np.diff(trajectories, axis=1))))  # Lower variation
+
+                performance_data.append({
+                    'Model': name,
+                    'Stability': stability,
+                    'Predictability': predictability,
+                    'Complexity': len(model.estimate_jump_times())
+                })
+
+        if performance_data:
+            df_perf = pd.DataFrame(performance_data)
+
+            # Normalize for radar plot
+            metrics = ['Stability', 'Predictability', 'Complexity']
+            for metric in metrics:
+                df_perf[metric] = (df_perf[metric] - df_perf[metric].min()) / (df_perf[metric].max() - df_perf[metric].min())
+
+            # Simple bar chart instead of radar for now
+            x_pos = np.arange(len(metrics))
+            width = 0.8 / len(models)
+
+            for i, (_, row) in enumerate(df_perf.iterrows()):
+                ax8.bar(x_pos + i*width, [row[metric] for metric in metrics],
+                       width=width, label=row['Model'],
+                       color=colors[i % len(colors)], alpha=0.7)
+
+            ax8.set_xticks(x_pos + width/2)
+            ax8.set_xticklabels(metrics)
+            ax8.set_ylabel('Normalized Score')
+            ax8.set_title('Model Performance')
+            ax8.legend()
+            ax8.grid(True, alpha=0.3)
+
+        # Panel 9: Summary comparison
+        ax9 = plt.subplot(3, 3, 9)
+        comparison_text = "Model Comparison Summary:\n\n"
+
+        for model, name in zip(models, model_names):
+            if model.trajectories is not None:
+                trajectories = model.trajectories
+                final_dist = model.compute_cross_sections(-1)
+
+                summary_stats = {
+                    'Final Mean': f"{np.mean(final_dist):.2f}",
+                    'Final SD': f"{np.std(final_dist):.2f}",
+                    'Jumps': str(len(model.estimate_jump_times())),
+                    'Trend': 'Increasing' if np.mean(np.diff(trajectories, axis=1)) > 0 else 'Decreasing'
+                }
+
+                comparison_text += f"{name}:\n"
+                for stat, value in summary_stats.items():
+                    comparison_text += f"  {stat}: {value}\n"
+                comparison_text += "\n"
+
+        ax9.text(0.05, 0.95, comparison_text,
+                transform=ax9.transAxes, fontsize=10,
+                verticalalignment='top', fontfamily='monospace',
+                bbox=dict(boxstyle='round', facecolor='lightgray', alpha=0.8))
+        ax9.set_title('Summary Comparison')
+        ax9.set_xlim(0, 1)
+        ax9.set_ylim(0, 1)
+        ax9.axis('off')
+
+        plt.tight_layout()
+
+        if output_dir:
+            output_dir.mkdir(parents=True, exist_ok=True)
+            plt.savefig(output_dir / 'model_comparison.png',
+                       dpi=self.config.dpi, bbox_inches='tight')
+            logger.info(f"Saved model comparison to {output_dir / 'model_comparison.png'}")
+
+        return fig
+
+    def _compute_skewness(self, data: np.ndarray) -> float:
+        """Compute skewness of data."""
+        try:
+            from scipy.stats import skew
+            return float(skew(data))
+        except:
+            return 0.0
+
+    def _compute_kurtosis(self, data: np.ndarray) -> float:
+        """Compute kurtosis of data."""
+        try:
+            from scipy.stats import kurtosis
+            return float(kurtosis(data))
+        except:
+            return 0.0
+
     def plot_comparison(self,
                        models: List[Any],
                        model_names: List[str],
@@ -1191,6 +1493,308 @@ class TrajectoryVisualizer:
 
         return fig
     
+    def plot_comprehensive_trajectories(self,
+                                      jump_rope_model,
+                                      time_points: Optional[List[float]] = None,
+                                      output_dir: Optional[Path] = None) -> Figure:
+        """
+        Create comprehensive multi-panel trajectory visualization.
+
+        Parameters:
+            jump_rope_model: JumpRope model with trajectories
+            time_points: Time points for cross-sectional analysis
+            output_dir: Directory to save plots
+
+        Returns:
+            Matplotlib figure with multiple panels
+        """
+        logger.info("Creating comprehensive trajectory visualization")
+
+        if jump_rope_model.trajectories is None:
+            raise ValueError("No trajectories available. Generate trajectories first.")
+
+        # Create figure with subplots
+        fig = plt.figure(figsize=(20, 16))
+
+        # Panel 1: Individual trajectories
+        ax1 = plt.subplot(3, 3, 1)
+        trajectories = jump_rope_model.trajectories
+        time_points_all = jump_rope_model.time_points
+
+        n_trajectories = min(50, trajectories.shape[0])
+        for i in range(n_trajectories):
+            ax1.plot(time_points_all, trajectories[i],
+                    alpha=0.3, linewidth=0.5,
+                    color=self.config.colors[i % len(self.config.colors)])
+
+        mean_trajectory = np.mean(trajectories, axis=0)
+        ax1.plot(time_points_all, mean_trajectory, 'k-', linewidth=3, label='Mean')
+        ax1.fill_between(time_points_all,
+                        mean_trajectory - np.std(trajectories, axis=0),
+                        mean_trajectory + np.std(trajectories, axis=0),
+                        alpha=0.3, color='gray', label='±1 SD')
+        ax1.set_xlabel('Developmental Time')
+        ax1.set_ylabel('Phenotype Value')
+        ax1.set_title('Individual Trajectories\nwith Mean ± SD')
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+
+        # Panel 2: Density heatmap
+        ax2 = plt.subplot(3, 3, 2)
+        self._plot_heatmap_panel(jump_rope_model, ax2)
+
+        # Panel 3: Cross-sectional distributions
+        ax3 = plt.subplot(3, 3, 3)
+        self._plot_cross_section_panel(jump_rope_model, time_points, ax3)
+
+        # Panel 4: Violin plots
+        ax4 = plt.subplot(3, 3, 4)
+        self._plot_violin_panel(jump_rope_model, ax4)
+
+        # Panel 5: Ridge plot
+        ax5 = plt.subplot(3, 3, 5)
+        self._plot_ridge_panel(jump_rope_model, ax5)
+
+        # Panel 6: Phase portrait
+        ax6 = plt.subplot(3, 3, 6)
+        self._plot_phase_portrait_panel(jump_rope_model, ax6)
+
+        # Panel 7: Statistical summary
+        ax7 = plt.subplot(3, 3, 7)
+        self._plot_statistical_summary(jump_rope_model, ax7)
+
+        # Panel 8: Model diagnostics
+        ax8 = plt.subplot(3, 3, 8)
+        self._plot_model_diagnostics(jump_rope_model, ax8)
+
+        # Panel 9: Evolution summary
+        ax9 = plt.subplot(3, 3, 9)
+        self._plot_evolution_summary(jump_rope_model, ax9)
+
+        plt.tight_layout()
+
+        if output_dir:
+            output_dir.mkdir(parents=True, exist_ok=True)
+            plt.savefig(output_dir / 'comprehensive_trajectories.png',
+                       dpi=self.config.dpi, bbox_inches='tight')
+            logger.info(f"Saved comprehensive trajectories to {output_dir / 'comprehensive_trajectories.png'}")
+
+        return fig
+
+    def _plot_heatmap_panel(self, jump_rope_model, ax):
+        """Plot heatmap in a subplot panel."""
+        trajectories = jump_rope_model.trajectories
+        time_points = jump_rope_model.time_points
+
+        # Create simple heatmap
+        heatmap_data = np.zeros((50, len(time_points)))
+        for i, t in enumerate(time_points):
+            values = trajectories[:, i]
+            hist, _ = np.histogram(values, bins=50, range=(trajectories.min(), trajectories.max()))
+            heatmap_data[:, i] = hist
+
+        im = ax.imshow(heatmap_data.T, aspect='auto', origin='lower',
+                      extent=[trajectories.min(), trajectories.max(), time_points.min(), time_points.max()],
+                      cmap='viridis', alpha=0.8)
+        ax.set_xlabel('Phenotype')
+        ax.set_ylabel('Time')
+        ax.set_title('Density Heatmap')
+        plt.colorbar(im, ax=ax, shrink=0.8)
+
+    def _plot_cross_section_panel(self, jump_rope_model, time_points, ax):
+        """Plot cross-sectional distributions."""
+        trajectories = jump_rope_model.trajectories
+        all_time_points = jump_rope_model.time_points
+
+        if time_points is None:
+            time_points = [all_time_points[len(all_time_points)//4],
+                          all_time_points[len(all_time_points)//2],
+                          all_time_points[3*len(all_time_points)//4]]
+
+        colors = ['red', 'green', 'blue']
+        for i, t in enumerate(time_points):
+            time_idx = np.argmin(np.abs(all_time_points - t))
+            values = trajectories[:, time_idx]
+            ax.hist(values, bins=20, alpha=0.6, color=colors[i],
+                   label=f't = {t:.1f}', density=True)
+
+        ax.set_xlabel('Phenotype Value')
+        ax.set_ylabel('Density')
+        ax.set_title('Cross-Sectional\nDistributions')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
+    def _plot_violin_panel(self, jump_rope_model, ax):
+        """Plot violin plot panel."""
+        trajectories = jump_rope_model.trajectories
+        time_points = jump_rope_model.time_points
+
+        # Select key time points
+        n_points = min(5, len(time_points))
+        indices = np.linspace(0, len(time_points)-1, n_points, dtype=int)
+        selected_times = time_points[indices]
+
+        data = [trajectories[:, idx] for idx in indices]
+        positions = range(len(data))
+
+        parts = ax.violinplot(data, positions=positions, showmeans=True, showmedians=True)
+
+        for pc in parts['bodies']:
+            pc.set_facecolor('lightblue')
+            pc.set_alpha(0.7)
+
+        ax.set_xticks(positions)
+        ax.set_xticklabels([f'{t:.1f}' for t in selected_times])
+        ax.set_xlabel('Developmental Time')
+        ax.set_ylabel('Phenotype Value')
+        ax.set_title('Violin Plots')
+        ax.grid(True, alpha=0.3)
+
+    def _plot_ridge_panel(self, jump_rope_model, ax):
+        """Plot ridge plot panel."""
+        trajectories = jump_rope_model.trajectories
+        time_points = jump_rope_model.time_points
+
+        # Select evenly spaced time points
+        n_distributions = min(8, len(time_points))
+        indices = np.linspace(0, len(time_points)-1, n_distributions, dtype=int)
+
+        global_min, global_max = trajectories.min(), trajectories.max()
+        x_range = np.linspace(global_min, global_max, 100)
+
+        for i, idx in enumerate(indices):
+            time = time_points[idx]
+            values = trajectories[:, idx]
+
+            try:
+                from scipy.stats import gaussian_kde
+                kde = gaussian_kde(values)
+                density = kde(x_range)
+
+                # Offset each distribution
+                y_offset = i * 0.1
+                ax.fill_between(x_range, y_offset, y_offset + density * 0.1,
+                              alpha=0.6, color=self.config.colors[i % len(self.config.colors)])
+                ax.plot(x_range, y_offset + density * 0.1,
+                       color=self.config.colors[i % len(self.config.colors)], linewidth=1)
+            except:
+                pass
+
+        ax.set_xlabel('Phenotype Value')
+        ax.set_ylabel('Time')
+        ax.set_title('Ridge Plot')
+        ax.set_ylim(-0.1, (n_distributions-1) * 0.1 + 0.1)
+        ax.set_xlim(global_min, global_max)
+
+    def _plot_phase_portrait_panel(self, jump_rope_model, ax):
+        """Plot phase portrait panel."""
+        trajectories = jump_rope_model.trajectories
+        time_points = jump_rope_model.time_points
+
+        # Compute derivatives using finite differences
+        dt = np.diff(time_points)
+        derivatives = np.diff(trajectories, axis=1) / dt
+        phenotype_values = (trajectories[:, :-1] + trajectories[:, 1:]) / 2
+
+        # Sample for visualization
+        n_samples = min(1000, phenotype_values.size)
+        indices = np.random.choice(phenotype_values.size, n_samples, replace=False)
+
+        scatter = ax.scatter(phenotype_values.flatten()[indices],
+                           derivatives.flatten()[indices],
+                           c=time_points[:-1][indices // trajectories.shape[0]],
+                           cmap='viridis', alpha=0.6, s=10)
+
+        ax.set_xlabel('Phenotype Value')
+        ax.set_ylabel('Rate of Change (dP/dt)')
+        ax.set_title('Phase Portrait')
+        ax.grid(True, alpha=0.3)
+        ax.axhline(y=0, color='black', linestyle='--', alpha=0.5)
+        plt.colorbar(scatter, ax=ax, shrink=0.8, label='Time')
+
+    def _plot_statistical_summary(self, jump_rope_model, ax):
+        """Plot statistical summary."""
+        trajectories = jump_rope_model.trajectories
+        time_points = jump_rope_model.time_points
+
+        # Compute statistics over time
+        means = np.mean(trajectories, axis=0)
+        stds = np.std(trajectories, axis=0)
+        cv = stds / means  # Coefficient of variation
+
+        ax2 = ax.twinx()
+
+        line1 = ax.plot(time_points, means, 'b-', linewidth=2, label='Mean')
+        ax.fill_between(time_points, means - stds, means + stds,
+                       alpha=0.3, color='blue', label='±1 SD')
+
+        line2 = ax2.plot(time_points, cv, 'r-', linewidth=2, label='CV')
+
+        ax.set_xlabel('Developmental Time')
+        ax.set_ylabel('Phenotype Value', color='blue')
+        ax2.set_ylabel('Coefficient of Variation', color='red')
+        ax.set_title('Statistical Summary')
+        ax.grid(True, alpha=0.3)
+
+        lines = line1 + line2
+        labels = [l.get_label() for l in lines]
+        ax.legend(lines, labels)
+
+    def _plot_model_diagnostics(self, jump_rope_model, ax):
+        """Plot model diagnostics."""
+        if not hasattr(jump_rope_model, 'fitted_parameters'):
+            ax.text(0.5, 0.5, 'No model\nparameters\navailable',
+                   ha='center', va='center', transform=ax.transAxes)
+            ax.set_title('Model Diagnostics')
+            return
+
+        params = jump_rope_model.fitted_parameters
+
+        # Plot parameter distributions or values
+        if hasattr(params, '__dict__'):
+            param_names = []
+            param_values = []
+
+            for name, value in params.__dict__.items():
+                if value is not None and isinstance(value, (int, float)):
+                    param_names.append(name)
+                    param_values.append(float(value))
+
+            if len(param_names) > 0:
+                y_pos = np.arange(len(param_names))
+                ax.barh(y_pos, param_values, alpha=0.7)
+                ax.set_yticks(y_pos)
+                ax.set_yticklabels(param_names)
+                ax.set_xlabel('Parameter Value')
+                ax.set_title('Fitted Parameters')
+                ax.grid(True, alpha=0.3)
+            else:
+                ax.text(0.5, 0.5, 'No valid\nparameters\navailable',
+                       ha='center', va='center', transform=ax.transAxes)
+                ax.set_title('Model Diagnostics')
+
+    def _plot_evolution_summary(self, jump_rope_model, ax):
+        """Plot evolution summary."""
+        trajectories = jump_rope_model.trajectories
+
+        # Compute evolutionary metrics
+        final_values = trajectories[:, -1]
+        initial_values = trajectories[:, 0]
+
+        # Plot initial vs final distribution
+        ax.scatter(initial_values, final_values, alpha=0.6, s=20)
+
+        # Add diagonal line
+        min_val = min(initial_values.min(), final_values.min())
+        max_val = max(initial_values.max(), final_values.max())
+        ax.plot([min_val, max_val], [min_val, max_val], 'r--', alpha=0.7, label='No Evolution')
+
+        ax.set_xlabel('Initial Phenotype')
+        ax.set_ylabel('Final Phenotype')
+        ax.set_title('Evolutionary Change')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
     def plot_heatmap(self,
                     jump_rope_model,
                     time_resolution: int = 50,
@@ -1199,55 +1803,55 @@ class TrajectoryVisualizer:
                     interactive: bool = False) -> Union[Figure, go.Figure]:
         """
         Plot density heatmap of trajectory evolution.
-        
+
         Parameters:
             jump_rope_model: JumpRope model with trajectories
             time_resolution: Number of time bins
             phenotype_resolution: Number of phenotype bins
             output_dir: Directory to save plots
             interactive: Create interactive plot
-        
+
         Returns:
             Matplotlib or Plotly figure
         """
         logger.info("Creating trajectory density heatmap")
-        
+
         if jump_rope_model.trajectories is None:
             raise ValueError("No trajectories available. Generate trajectories first.")
-        
+
         trajectories = jump_rope_model.trajectories
         time_points = jump_rope_model.time_points
-        
+
         # Remove NaN values
         trajectories_clean = np.nan_to_num(trajectories, nan=0.0, posinf=0.0, neginf=0.0)
-        
+
         # Create time and phenotype grids
         time_edges = np.linspace(time_points.min(), time_points.max(), time_resolution + 1)
         phenotype_min = np.nanmin(trajectories_clean)
         phenotype_max = np.nanmax(trajectories_clean)
-        
+
         # Handle case where all values are the same
         if np.isclose(phenotype_min, phenotype_max):
             phenotype_min -= 1.0
             phenotype_max += 1.0
-        
+
         phenotype_edges = np.linspace(phenotype_min, phenotype_max, phenotype_resolution + 1)
-        
+
         # Compute 2D histogram for each time bin
         density_map = np.zeros((phenotype_resolution, time_resolution))
-        
+
         for t_idx in range(time_resolution):
             # Find closest time point
             t_center = (time_edges[t_idx] + time_edges[t_idx + 1]) / 2
             closest_time_idx = np.argmin(np.abs(time_points - t_center))
-            
+
             # Get trajectory values at this time
             values_at_time = trajectories_clean[:, closest_time_idx]
-            
+
             # Compute histogram
             hist, _ = np.histogram(values_at_time, bins=phenotype_edges)
             density_map[:, t_idx] = hist
-        
+
         if interactive:
             fig = go.Figure(data=go.Heatmap(
                 z=density_map,
@@ -1256,7 +1860,7 @@ class TrajectoryVisualizer:
                 colorscale='Viridis',
                 colorbar=dict(title='Trajectory Density')
             ))
-            
+
             fig.update_layout(
                 title='Trajectory Density Heatmap',
                 xaxis_title='Developmental Time',
@@ -1264,32 +1868,32 @@ class TrajectoryVisualizer:
                 width=800,
                 height=600
             )
-            
+
             if output_dir:
                 output_dir.mkdir(parents=True, exist_ok=True)
                 fig.write_html(output_dir / 'density_heatmap.html')
                 logger.info(f"Saved interactive heatmap to {output_dir / 'density_heatmap.html'}")
-            
+
             return fig
         else:
             fig, ax = plt.subplots(figsize=(12, 8))
-            
+
             im = ax.imshow(density_map, aspect='auto', origin='lower',
                           extent=[time_points.min(), time_points.max(), phenotype_min, phenotype_max],
                           cmap='viridis', interpolation='bilinear')
-            
+
             ax.set_xlabel('Developmental Time')
             ax.set_ylabel('Phenotype Value')
             ax.set_title('Trajectory Density Heatmap')
-            
+
             cbar = plt.colorbar(im, ax=ax)
             cbar.set_label('Trajectory Density', rotation=270, labelpad=20)
-            
+
             if output_dir:
                 output_dir.mkdir(parents=True, exist_ok=True)
                 plt.savefig(output_dir / 'density_heatmap.png', dpi=self.config.dpi, bbox_inches='tight')
                 logger.info(f"Saved heatmap to {output_dir / 'density_heatmap.png'}")
-            
+
             return fig
     
     def plot_violin(self,
@@ -1430,7 +2034,9 @@ class TrajectoryVisualizer:
                     ax.set_xticks([])
             except Exception as e:
                 logger.warning(f"Could not create KDE for time {time}: {e}")
-                ax.hist(values, bins=30, alpha=0.7, color=color, density=True)
+                # Use a fallback color if not defined
+                fallback_color = self.config.colors[i % len(self.config.colors)] if hasattr(self, 'config') and hasattr(self.config, 'colors') else 'blue'
+                ax.hist(values, bins=30, alpha=0.7, color=fallback_color, density=True)
         
         # Only show x-axis label on bottom plot
         axes[-1].set_xlabel('Phenotype Value')

@@ -28,6 +28,7 @@ import logging
 from matplotlib.animation import FuncAnimation
 
 # Import EvoJump modules
+import evojump as ej
 from evojump.datacore import DataCore
 from evojump.analytics_engine import AnalyticsEngine
 from evojump.trajectory_visualizer import TrajectoryVisualizer

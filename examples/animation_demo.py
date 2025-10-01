@@ -11,6 +11,7 @@ from pathlib import Path
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+import evojump as ej
 from evojump.datacore import DataCore
 from evojump.jumprope import JumpRope
 from evojump.laserplane import LaserPlaneAnalyzer

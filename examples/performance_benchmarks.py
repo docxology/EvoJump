@@ -343,8 +343,8 @@ def main():
     print("=" * 70)
     
     np.random.seed(42)
-    output_dir = Path("benchmark_results")
-    output_dir.mkdir(exist_ok=True)
+    output_dir = Path("outputs/benchmarks")
+    output_dir.mkdir(parents=True, exist_ok=True)
     
     all_results = {}
     

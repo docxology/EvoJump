@@ -443,12 +443,13 @@ class EvolutionSampler:
                         samples[i, j, :] = time_data.iloc[sample_idx].values
         else:
             # Cross-sectional data
-            n_variables = len(self.population_data.columns)
+            numeric_columns = self.population_data.select_dtypes(include=[np.number]).columns
+            n_variables = len(numeric_columns)
             samples = np.zeros((n_samples, n_variables))
 
             for i in range(n_samples):
                 sample_idx = np.random.randint(0, len(self.population_data))
-                samples[i, :] = self.population_data.iloc[sample_idx].values
+                samples[i, :] = self.population_data.iloc[sample_idx][numeric_columns].values
 
         return samples
 
@@ -560,9 +561,9 @@ class EvolutionSampler:
         else:
             # Cross-sectional data
             n_variables = len(self.population_data.columns)
-            mean_values = self.population_data.mean().values
-            variance_values = self.population_data.var().values
-            covariance_matrix = self.population_data.cov().values
+            mean_values = self.population_data.mean(numeric_only=True).values
+            variance_values = self.population_data.var(numeric_only=True).values
+            covariance_matrix = self.population_data.cov(numeric_only=True).values
 
             return PopulationStatistics(
                 mean_trajectory=mean_values.reshape(1, -1),

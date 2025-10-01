@@ -43,27 +43,27 @@ The following packages are automatically installed:
 Quick Installation
 ------------------
 
-Install the latest stable version from PyPI:
+Install the latest stable version using UV:
 
 .. code-block:: bash
 
-   pip install evojump
+   uv add evojump
 
 Install with optional dependencies:
 
 .. code-block:: bash
 
    # Development dependencies
-   pip install evojump[dev]
+   uv sync --group dev
 
    # GPU acceleration (Linux/macOS)
-   pip install evojump[gpu]
+   uv add evojump --extra gpu
 
    # Web interface
-   pip install evojump[web]
+   uv add evojump --extra web
 
    # R integration
-   pip install evojump[r-integration]
+   uv add evojump --extra r-integration
 
 Development Installation
 -----------------------
@@ -76,11 +76,11 @@ For contributors and advanced users:
    git clone https://github.com/evojump/evojump.git
    cd evojump
 
-   # Install in development mode
-   pip install -e .
+   # Sync dependencies and install in development mode
+   uv sync
 
-   # Install development dependencies
-   pip install -e ".[dev]"
+   # Include development dependencies
+   uv sync --group dev
 
    # Run tests
    pytest
@@ -134,10 +134,10 @@ Solution: Ensure the package is installed and the Python path includes the insta
 .. code-block:: bash
 
    # Check installation
-   pip list | grep evojump
+   uv tree | grep evojump
 
    # If not found, reinstall
-   pip install evojump
+   uv add evojump
 
 **ModuleNotFoundError: Specific dependency missing**
 
@@ -145,33 +145,24 @@ Solution: Install missing dependencies manually:
 
 .. code-block:: bash
 
-   pip install numpy scipy pandas matplotlib
+   uv add numpy scipy pandas matplotlib
 
 **Permission denied during installation**
 
-Solution: Use virtual environment or install with user flag:
+Solution: Use virtual environment with uv (recommended):
 
 .. code-block:: bash
 
-   # Create virtual environment
-   python -m venv evojump_env
-   source evojump_env/bin/activate  # On Windows: evojump_env\Scripts\activate
+   # Create virtual environment with UV
+   uv venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
    # Install in virtual environment
-   pip install evojump
-
-   # Or install for current user only
-   pip install --user evojump
+   uv add evojump
 
 **Memory errors during installation**
 
-Solution: Install with reduced parallelization:
-
-.. code-block:: bash
-
-   pip install evojump --no-build-isolation
-   # Or use conda for better dependency management
-   conda install -c conda-forge evojump
+Solution: UV handles installation more efficiently than traditional pip. If issues persist, ensure sufficient system memory is available.
 
 **Platform-specific issues**
 

@@ -1,0 +1,104 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{placeins}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{url}
+
+% Math operators
+\DeclareMathOperator{\E}{\mathbb{E}}
+\DeclareMathOperator{\Var}{Var}
+\DeclareMathOperator{\Cov}{Cov}
+\DeclareMathOperator{\Corr}{Corr}
+\DeclareMathOperator{\argmin}{argmin}
+\DeclareMathOperator{\argmax}{argmax}
+
+% Code listings
+\lstset{
+    language=Python,
+    basicstyle=\ttfamily\footnotesize,
+    keywordstyle=\color{blue},
+    commentstyle=\color{gray},
+    stringstyle=\color{red},
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    frame=single,
+    breaklines=true,
+    captionpos=b,
+    morekeywords={import, from, def, class, return, if, elif, else, for, in, as, with, try, except, raise, assert, True, False, None}
+}
+
+% Figure and table counters
+\newcounter{figurecounter}
+\newcounter{tablecounter}
+
+% Title and metadata
+\title{$title$}
+\author{$author$$if(institute)$ \\
+       {\small $institute$}$endif$$if(orcid)$ \\
+       {\small ORCID: $orcid$}$endif$$if(email)$ \\
+       {\small Email: $email$}$endif$$if(doi)$ \\
+       {\small DOI: \href{https://doi.org/$doi$}{$doi$}}$endif$}
+\date{$date$}
+
+\begin{document}
+
+\maketitle
+\vspace{-6mm}
+\begin{center}
+\begin{minipage}{0.9\textwidth}
+\centering
+\small
+Daniel Ari Friedman\\
+ORCID: 0000-0001-6232-9096\\
+Email: \href{mailto:daniel@activeinference.institute}{daniel@activeinference.institute}\\
+DOI: \href{https://doi.org/10.5281/zenodo.17229925}{10.5281/zenodo.17229925}\\
+Active Inference Institute
+\end{minipage}
+\end{center}
+\vspace{3mm}
+
+\begin{abstract}
+\input{sections/01_abstract.md}
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Introduction}
+\input{sections/02_introduction.md}
+
+\section{Mathematical Foundations}
+\input{sections/03_mathematical_foundations.md}
+
+\section{Advanced Statistical Methods}
+\input{sections/04_statistical_methods.md}
+
+\section{Computational Implementation}
+\input{sections/05_implementation.md}
+
+\section{Results and Validation}
+\input{sections/06_results.md}
+
+\section{Discussion}
+\input{sections/07_discussion.md}
+
+\section{Conclusion}
+\input{sections/08_conclusion.md}
+
+\section{Figures}
+\input{sections/10_figures.md}
+
+\bibliographystyle{plain}
+\bibliography{references/evojump}
+
+\end{document}
