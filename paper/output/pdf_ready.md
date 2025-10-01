@@ -420,7 +420,7 @@ Biological development operates at multiple temporal scales simultaneously—fro
 
 The CWT decomposes trajectories $x(t)$ using scaled and translated mother wavelets $\psi$:
 
-$$W(a, b) = \frac{1}{\sqrt{a}}\int_{-\infty}^{\infty} x(t)\psi^*\left(\frac{t-b}{a}\right)dt$$
+$$W(a, b) = \frac{1}{\sqrt{a}}\int_{-\infty}^{\infty} x(t)\psi^*\left(\frac{t-b}{a}\right)dt \label{eq:cwt}$$
 
 Parameters:
 - **Mother wavelet** ($\psi$): Localized oscillatory template (Morlet for time-frequency localization, Mexican hat for transients)
@@ -460,7 +460,7 @@ Developmental traits exhibit complex dependencies through pleiotropy, developmen
 
 **Sklar's theorem** (1959) decomposes multivariate distributions:
 
-$$F(x_1, \ldots, x_d) = C(F_1(x_1), \ldots, F_d(x_d))$$
+$$F(x_1, \ldots, x_d) = C(F_1(x_1), \ldots, F_d(x_d)) \label{eq:sklar_theorem}$$
 
 where $C: [0,1]^d \to [0,1]$ is the copula capturing dependence structure independent of marginals $F_i$. Operates on uniform marginals $U_i = F_i(X_i) \in [0,1]$.
 
@@ -513,7 +513,7 @@ Understanding extreme phenotypes is crucial for evolutionary biology. Rare, extr
 
 The **POT method** models values exceeding a high threshold $u$. The fundamental result (Pickands 1975) is that threshold exceedances, under mild conditions, follow a **Generalized Pareto Distribution (GPD)**:
 
-$$F(x) = 1 - \left(1 + \xi\frac{x-u}{\sigma}\right)^{-1/\xi}_+ \label{eq:gpd}$$
+$$F(x) = 1 - \left(1 + \xi\frac{x-u}{\sigma}\right)^{-1/\xi}_+$$
 
 where the notation $(\cdot)_+$ means $\max(\cdot, 0)$ and:
 
@@ -1418,7 +1418,7 @@ The framework stands ready to analyze the next generation of developmental datas
 
 ## Availability
 
-**Software**: The EvoJump package is available at [https://github.com/docxology/EvoJump](https://github.com/docxology/EvoJump) under the MIT license.
+**Software**: The EvoJump package is available at [https://github.com/docxology/EvoJump](https://github.com/docxology/EvoJump) under the Apache License 2.0.
 
 **Support**: Issues and feature requests can be submitted via GitHub Issues. Community discussion occurs on the project discussion board.
 

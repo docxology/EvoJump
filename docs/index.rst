@@ -5,8 +5,8 @@ EvoJump Documentation
    :target: https://python.org
    :alt: Python Version
 
-.. image:: https://img.shields.io/badge/License-MIT-yellow.svg
-   :target: https://opensource.org/licenses/MIT
+.. image:: https://img.shields.io/badge/License-Apache%202.0-blue.svg
+   :target: https://opensource.org/licenses/Apache-2.0
    :alt: License
 
 .. image:: https://readthedocs.org/projects/evojump/badge/?version=latest

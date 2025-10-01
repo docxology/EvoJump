@@ -75,7 +75,7 @@ The framework stands ready to analyze the next generation of developmental datas
 
 ## Availability
 
-**Software**: The EvoJump package is available at [https://github.com/docxology/EvoJump](https://github.com/docxology/EvoJump) under the MIT license.
+**Software**: The EvoJump package is available at [https://github.com/docxology/EvoJump](https://github.com/docxology/EvoJump) under the Apache License 2.0.
 
 **Support**: Issues and feature requests can be submitted via GitHub Issues. Community discussion occurs on the project discussion board.
 

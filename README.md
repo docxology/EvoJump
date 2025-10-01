@@ -1,13 +1,30 @@
 # EvoJump: A Comprehensive Framework for Evolutionary Ontogenetic Analysis
 
 [![Python Version](https://img.shields.io/badge/python-3.8+-blue.svg)](https://python.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Documentation Status](https://readthedocs.org/projects/evojump/badge/?version=latest)](https://evojump.readthedocs.io/)
 [![Build Status](https://github.com/evojump/evojump/workflows/CI/badge.svg)](https://github.com/evojump/evojump/actions)
 [![Coverage Status](https://coveralls.io/repos/github/evojump/evojump/badge.svg?branch=main)](https://coveralls.io/github/evojump/evojump?branch=main)
 [![PyPI Version](https://img.shields.io/pypi/v/evojump)](https://pypi.org/project/evojump/)
 
 EvoJump represents a groundbreaking analytical framework that conceptualizes evolutionary and developmental biology through a novel "cross-sectional laser" metaphor. This system treats ontogenetic development as a temporal progression where a "jumprope-like" distribution sweeps across a fixed analytical plane (the laser), generating dynamic cross-sectional views of phenotypic distributions throughout an organism's developmental timeline.
+
+## 📑 Table of Contents
+
+- [Features](#-features)
+- [Installation](#-installation)
+- [Quick Start](#-quick-start)
+- [Advanced Features](#-advanced-features)
+- [Command Line Interface](#-command-line-interface)
+- [Applications and Use Cases](#-applications-and-use-cases)
+- [Architecture](#-architecture)
+- [Testing](#-testing)
+- [Documentation](#-documentation)
+- [Contributing](#-contributing)
+- [License](#-license)
+- [Citation](#-citation)
+- [Project Status & Achievements](#-project-status--achievements)
+- [Acknowledgments](#-acknowledgments)
 
 ## 🚀 Features
 
@@ -428,7 +445,30 @@ uv sync --group dev
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+
+The Apache 2.0 license provides:
+- **Patent protection** - Express grant of patent rights from contributors
+- **Commercial use** - Full freedom to use in commercial applications
+- **Modification & distribution** - Freedom to modify and distribute with clear attribution
+- **Liability protection** - Clear disclaimer of warranties and limitation of liability
+- **Trademark protection** - Does not grant rights to use contributor trademarks
+
+```
+Copyright 2024 EvoJump Development Team
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```
 
 ## 🎯 Citation
 

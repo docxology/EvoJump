@@ -172,7 +172,7 @@ Modeling of Evolutionary Ontogenetic Trajectories.
 
 ## License
 
-The paper text is licensed under CC BY 4.0. The EvoJump software is licensed under MIT.
+The paper text is licensed under CC BY 4.0. The EvoJump software is licensed under Apache License 2.0.
 
 ## Contact
 

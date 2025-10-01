@@ -1524,7 +1524,7 @@ using scaled and translated mother wavelets <span
 class="math inline">\psi</span>:</p>
 <p><span class="math display">W(a, b) =
 \frac{1}{\sqrt{a}}\int_{-\infty}^{\infty}
-x(t)\psi^*\left(\frac{t-b}{a}\right)dt</span></p>
+x(t)\psi^*\left(\frac{t-b}{a}\right)dt \label{eq:cwt}</span></p>
 <p>Parameters: - <strong>Mother wavelet</strong> (<span
 class="math inline">\psi</span>): Localized oscillatory template (Morlet
 for time-frequency localization, Mexican hat for transients) -
@@ -1574,7 +1574,7 @@ class="header-section-number">4.2.1</span> Copula Theory</h3>
 <p><strong>Sklar’s theorem</strong> (1959) decomposes multivariate
 distributions:</p>
 <p><span class="math display">F(x_1, \ldots, x_d) = C(F_1(x_1), \ldots,
-F_d(x_d))</span></p>
+F_d(x_d)) \label{eq:sklar_theorem}</span></p>
 <p>where <span class="math inline">C: [0,1]^d \to [0,1]</span> is the
 copula capturing dependence structure independent of marginals <span
 class="math inline">F_i</span>. Operates on uniform marginals <span
@@ -1642,7 +1642,7 @@ threshold <span class="math inline">u</span>. The fundamental result
 (Pickands 1975) is that threshold exceedances, under mild conditions,
 follow a <strong>Generalized Pareto Distribution (GPD)</strong>:</p>
 <p><span class="math display">F(x) = 1 - \left(1 +
-\xi\frac{x-u}{\sigma}\right)^{-1/\xi}_+ \label{eq:gpd}</span></p>
+\xi\frac{x-u}{\sigma}\right)^{-1/\xi}_+</span></p>
 <p>where the notation <span class="math inline">(\cdot)_+</span> means
 <span class="math inline">\max(\cdot, 0)</span> and:</p>
 <ul>
@@ -3052,7 +3052,7 @@ EvoJump illuminates this crucial connection.</p>
 class="header-section-number">9.6</span> Availability</h2>
 <p><strong>Software</strong>: The EvoJump package is available at <a
 href="https://github.com/docxology/EvoJump">https://github.com/docxology/EvoJump</a>
-under the MIT license.</p>
+under the Apache License 2.0.</p>
 <p><strong>Support</strong>: Issues and feature requests can be
 submitted via GitHub Issues. Community discussion occurs on the project
 discussion board.</p>
