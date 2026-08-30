@@ -58,7 +58,7 @@ Version 0.1.0 (2024-12-XX)
   * ``evojump-cli sample`` - Sample from evolutionary populations
 
 **Testing and Quality**
-  * Comprehensive test suite with >95% coverage target
+  * Comprehensive test suite with enforced coverage floor (pyproject pytest addopts)
   * Real data testing (no mocks)
   * Integration testing across modules
   * Performance benchmarking
