@@ -49,7 +49,7 @@ def demo_quick_testing():
     print("=" * 50)
 
     success = run_command(
-        ["python", "run_all_tests.py", "--quick", "--verbose"],
+        [sys.executable, "run_all_tests.py", "--quick", "--verbose"],
         "Running quick tests (fast feedback)"
     )
     return success
@@ -61,7 +61,7 @@ def demo_coverage_testing():
     print("=" * 50)
 
     success = run_command(
-        ["python", "run_all_tests.py", "--coverage"],
+        [sys.executable, "run_all_tests.py", "--coverage"],
         "Running tests with comprehensive coverage report"
     )
 
@@ -80,7 +80,7 @@ def demo_benchmark_testing():
     print("=" * 50)
 
     success = run_command(
-        ["python", "run_all_tests.py", "--benchmark", "--parallel"],
+        [sys.executable, "run_all_tests.py", "--benchmark", "--parallel"],
         "Running performance benchmarks in parallel"
     )
     return success
@@ -118,7 +118,7 @@ def demo_documentation():
     print("=" * 50)
 
     success = run_command(
-        ["python", "run_all_tests.py", "--docs"],
+        [sys.executable, "run_all_tests.py", "--docs"],
         "Checking documentation completeness"
     )
     return success
