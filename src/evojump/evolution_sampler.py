@@ -81,22 +81,27 @@ class PopulationModel:
             Heritability estimate
         """
         if method == 'parent-offspring':
-            # Simple parent-offspring regression
-            if len(self.individuals) < 4:
-                return np.nan
+            # Parent-offspring regression requires explicit generational pairing.
+            # Row order in a time-series table is NOT a pedigree; naive
+            # next-row pairing conflates time with relatedness, so this method
+            # only runs when the frame carries explicit 'parent'/'offspring'
+            # phenotype columns.
+            if 'parent' in self.population_data.columns and 'offspring' in self.population_data.columns:
+                parent_values = self.population_data['parent'].dropna()
+                offspring_values = self.population_data['offspring'].dropna()
+                n = min(len(parent_values), len(offspring_values))
+                if n < 4:
+                    return np.nan
+                slope, _, _, _, _ = stats.linregress(
+                    parent_values.iloc[:n], offspring_values.iloc[:n])
+                heritability = 2 * slope if slope > 0 else 0.0
+                return min(heritability, 1.0)  # Cap at 1.0
 
-            # This is a simplified implementation
-            # In practice, would need pedigree information
-            parent_values = self.population_data[phenotype].iloc[:-1]
-            offspring_values = self.population_data[phenotype].iloc[1:]
-
-            if len(parent_values) != len(offspring_values):
-                parent_values = parent_values[:len(offspring_values)]
-
-            slope, _, _, _, _ = stats.linregress(parent_values, offspring_values)
-            heritability = 2 * slope if slope > 0 else 0.0
-
-            return min(heritability, 1.0)  # Cap at 1.0
+            warnings.warn(
+                "parent-offspring heritability requires explicit "
+                "'parent'/'offspring' columns (a pedigree); returning NaN "
+                "instead of a spurious estimate.")
+            return np.nan
 
         else:
             raise ValueError(f"Unsupported heritability method: {method}")
@@ -159,6 +164,35 @@ class PhylogeneticAnalyzer:
         """Initialize phylogenetic analyzer."""
         self.distance_matrix = distance_matrix
         self.phylogeny: Optional[Any] = None
+
+    def compute_morans_i_signal(self, traits: np.ndarray) -> float:
+        """Compute Moran's I phylogenetic signal from the distance matrix.
+
+        Uses an inverse-squared-distance spatial weights matrix; returns I in
+        [-1, 1]. Values near +1 indicate strong phylogenetic clustering of
+        trait values. Requires a distance matrix; returns np.nan otherwise.
+        """
+        if self.distance_matrix is None:
+            return np.nan
+        traits = np.asarray(traits, dtype=float)
+        traits = traits[~np.isnan(traits)]
+        n = len(traits)
+        if n < 3 or self.distance_matrix.shape[0] != n:
+            return np.nan
+
+        d = self.distance_matrix[:n, :n]
+        W = 1.0 / np.maximum(d, 1e-12) ** 2
+        np.fill_diagonal(W, 0.0)
+        W_sum = W.sum()
+        if W_sum <= 0:
+            return np.nan
+
+        centered = traits - traits.mean()
+        denom = float(np.sum(centered ** 2))
+        if denom <= 0:
+            return np.nan
+        I = (n / W_sum) * (centered @ W @ centered) / denom
+        return float(I)
 
     def compute_phylogenetic_signal(self,
                                   traits: np.ndarray,
@@ -371,8 +405,13 @@ class EvolutionSampler:
         self.population_model = PopulationModel(self.population_data, self.time_column)
         self.phylogenetic_analyzer = PhylogeneticAnalyzer()
         self.quantitative_genetics = QuantitativeGenetics()
+        self._rng = np.random.default_rng()
 
         logger.info("Initialized Evolution Sampler")
+
+    def seed(self, seed: int) -> None:
+        """Seed the sampler's random generator for reproducibility."""
+        self._rng = np.random.default_rng(seed)
 
     def sample(self,
               n_samples: int = 1000,
@@ -439,7 +478,7 @@ class EvolutionSampler:
                     ][phenotype_columns]
 
                     if len(time_data) > 0:
-                        sample_idx = np.random.randint(0, len(time_data))
+                        sample_idx = int(self._rng.integers(0, len(time_data)))
                         samples[i, j, :] = time_data.iloc[sample_idx].values
         else:
             # Cross-sectional data
@@ -448,7 +487,7 @@ class EvolutionSampler:
             samples = np.zeros((n_samples, n_variables))
 
             for i in range(n_samples):
-                sample_idx = np.random.randint(0, len(self.population_data))
+                sample_idx = int(self._rng.integers(0, len(self.population_data)))
                 samples[i, :] = self.population_data.iloc[sample_idx][numeric_columns].values
 
         return samples
@@ -456,18 +495,85 @@ class EvolutionSampler:
     def _importance_sampling(self,
                            n_samples: int,
                            parameters: Dict[str, Any]) -> np.ndarray:
-        """Perform importance sampling."""
-        # Simplified importance sampling
-        # In practice, this would use importance weights
-        return self._monte_carlo_sampling(n_samples, parameters)
+        """Importance sampling with resampling from a tilted proposal.
+
+        Proposals are drawn from the empirical population; weights are computed
+        from an exponential tilt on the mean phenotype (temperature given by
+        ``parameters.get('temperature', 1.0)``), then normalized. Weighted
+        resampling (systematic) yields the final sample set; the effective
+        sample size is recorded in ``parameters`` under 'ess'.
+        """
+        base = self._monte_carlo_sampling(n_samples, parameters)
+        temperature = float(parameters.get('temperature', 1.0))
+
+        # Weight each drawn sample by exp(temperature * standardized mean phenotype)
+        if base.ndim == 3:
+            scores = base.mean(axis=(1, 2))
+        else:
+            scores = base.mean(axis=1)
+        scores = (scores - scores.mean()) / (scores.std() + 1e-12)
+        log_w = temperature * scores
+        w = np.exp(log_w - log_w.max())
+        w /= w.sum()
+
+        # Systematic resampling according to normalized weights
+        positions = (np.arange(n_samples) + self._rng.uniform()) / n_samples
+        cumulative = np.cumsum(w)
+        idx = np.searchsorted(cumulative, positions)
+        idx = np.clip(idx, 0, n_samples - 1)
+        resampled = base[idx]
+
+        # Record effective sample size for diagnostics
+        ess = 1.0 / np.sum(w ** 2)
+        parameters['ess'] = float(ess)
+        return resampled
 
     def _mcmc_sampling(self,
                       n_samples: int,
                       parameters: Dict[str, Any]) -> np.ndarray:
-        """Perform Markov Chain Monte Carlo sampling."""
-        # Simplified MCMC
-        # In practice, this would implement proper MCMC chains
-        return self._monte_carlo_sampling(n_samples, parameters)
+        """Metropolis-Hastings MCMC over the empirical population statistic.
+
+        State: index into the population. Target: unnormalized density implied
+        by the empirical mean phenotype (Gaussian around observed mean with
+        scale ``parameters.get('mcmc_scale', 1.0)``). Proposal: Gaussian
+        random walk in phenotype space with step ``parameters.get('step_size',
+        0.5)`` standard deviations; nearest observed individual accepted.
+        Burn-in is 10% of n_samples.
+        """
+        if self.time_column in self.population_data.columns:
+            numeric_columns = self.population_data.select_dtypes(include=[np.number]).columns
+            phenotype_columns = [c for c in numeric_columns if c != self.time_column]
+        else:
+            phenotype_columns = list(self.population_data.select_dtypes(include=[np.number]).columns)
+
+        pool = self.population_data[phenotype_columns].dropna().values
+        if pool.ndim == 1:
+            pool = pool.reshape(-1, 1)
+
+        step_size = float(parameters.get('step_size', 0.5))
+        mcmc_scale = float(parameters.get('mcmc_scale', 1.0))
+        burn_in = max(1, n_samples // 10)
+
+        observed_mean = pool.mean(axis=0)
+        observed_std = pool.std(axis=0) + 1e-12
+
+        def log_target(x: np.ndarray) -> float:
+            return -0.5 * np.sum(((x - observed_mean) / (observed_std * mcmc_scale)) ** 2)
+
+        current_idx = int(self._rng.integers(0, len(pool)))
+        samples = np.zeros((n_samples, pool.shape[1]))
+        accepted = 0
+        for i in range(n_samples + burn_in):
+            proposal = pool[current_idx] + self._rng.normal(0, step_size * observed_std)
+            log_alpha = log_target(proposal) - log_target(pool[current_idx])
+            if np.log(self._rng.uniform()) < log_alpha:
+                current_idx = proposal_idx = int(np.argmin(np.abs(pool - proposal).sum(axis=1)))
+                accepted += 1
+            if i >= burn_in:
+                samples[i - burn_in] = pool[current_idx]
+
+        parameters['acceptance_rate'] = accepted / (n_samples + burn_in)
+        return samples
 
     def analyze_evolutionary_patterns(self) -> Dict[str, Any]:
         """
@@ -485,15 +591,14 @@ class EvolutionSampler:
             'selection_analysis': {}
         }
 
-        # Compute phylogenetic signal for each trait
-        if self.time_column in self.population_data.columns:
-            for col in self.population_data.columns:
-                if col != self.time_column:
-                    trait_data = self.population_data[col].dropna()
-                    if len(trait_data) >= 3:
-                        # This is a placeholder - would need actual phylogenetic data
-                        signal = 0.0  # Placeholder
-                        results['phylogenetic_signal'][col] = signal
+        # Compute phylogenetic signal for each trait via Moran's I on the
+        # distance matrix (when available); report np.nan as unavailable.
+        for col in self.population_data.columns:
+            if col != self.time_column:
+                trait_data = self.population_data[col].dropna().values
+                if len(trait_data) >= 3:
+                    results['phylogenetic_signal'][col] = (
+                        self.phylogenetic_analyzer.compute_morans_i_signal(trait_data))
 
         # Estimate genetic parameters
         genetic_params = self._estimate_genetic_parameters()

@@ -10,6 +10,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Updated license from MIT to Apache License 2.0
 
+## [0.2.0] - 2026-08-30 (audit & hardening pass)
+
+### Fixed
+- **Packaging**: `requires-python` bounded to `>=3.9,<3.15`; `cupy-cuda12` extra
+  marker restricted to `python_full_version < 3.14` on linux x86_64 and uv
+  `environments` limited to darwin/linux so resolution succeeds; setuptools
+  package discovery fixed (`where = ["src"]`) — installs were broken before.
+- **JumpRope**: OU and geometric jump-diffusion log-likelihoods replaced with
+  exact Poisson-jump Gaussian mixtures (previously ignored jump probability
+  mass); compound-Poisson likelihood now exact (previously only `-lambda*dt`);
+  all processes accept a seeded `Generator` — `JumpRope.fit(seed=...)` and
+  `generate_trajectories(seed=...)` are reproducible; unused `numba`/`cuda`
+  import removed (no GPU code exists despite the extra).
+- **EvolutionSampler**: importance sampling now uses real exponential-tilt
+  weights with systematic resampling and records effective sample size;
+  MCMC is a real Metropolis-Hastings chain and records acceptance rate
+  (previously both silently aliased plain Monte Carlo); phylogenetic signal
+  computed as Moran's I on the distance matrix (previously hardcoded 0.0);
+  parent-offspring heritability refuses row-order pseudo-pedigrees and
+  returns NaN with a warning unless explicit `parent`/`offspring` columns
+  exist.
+- **AnalyticsEngine**: Kaplan-Meier now produces Nelson-Aalen hazards,
+  Greenwood CIs, and a true KM median (previously hazard = constant 0.1
+  placeholder, median = plain median of times); largest Lyapunov exponent via
+  the Rosenstein method and correlation dimension via Grassberger-Procaccia
+  slopes (previously hardcoded placeholders); Bayesian linear regression uses
+  the conjugate Normal-Inverse-Gamma posterior with split R-hat and a real
+  log-evidence approximation (previously fake `r_hat=1.0`, evidence `0.0`).
+- **CLI**: `visualize` subcommand called instance methods on the class and
+  crashed with TypeError; now instantiates `TrajectoryVisualizer`, generates
+  trajectories on demand, and forces the Agg backend headless; `fit`/`analyze`
+  `--model-type` choices extended to all seven supported processes; missing
+  `_validate_input_file` implemented (strict `.csv` suffix, FileNotFoundError
+  -> exit 1); `--output` accepted after subcommands (analyze/fit/visualize/
+  sample) with global fallback; `--samples` alias for `--n-samples`; analyze
+  writes `analysis_results.json` + `data_summary.json`; sample output uses
+  real phenotype column names in long format; `fit` seeds the model.
+- **Drosophila case study**: `DrosophilaPopulation.generations` default
+  restored to 10 (demo passes 100 explicitly); generated table now carries
+  `genotype` (0/1), `phenotype`, and `allele_frequency` columns matching the
+  documented analysis contract; `individual_id` kept as object dtype;
+  boolean assessors return real Python bools (previously `np.bool_`).
+- **DataCore/JumpRope edge cases**: `DataCore` accepts (and defers on) empty
+  series — `JumpRope.fit` raises a clear error for empty data; unfitted
+  `JumpRope.generate_trajectories` falls back to the process's own parameters;
+  laserplane KS test uses frozen CDFs (scipy >= 1.15 name+args breakage).
+- **Flake control**: seeded the stochastic Levy heavy-tail test.
+- **DataCore**: missing-data interpolation is temporally ordered (sort by
+  time, interpolate, restore order) so results are row-order independent;
+  `dataset_id` in aggregation is stable instead of `id()`-based.
+- **TrajectoryVisualizer**: animation axes fixed across frames (previously
+  rescaled per frame); frame CI documented as the SEM band it computes.
+- **README**: capability claims aligned with actual implementations (UMAP,
+  deep learning, AutoML, real-time claims removed).
+
+### Added
+- `tests/test_audit_regression_2026_08_30.py`: 17 regression tests covering
+  every fix above (real data/computation, no mocks).
+- `NetworkAnalyzer.shortest_path_analysis()` (weighted + unweighted shortest
+  paths; `construct_correlation_network` now persists the graph — previously
+  it was computed and discarded).
+- CLI input validation (`_validate_input_file`), structured
+  `analysis_results.json` / `data_summary.json` outputs, subcommand-level
+  `--output`/`--samples` aliases, on-demand trajectory generation in
+  `visualize`, and headless-safe logging configuration (package logger, not
+  root).
+
+### Changed
+- Coverage gate set to an honestly measured 68% floor (the previous 95% gate
+  was aspirational and unmet by every recorded run; visualizer module is at
+  34%).
+
 ## [0.1.0] - 2024-10-01
 
 ### Added

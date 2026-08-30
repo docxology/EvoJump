@@ -55,6 +55,7 @@ class TimeSeriesData:
         if missing_cols:
             raise ValueError(f"Phenotype columns not found: {missing_cols}")
 
+
     @property
     def time_points(self) -> np.ndarray:
         """Get unique time points."""
@@ -76,16 +77,25 @@ class TimeSeriesData:
         return self.data.loc[mask, self.phenotype_columns]
 
     def interpolate_missing_data(self, method: str = 'linear') -> None:
-        """Interpolate missing data points."""
-        numeric_columns = self.data.select_dtypes(include=[np.number]).columns
+        """Interpolate missing data points.
 
-        # Interpolate only numeric columns
+        Rows are first ordered by the time column so interpolation is temporal
+        rather than row-order dependent; the original row order is restored
+        afterwards. Forward fill only applies to leading/trailing gaps after
+        interpolation (limit_direction='both' would fabricate interior values;
+        it does not).
+        """
+        numeric_columns = self.data.select_dtypes(include=[np.number]).columns
+        original_index = self.data.index
+
+        sorted_data = self.data.sort_values(self.time_column)
         for col in numeric_columns:
             if col != self.time_column:
-                self.data[col] = self.data[col].interpolate(method=method)
+                sorted_data[col] = sorted_data[col].interpolate(method=method)
+        # ffill/bfill only the boundary gaps
+        sorted_data[numeric_columns] = sorted_data[numeric_columns].ffill().bfill()
 
-        # Forward fill remaining missing values
-        self.data[numeric_columns] = self.data[numeric_columns].ffill()
+        self.data = sorted_data.loc[original_index]
 
         logger.info(f"Interpolated missing data using {method} method")
 
@@ -97,7 +107,7 @@ class MetadataManager:
         """Initialize metadata manager."""
         self.metadata: Dict[str, Any] = {
             'created_at': datetime.now().isoformat(),
-            'version': '0.1.0',
+            'version': '0.2.0',
             'source': None,
             'experimental_conditions': {},
             'genotype_info': {},
@@ -467,7 +477,12 @@ class DataCore:
                         group.create_dataset(col, data=ts.data[col].values)
         elif format == 'parquet':
             combined_data = pd.concat([ts.data for ts in self.time_series_data], ignore_index=True)
-            combined_data.to_parquet(output_path, index=False)
+            try:
+                combined_data.to_parquet(output_path, index=False)
+            except ImportError as exc:
+                raise ValueError(
+                    "Parquet output requires pyarrow or fastparquet "
+                    f"(install one of them): {exc}") from exc
         else:
             raise ValueError(f"Unsupported format: {format}")
 
@@ -486,9 +501,9 @@ class DataCore:
         if aggregation_method == 'mean':
             # Simple averaging across datasets at each time point
             all_data = []
-            for ts in self.time_series_data:
+            for ds_idx, ts in enumerate(self.time_series_data):
                 ts_copy = ts.data.copy()
-                ts_copy['dataset_id'] = id(ts)  # Simple identifier
+                ts_copy['dataset_id'] = ds_idx  # stable, deterministic identifier
                 all_data.append(ts_copy)
 
             combined = pd.concat(all_data, ignore_index=True)

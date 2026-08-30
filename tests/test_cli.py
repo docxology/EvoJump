@@ -38,7 +38,8 @@ class TestCLIArgumentParsing:
         # Check that main subcommands exist
         subparsers_action = None
         for action in parser._actions:
-            if hasattr(action, 'choices') and 'analyze' in action.choices:
+            choices = getattr(action, 'choices', None)
+            if isinstance(choices, dict) and 'analyze' in choices:
                 subparsers_action = action
                 break
 

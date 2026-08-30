@@ -63,7 +63,7 @@ class DrosophilaPopulation:
     """
 
     population_size: int = 100
-    generations: int = 100  # Extended to 100 generations for long-term evolutionary dynamics
+    generations: int = 10  # Default; the demo run passes 100 explicitly for long-term dynamics
     mutation_rate: float = 0.01
     selection_coefficient: float = 0.15  # 15% selection advantage for red-eyed allele
     recombination_rate: float = 0.1
@@ -139,16 +139,20 @@ class DrosophilaDataGenerator:
                 data_rows.append({
                     'generation': generation,
                     'individual_id': f'gen_{generation:03d}_ind_{individual_id:03d}',
+                    'genotype': eye_color_genotype,
                     'eye_color': 'red' if eye_color_genotype == 1 else 'white',
                     'eye_color_genotype': eye_color_genotype,
+                    'phenotype': eye_size,
                     'eye_size': eye_size,
                     'fitness': fitness,
                     'population_size': self.config.population_size,
                     'red_eyed_count': red_eyed_count,
-                    'red_allele_frequency': red_eyed_count / self.config.population_size
+                    'red_allele_frequency': red_eyed_count / self.config.population_size,
+                    'allele_frequency': red_eyed_count / self.config.population_size
                 })
 
         df = pd.DataFrame(data_rows)
+        df['individual_id'] = df['individual_id'].astype(object)
         logger.info(f"Generated {len(df)} population measurements over {self.config.generations} generations")
         return df
 
@@ -516,7 +520,7 @@ class DrosophilaAnalyzer:
         initial_freq = self.population_data['red_allele_frequency'].iloc[0] if len(self.population_data) > 0 else 0
         final_freq = self.population_data['red_allele_frequency'].iloc[-1] if len(self.population_data) > 0 else 0
 
-        return (final_freq - initial_freq) > 0.5
+        return bool((final_freq - initial_freq) > 0.5)
 
     def _assess_hitchhiking(self) -> bool:
         """Assess evidence of genetic hitchhiking."""
@@ -531,7 +535,7 @@ class DrosophilaAnalyzer:
             corr = np.corrcoef(marker_data['generation'], marker_data['marker_frequency'])[0, 1]
             correlations.append(abs(corr))
 
-        return np.mean(correlations) > 0.7  # High correlation indicates hitchhiking
+        return bool(np.mean(correlations) > 0.7)  # High correlation indicates hitchhiking
 
     def _estimate_evolutionary_rate(self) -> float:
         """Estimate rate of evolutionary change in eye size."""

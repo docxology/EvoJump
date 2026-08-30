@@ -117,7 +117,8 @@ class TestLevyProcess:
     def test_levy_initialization(self):
         """Test Levy process initialization."""
         params = jumprope.ModelParameters(drift=0.0, diffusion=1.0)
-        levy = jumprope.LevyProcess(params, levy_alpha=1.5, levy_beta=0.0)
+        levy = jumprope.LevyProcess(params, levy_alpha=1.5, levy_beta=0.0,
+                                     rng=np.random.default_rng(20260830))
         
         assert levy.process_name == "Levy Process"
         assert levy.levy_alpha == 1.5
@@ -137,7 +138,8 @@ class TestLevyProcess:
     def test_levy_heavy_tails(self):
         """Test that Levy process produces heavy-tailed distributions."""
         params = jumprope.ModelParameters(drift=0.0, diffusion=1.0)
-        levy = jumprope.LevyProcess(params, levy_alpha=1.5, levy_beta=0.0)
+        levy = jumprope.LevyProcess(params, levy_alpha=1.5, levy_beta=0.0,
+                                     rng=np.random.default_rng(20260830))
         
         t = np.linspace(0, 10, 100)
         paths = levy.simulate(x0=0.0, t=t, n_paths=1000)

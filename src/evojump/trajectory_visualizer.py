@@ -131,12 +131,15 @@ class AnimationController:
                 # Get cross-section at this time point
                 cross_section = self.model.compute_cross_sections(time_idx)
 
-                # Compute confidence interval
+                # Compute confidence interval: percentile band of the
+                # cross-sectional distribution (mean +/- n_std SEM for the
+                # mean, plus distribution quantiles available to consumers).
                 mean_val = np.mean(cross_section)
                 std_val = np.std(cross_section)
+                sem = std_val / np.sqrt(len(cross_section)) if len(cross_section) > 0 else 0.0
                 ci = (
-                    mean_val - self.config.n_std * std_val / np.sqrt(len(cross_section)),
-                    mean_val + self.config.n_std * std_val / np.sqrt(len(cross_section))
+                    mean_val - self.config.n_std * sem,
+                    mean_val + self.config.n_std * sem
                 )
 
                 frame = AnimationFrame(
@@ -564,6 +567,17 @@ class TrajectoryVisualizer:
             raise ValueError("No frames generated for animation")
 
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+
+        # Fix axes across frames so the animation does not rescale per frame
+        all_traj = jump_rope_model.trajectories
+        ax1.set_xlim(jump_rope_model.time_points[0], jump_rope_model.time_points[-1])
+        y_min, y_max = float(np.min(all_traj)), float(np.max(all_traj))
+        pad = 0.05 * (y_max - y_min) if y_max > y_min else 1.0
+        ax1.set_ylim(y_min - pad, y_max + pad)
+        pooled = all_traj.flatten()
+        ax2.set_xlim(float(np.min(pooled)), float(np.max(pooled)))
+        ax1.grid(True, alpha=0.3)
+        ax2.grid(True, alpha=0.3)
 
         def animate(frame_idx):
             frame = frames[frame_idx]

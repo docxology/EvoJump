@@ -548,10 +548,11 @@ class LaserPlaneAnalyzer:
         params = distribution_fit['parameters']
         dist_class = self.fitter.supported_distributions[dist_name]
 
-        # Kolmogorov-Smirnov test
+        # Kolmogorov-Smirnov test (frozen CDF; the name+args form is broken
+        # on scipy >= 1.15 for some distributions)
         try:
-            ks_statistic, ks_p_value = kstest(data, dist_class.name, args=params)
-        except:
+            ks_statistic, ks_p_value = kstest(data, dist_class(*params).cdf)
+        except Exception:
             ks_statistic, ks_p_value = np.nan, np.nan
 
         # BIC calculation

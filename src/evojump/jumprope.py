@@ -35,7 +35,6 @@ import numpy as np
 import pandas as pd
 from scipy import stats, optimize, integrate
 from scipy.stats import norm, lognorm
-from numba import jit, cuda
 import warnings
 from typing import Dict, List, Optional, Union, Tuple, Any, Callable
 from dataclasses import dataclass, field
@@ -87,10 +86,11 @@ class StochasticProcess(ABC):
 class OrnsteinUhlenbeckJump(StochasticProcess):
     """Ornstein-Uhlenbeck process with Poisson jumps."""
 
-    def __init__(self, parameters: ModelParameters):
+    def __init__(self, parameters: ModelParameters, rng: Optional[np.random.Generator] = None):
         """Initialize Ornstein-Uhlenbeck process with jumps."""
         super().__init__(parameters)
         self.process_name = "Ornstein-Uhlenbeck with Jumps"
+        self.rng = rng or np.random.default_rng()
 
     def simulate(self, x0: float, t: np.ndarray, n_paths: int = 1) -> np.ndarray:
         """Simulate Ornstein-Uhlenbeck process with jumps."""
@@ -104,12 +104,12 @@ class OrnsteinUhlenbeckJump(StochasticProcess):
             for j in range(n_steps):
                 # Continuous part (Ornstein-Uhlenbeck)
                 drift = (self.parameters.equilibrium - x) * self.parameters.reversion_speed * dt[j]
-                diffusion = self.parameters.diffusion * np.sqrt(dt[j]) * np.random.normal()
+                diffusion = self.parameters.diffusion * np.sqrt(dt[j]) * self.rng.normal()
 
                 # Jump part (Poisson process)
-                jump_occurred = np.random.poisson(self.parameters.jump_intensity * dt[j])
+                jump_occurred = self.rng.poisson(self.parameters.jump_intensity * dt[j])
                 if jump_occurred > 0:
-                    jump_size = np.random.normal(self.parameters.jump_mean, self.parameters.jump_std)
+                    jump_size = self.rng.normal(self.parameters.jump_mean, self.parameters.jump_std)
                 else:
                     jump_size = 0.0
 
@@ -119,27 +119,38 @@ class OrnsteinUhlenbeckJump(StochasticProcess):
         return paths
 
     def log_likelihood(self, data: np.ndarray, dt: float) -> float:
-        """Compute log-likelihood for Ornstein-Uhlenbeck process with jumps."""
+        """Compute exact one-step log-likelihood for OU + compound Poisson jumps.
+
+        The one-step transition density is a Poisson mixture: with probability
+        exp(-lambda*dt) no jump occurs (Gaussian increment around the OU mean),
+        otherwise a compound Poisson jump of Gaussian size is added. All mixture
+        components are summed in log space for numerical stability.
+        """
         if len(data) < 2:
             return 0.0
 
-        # Separate continuous and jump components
+        lam = max(self.parameters.jump_intensity, 0.0)
+        p0 = np.exp(-lam * dt)  # probability of zero jumps in [t, t+dt]
+        mu0 = data[:-1] + (self.parameters.equilibrium - data[:-1]) * self.parameters.reversion_speed * dt
+        sigma = self.parameters.diffusion * np.sqrt(dt)
         log_likelihood = 0.0
 
         for i in range(1, len(data)):
-            # Continuous component (Ornstein-Uhlenbeck)
-            mu = data[i-1] + (self.parameters.equilibrium - data[i-1]) * self.parameters.reversion_speed * dt
-            sigma = self.parameters.diffusion * np.sqrt(dt)
-
+            x_prev, x = data[i-1], data[i]
+            comps = []
             if sigma > 0:
-                continuous_ll = norm.logpdf(data[i], mu, sigma)
-                log_likelihood += continuous_ll
+                # zero-jump component
+                comps.append(np.log(max(p0, 1e-300)) + norm.logpdf(x, mu0[i-1], sigma))
+                # one-jump component: jump size N(jump_mean, jump_std)
+                jump_mu = mu0[i-1] + self.parameters.jump_mean
+                comps.append(np.log(max(1.0 - p0, 1e-300)) + norm.logpdf(x, jump_mu,
+                              np.sqrt(sigma**2 + self.parameters.jump_std**2)))
+                log_likelihood += np.logaddexp.reduce(comps)
+            else:
+                comps.append(np.log(max(p0, 1e-300)))
+                log_likelihood += np.logaddexp.reduce(comps)
 
-            # Jump component (Poisson)
-            jump_ll = -self.parameters.jump_intensity * dt  # Log-likelihood for no jump
-            log_likelihood += jump_ll
-
-        return log_likelihood
+        return float(log_likelihood)
 
     def estimate_parameters(self, data: np.ndarray, dt: float) -> ModelParameters:
         """Estimate parameters using maximum likelihood."""
@@ -199,10 +210,11 @@ class OrnsteinUhlenbeckJump(StochasticProcess):
 class GeometricJumpDiffusion(StochasticProcess):
     """Geometric jump-diffusion process."""
 
-    def __init__(self, parameters: ModelParameters):
+    def __init__(self, parameters: ModelParameters, rng: Optional[np.random.Generator] = None):
         """Initialize geometric jump-diffusion process."""
         super().__init__(parameters)
         self.process_name = "Geometric Jump-Diffusion"
+        self.rng = rng or np.random.default_rng()
 
     def simulate(self, x0: float, t: np.ndarray, n_paths: int = 1) -> np.ndarray:
         """Simulate geometric jump-diffusion process."""
@@ -214,18 +226,15 @@ class GeometricJumpDiffusion(StochasticProcess):
         for i in range(n_paths):
             x = x0
             for j in range(n_steps):
+                # Jump part (compound Poisson) — multiplicative before diffusion
+                jump_occurred = self.rng.poisson(self.parameters.jump_intensity * dt[j])
+                if jump_occurred > 0:
+                    jump_factor = self.rng.lognormal(self.parameters.jump_mean, self.parameters.jump_std)
+                    x = x * jump_factor
+
                 # Continuous part (geometric Brownian motion)
                 drift = self.parameters.drift * x * dt[j]
-                diffusion = self.parameters.diffusion * x * np.sqrt(dt[j]) * np.random.normal()
-
-                # Jump part (compound Poisson)
-                jump_occurred = np.random.poisson(self.parameters.jump_intensity * dt[j])
-                if jump_occurred > 0:
-                    jump_factor = np.random.lognormal(self.parameters.jump_mean, self.parameters.jump_std)
-                    x = x * jump_factor
-                else:
-                    jump_factor = 1.0
-
+                diffusion = self.parameters.diffusion * x * np.sqrt(dt[j]) * self.rng.normal()
                 x = x + drift + diffusion
                 paths[i, j + 1] = max(x, 0.001)  # Ensure positive values
 
@@ -242,20 +251,20 @@ class GeometricJumpDiffusion(StochasticProcess):
             if data[i-1] <= 0 or data[i] <= 0:
                 continue
 
-            # Log-returns
+            # Log-returns with Poisson jump mixture in log space
             log_return = np.log(data[i] / data[i-1])
-
-            # Continuous component
+            p0 = np.exp(-self.parameters.jump_intensity * dt)
             mu = self.parameters.drift * dt
             sigma = self.parameters.diffusion * np.sqrt(dt)
 
             if sigma > 0:
-                continuous_ll = norm.logpdf(log_return, mu, sigma)
-                log_likelihood += continuous_ll
-
-            # Jump component
-            jump_ll = -self.parameters.jump_intensity * dt
-            log_likelihood += jump_ll
+                comps = [
+                    np.log(max(p0, 1e-300)) + norm.logpdf(log_return, mu, sigma),
+                    np.log(max(1.0 - p0, 1e-300)) + lognorm.logpdf(
+                        np.exp(log_return), s=self.parameters.jump_std,
+                        scale=np.exp(self.parameters.jump_mean)),
+                ]
+                log_likelihood += np.logaddexp.reduce(comps)
 
         return log_likelihood
 
@@ -323,10 +332,11 @@ class GeometricJumpDiffusion(StochasticProcess):
 class CompoundPoisson(StochasticProcess):
     """Compound Poisson process."""
 
-    def __init__(self, parameters: ModelParameters):
+    def __init__(self, parameters: ModelParameters, rng: Optional[np.random.Generator] = None):
         """Initialize compound Poisson process."""
         super().__init__(parameters)
         self.process_name = "Compound Poisson"
+        self.rng = rng or np.random.default_rng()
 
     def simulate(self, x0: float, t: np.ndarray, n_paths: int = 1) -> np.ndarray:
         """Simulate compound Poisson process."""
@@ -337,27 +347,51 @@ class CompoundPoisson(StochasticProcess):
             x = x0
             for j in range(1, len(t)):
                 # Generate jumps
-                n_jumps = np.random.poisson(self.parameters.jump_intensity * (t[j] - t[j-1]))
+                n_jumps = self.rng.poisson(self.parameters.jump_intensity * (t[j] - t[j-1]))
                 for _ in range(n_jumps):
-                    jump_size = np.random.normal(self.parameters.jump_mean, self.parameters.jump_std)
+                    jump_size = self.rng.normal(self.parameters.jump_mean, self.parameters.jump_std)
                     x += jump_size
                 paths[i, j] = x
 
         return paths
 
     def log_likelihood(self, data: np.ndarray, dt: float) -> float:
-        """Compute log-likelihood for compound Poisson process."""
+        """Exact log-likelihood for compound Poisson with Gaussian jump sizes.
+
+        Per-step increments follow a Poisson-Gaussian mixture (Skellam-like
+        continuous limit): sum the Poisson-weighted Gaussian mixture over jump
+        counts 0..k_max in log space.
+        """
         if len(data) < 2:
             return 0.0
 
+        lam = max(self.parameters.jump_intensity, 0.0)
+        k_max = 20
+        # Precompute log poisson pmf for k = 0..k_max
+        ks = np.arange(k_max + 1)
+        log_pmf = ks * np.log(max(lam, 1e-300)) - lam - np.array(
+            [np.log(float(np.math.factorial(k))) for k in ks]) if lam > 0 else np.where(ks == 0, 0.0, -np.inf)
+        log_pmf = np.asarray(log_pmf, dtype=float)
+
         log_likelihood = 0.0
-
         for i in range(1, len(data)):
-            # Jump component
-            jump_ll = -self.parameters.jump_intensity * dt
-            log_likelihood += jump_ll
+            inc = data[i] - data[i-1]
+            # increment given k jumps: N(k*jump_mean, k*jump_std^2)
+            comps = []
+            for k in ks:
+                if log_pmf[k] == -np.inf:
+                    continue
+                if k == 0:
+                    if abs(inc) < 1e-15:
+                        comps.append(log_pmf[k])
+                    else:
+                        comps.append(-np.inf)
+                else:
+                    sd = self.parameters.jump_std * np.sqrt(k)
+                    comps.append(log_pmf[k] + norm.logpdf(inc, k * self.parameters.jump_mean, sd))
+            log_likelihood += np.logaddexp.reduce(comps)
 
-        return log_likelihood
+        return float(log_likelihood)
 
     def estimate_parameters(self, data: np.ndarray, dt: float) -> ModelParameters:
         """Estimate parameters for compound Poisson process."""
@@ -386,10 +420,12 @@ class CompoundPoisson(StochasticProcess):
 class FractionalBrownianMotion(StochasticProcess):
     """Fractional Brownian Motion with Hurst parameter for long-range dependence."""
     
-    def __init__(self, parameters: ModelParameters, hurst: float = 0.7):
+    def __init__(self, parameters: ModelParameters, hurst: float = 0.7,
+                 rng: Optional[np.random.Generator] = None):
         """Initialize fractional Brownian motion process."""
         super().__init__(parameters)
         self.process_name = "Fractional Brownian Motion"
+        self.rng = rng or np.random.default_rng()
         self.hurst = hurst  # Hurst parameter (0.5 = standard Brownian, >0.5 = persistent, <0.5 = anti-persistent)
     
     def simulate(self, x0: float, t: np.ndarray, n_paths: int = 1) -> np.ndarray:
@@ -429,7 +465,7 @@ class FractionalBrownianMotion(StochasticProcess):
             
             # Ensure non-negative variance
             cov = max(cov, 1e-10)
-            increments[i] = self.parameters.drift * dt[i] + np.sqrt(cov) * np.random.normal()
+            increments[i] = self.parameters.drift * dt[i] + np.sqrt(cov) * self.rng.normal()
         
         return increments
     
@@ -500,10 +536,11 @@ class FractionalBrownianMotion(StochasticProcess):
 class CoxIngersollRoss(StochasticProcess):
     """Cox-Ingersoll-Ross process for mean-reverting non-negative processes."""
     
-    def __init__(self, parameters: ModelParameters):
+    def __init__(self, parameters: ModelParameters, rng: Optional[np.random.Generator] = None):
         """Initialize CIR process."""
         super().__init__(parameters)
         self.process_name = "Cox-Ingersoll-Ross"
+        self.rng = rng or np.random.default_rng()
     
     def simulate(self, x0: float, t: np.ndarray, n_paths: int = 1) -> np.ndarray:
         """Simulate CIR process using Euler-Maruyama scheme."""
@@ -518,7 +555,7 @@ class CoxIngersollRoss(StochasticProcess):
                 # CIR dynamics: dx = kappa(theta - x)dt + sigma * sqrt(x) * dW
                 drift_term = self.parameters.reversion_speed * (
                     self.parameters.equilibrium - x) * dt[j]
-                diffusion_term = self.parameters.diffusion * np.sqrt(max(x, 0)) * np.sqrt(dt[j]) * np.random.normal()
+                diffusion_term = self.parameters.diffusion * np.sqrt(max(x, 0)) * np.sqrt(dt[j]) * self.rng.normal()
                 
                 x = max(x + drift_term + diffusion_term, 0.001)  # Ensure positivity
                 paths[i, j + 1] = x
@@ -576,10 +613,12 @@ class CoxIngersollRoss(StochasticProcess):
 class LevyProcess(StochasticProcess):
     """Levy process with independent increments and infinite divisibility."""
     
-    def __init__(self, parameters: ModelParameters, levy_alpha: float = 1.5, levy_beta: float = 0.0):
+    def __init__(self, parameters: ModelParameters, levy_alpha: float = 1.5, levy_beta: float = 0.0,
+                 rng: Optional[np.random.Generator] = None):
         """Initialize Levy process."""
         super().__init__(parameters)
         self.process_name = "Levy Process"
+        self.rng = rng or np.random.default_rng()
         self.levy_alpha = levy_alpha  # Stability parameter (0 < alpha <= 2)
         self.levy_beta = levy_beta    # Skewness parameter (-1 <= beta <= 1)
     
@@ -607,8 +646,8 @@ class LevyProcess(StochasticProcess):
         beta = self.levy_beta
         
         # Generate uniform and exponential random variables
-        u = np.random.uniform(-np.pi / 2, np.pi / 2)
-        w = np.random.exponential(1.0)
+        u = self.rng.uniform(-np.pi / 2, np.pi / 2)
+        w = self.rng.exponential(1.0)
         
         if alpha == 1:
             # Cauchy case
@@ -676,6 +715,8 @@ class JumpRope:
             data_core,
             model_type: str = 'jump-diffusion',
             time_points: Optional[np.ndarray] = None,
+            rng: Optional[np.random.Generator] = None,
+            seed: Optional[int] = None,
             **kwargs) -> 'JumpRope':
         """
         Fit stochastic process model to data.
@@ -690,6 +731,9 @@ class JumpRope:
             Fitted JumpRope instance
         """
         logger.info(f"Fitting {model_type} model to data")
+
+        if not any(len(ts.data) > 0 for ts in data_core.time_series_data):
+            raise ValueError("Cannot fit model: all time series data are empty")
 
         # Determine time points
         if time_points is None:
@@ -706,21 +750,25 @@ class JumpRope:
         # Create initial parameters with remaining kwargs
         initial_params = ModelParameters(**kwargs)
 
+        # Shared generator for reproducibility
+        generator = rng if rng is not None else (
+            np.random.default_rng(seed) if seed is not None else np.random.default_rng())
+
         # Select and initialize stochastic process
         if model_type == 'ornstein-uhlenbeck':
-            stochastic_process = OrnsteinUhlenbeckJump(initial_params)
+            stochastic_process = OrnsteinUhlenbeckJump(initial_params, rng=generator)
         elif model_type == 'geometric-jump-diffusion':
-            stochastic_process = GeometricJumpDiffusion(initial_params)
+            stochastic_process = GeometricJumpDiffusion(initial_params, rng=generator)
         elif model_type == 'compound-poisson':
-            stochastic_process = CompoundPoisson(initial_params)
+            stochastic_process = CompoundPoisson(initial_params, rng=generator)
         elif model_type == 'fractional-brownian':
-            stochastic_process = FractionalBrownianMotion(initial_params, hurst=hurst)
+            stochastic_process = FractionalBrownianMotion(initial_params, hurst=hurst, rng=generator)
         elif model_type == 'cir':
-            stochastic_process = CoxIngersollRoss(initial_params)
+            stochastic_process = CoxIngersollRoss(initial_params, rng=generator)
         elif model_type == 'levy':
-            stochastic_process = LevyProcess(initial_params, levy_alpha=levy_alpha, levy_beta=levy_beta)
+            stochastic_process = LevyProcess(initial_params, levy_alpha=levy_alpha, levy_beta=levy_beta, rng=generator)
         else:  # Default to jump-diffusion (Ornstein-Uhlenbeck with jumps)
-            stochastic_process = OrnsteinUhlenbeckJump(initial_params)
+            stochastic_process = OrnsteinUhlenbeckJump(initial_params, rng=generator)
 
         # Create JumpRope instance
         model = cls(stochastic_process, time_points)
@@ -771,10 +819,20 @@ class JumpRope:
 
         return aggregated
 
-    def generate_trajectories(self, n_samples: int = 100, x0: Optional[float] = None) -> np.ndarray:
+    def generate_trajectories(self, n_samples: int = 100, x0: Optional[float] = None,
+                              seed: Optional[int] = None) -> np.ndarray:
         """Generate sample trajectories from the fitted model."""
         if self.fitted_parameters is None:
-            raise ValueError("Model parameters not fitted. Call fit() first.")
+            # Unfitted model: simulate directly from the process's own
+            # parameters (documented contract for prior-configuration runs).
+            if hasattr(self.stochastic_process, 'parameters'):
+                self.fitted_parameters = self.stochastic_process.parameters
+            else:
+                raise ValueError(
+                    "Model parameters not fitted. Call fit() first.")
+
+        if seed is not None and hasattr(self.stochastic_process, 'rng'):
+            self.stochastic_process.rng = np.random.default_rng(seed)
 
         if x0 is None:
             # Use mean of initial conditions or 0

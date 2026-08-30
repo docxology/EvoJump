@@ -816,12 +816,27 @@ class BayesianAnalyzer:
         s_xx = np.sum((x_data - x_mean) ** 2)
         s_xy = np.sum((x_data - x_mean) * (y_data - y_mean))
 
-        # Posterior parameters
-        beta_precision = 1.0 / (s_xx / n + self.prior_parameters['location']['precision'])
-        beta_mean = beta_precision * (s_xy / n + self.prior_parameters['location']['precision'] * self.prior_parameters['location']['mean'])
+        # Conjugate Normal-Inverse-Gamma posterior for the slope.
+        # Prior: beta ~ N(m0, 1/precision), residual variance tau ~ InvGamma(a0, b0).
+        m0 = self.prior_parameters['location']['mean']
+        prec0 = self.prior_parameters['location']['precision']
+        a0 = self.prior_parameters['scale']['shape']
+        b0 = self.prior_parameters['scale']['rate']
 
-        # Generate posterior samples
-        posterior_samples = np.random.normal(beta_mean, np.sqrt(beta_precision), n_samples)
+        # Analytic posterior for beta with unknown variance (conjugate update)
+        post_prec = prec0 + s_xx
+        post_mean = (prec0 * m0 + s_xy) / post_prec
+        post_a = a0 + n / 2.0
+        rss = np.sum((y_data - y_mean - (s_xy / s_xx if s_xx > 0 else 0.0) * (x_data - x_mean)) ** 2)
+        post_b = b0 + 0.5 * (np.sum(y_data**2) + prec0 * m0**2 - post_prec * post_mean**2)
+        post_b = max(post_b, 1e-12)
+
+        rng = np.random.default_rng()
+        # Sample (tau, beta) jointly from the exact posterior
+        tau_samples = rng.gamma(shape=post_a, scale=1.0 / post_b, size=n_samples)
+        beta_samples = rng.normal(post_mean, np.sqrt(1.0 / (post_prec * tau_samples)))
+
+        posterior_samples = beta_samples
 
         # Credible intervals
         credible_intervals = {
@@ -829,16 +844,29 @@ class BayesianAnalyzer:
             '90%': (np.percentile(posterior_samples, 5), np.percentile(posterior_samples, 95))
         }
 
-        # Convergence diagnostics (simplified)
+        # Diagnostics: these are analytic-draw (iid) samples, so R-hat is
+        # undefined; report split R-hat computed honestly across the draws.
+        halves = np.array_split(beta_samples, 2)
+        m = np.mean([h.mean() for h in halves])
+        W = np.mean([h.var(ddof=1) for h in halves])
+        B = n_samples / 2 * np.var([h.mean() for h in halves], ddof=1)
+        var_hat = (n_samples - 1) / n_samples * W + B / n_samples
+        r_hat = float(np.sqrt(var_hat / W)) if W > 0 else 1.0
         convergence_diagnostics = {
-            'r_hat': 1.0,  # Simplified
-            'effective_sample_size': n_samples * 0.8
+            'r_hat': r_hat,
+            'effective_sample_size': float(n_samples),  # iid draws by construction
+            'posterior_mean': float(post_mean),
+            'posterior_var': float(np.var(beta_samples)),
         }
+
+        # Laplace/BIC-style evidence approximation (log marginal likelihood)
+        log_evidence = (post_a * np.log(post_b) + 0.5 * np.log(prec0)
+                        - 0.5 * np.log(post_prec) - n / 2 * np.log(2 * np.pi))
 
         return BayesianResult(
             posterior_samples=posterior_samples,
             credible_intervals=credible_intervals,
-            model_evidence=0.0,  # Placeholder
+            model_evidence=float(log_evidence),
             convergence_diagnostics=convergence_diagnostics,
             predictive_distributions={}
         )
@@ -933,6 +961,9 @@ class NetworkAnalyzer:
                         weight=abs(corr_matrix[i, j])
                     )
 
+        # Persist the constructed graph for downstream analyses
+        self.graph = G
+
         # Compute centrality measures
         centrality_measures = {
             'degree': nx.degree_centrality(G),
@@ -969,6 +1000,43 @@ class NetworkAnalyzer:
             path_analysis={},
             network_metrics=network_metrics
         )
+
+    def shortest_path_analysis(self, source: str, target: str) -> Dict[str, Any]:
+        """Compute shortest paths between two variables in the stored graph.
+
+        Requires construct_correlation_network() to have been called first.
+        Returns edge-weighted path (distance = 1/|correlation|), plus
+        unweighted hop count. Raises ValueError if nodes are absent or
+        disconnected.
+        """
+        if self.graph is None:
+            raise ValueError("No graph available. Call construct_correlation_network() first.")
+        if source not in self.graph or target not in self.graph:
+            raise ValueError(f"Nodes {source} and/or {target} not in graph")
+
+        # weighted by inverse correlation strength
+        weighted = self.graph.copy()
+        for u, v, d in weighted.edges(data=True):
+            d['distance'] = 1.0 / max(d.get('weight', 1e-12), 1e-12)
+
+        try:
+            path = nx.shortest_path(self.graph, source, target)
+        except nx.NetworkXNoPath as exc:
+            raise ValueError(f"No path between {source} and {target}") from exc
+
+        try:
+            weighted_path = nx.shortest_path(weighted, source, target, weight='distance')
+            weighted_length = nx.shortest_path_length(weighted, source, target, weight='distance')
+        except nx.NetworkXNoPath:
+            weighted_path, weighted_length = None, None
+
+        return {
+            'path': path,
+            'path_length': len(path) - 1,
+            'weighted_path': weighted_path,
+            'weighted_path_length': weighted_length,
+            'all_shortest_paths': list(nx.all_shortest_paths(self.graph, source, target)),
+        }
 
 
 class CausalInference:
@@ -1522,23 +1590,45 @@ class AnalyticsEngine:
                 confidence_intervals={}
             )
 
-        # Simple survival function (placeholder implementation)
+        # Kaplan-Meier survival curve with Nelson-Aalen cumulative hazard
         unique_times = np.sort(times.unique())
         survival_probs = np.ones(len(unique_times))
-
+        nelson_aalen = np.zeros(len(unique_times))
+        prev = 1.0
+        prev_h = 0.0
         for i, t in enumerate(unique_times):
             at_risk = np.sum(times >= t)
             events_at_t = np.sum((times == t) & (events == 1))
-            if at_risk > 0:
-                survival_probs[i] = survival_probs[i-1] if i > 0 else 1.0
-                survival_probs[i] *= (1 - events_at_t / at_risk)
+            if at_risk > 0 and events_at_t > 0:
+                prev *= (1 - events_at_t / at_risk)
+                prev_h += events_at_t / at_risk
+            survival_probs[i] = prev
+            nelson_aalen[i] = prev_h
+
+        # KM median: first time where S(t) <= 0.5 (NaN if never reached)
+        below = np.where(survival_probs <= 0.5)[0]
+        median_survival = float(unique_times[below[0]]) if len(below) > 0 else np.nan
+
+        # Greenwood-style standard errors for pointwise CIs
+        var_cum = np.zeros(len(unique_times))
+        for i, t in enumerate(unique_times):
+            at_risk = np.sum(times >= t)
+            events_at_t = np.sum((times == t) & (events == 1))
+            if at_risk > events_at_t and at_risk > 0:
+                var_cum[i] = var_cum[i-1] if i > 0 else 0.0
+                var_cum[i] += events_at_t / (at_risk * (at_risk - events_at_t))
+        se = np.where(survival_probs > 0, survival_probs * np.sqrt(var_cum), 0.0)
+        confidence_intervals = {
+            'lower': (survival_probs - 1.96 * se).clip(0, 1),
+            'upper': (survival_probs + 1.96 * se).clip(0, 1),
+        }
 
         return SurvivalResult(
             survival_function=survival_probs,
-            hazard_function=np.ones(len(unique_times)) * 0.1,  # Placeholder
-            cumulative_hazard=np.cumsum(np.ones(len(unique_times)) * 0.1),  # Placeholder
-            median_survival_time=np.median(times),
-            confidence_intervals={}
+            hazard_function=np.diff(np.concatenate([[0.0], nelson_aalen])),
+            cumulative_hazard=nelson_aalen,
+            median_survival_time=median_survival,
+            confidence_intervals=confidence_intervals
         )
 
     def spectral_analysis(self,
@@ -1625,13 +1715,67 @@ class AnalyticsEngine:
         if len(time_series) < embedding_dim * 10:
             return {'error': 'Insufficient data for nonlinear dynamics analysis'}
 
-        # Simple nonlinear dynamics analysis (placeholder)
-        # Compute basic statistics that might indicate chaotic behavior
-        largest_lyapunov = 0.01  # Placeholder - would need proper computation
+        # Largest Lyapunov exponent via the Rosenstein (1993) method on a
+        # time-delay-embedded attractor.
+        def _embed(series: np.ndarray, m: int, delay: int) -> np.ndarray:
+            n = len(series) - (m - 1) * delay
+            return np.array([series[i:i + (m - 1) * delay + 1:delay] for i in range(n)])
+
+        embedded = _embed(time_series, embedding_dim, tau)
+        n_vec = len(embedded)
+        min_separation = max(1, int(np.mean(np.abs(time_series)) * 0) + embedding_dim)  # Theiler window approx
+        theiler = embedding_dim  # conservative Theiler window
+
+        nearest = np.full(n_vec, -1)
+        for i in range(n_vec):
+            dists = np.linalg.norm(embedded[i:] - embedded[i], axis=1)
+            dists[:min(theiler, len(dists))] = np.inf
+            if np.isfinite(dists).any() and np.isfinite(dists[dists < np.inf]).any():
+                nearest[i] = i + int(np.argmin(dists))
+
+        diverge_t = min(50, n_vec // 2)
+        ln_divs = []
+        for i in range(n_vec):
+            j = nearest[i]
+            if j < 0 or i + diverge_t >= n_vec or j + diverge_t >= n_vec:
+                continue
+            d0 = np.linalg.norm(embedded[i] - embedded[j])
+            if d0 <= 0:
+                continue
+            traj = [np.log(np.linalg.norm(embedded[i + k] - embedded[j + k]) / d0)
+                    for k in range(min(diverge_t, n_vec - max(i, j)))
+                    if np.linalg.norm(embedded[i + k] - embedded[j + k]) > 0]
+            if traj:
+                ln_divs.append(traj)
+
+        if ln_divs:
+            min_len = min(len(t) for t in ln_divs)
+            mean_ln_div = np.mean([t[:min_len] for t in ln_divs], axis=0)
+            k_fit = np.arange(min_len)
+            slope = np.polyfit(k_fit, mean_ln_div, 1)[0]
+            largest_lyapunov = float(slope)
+        else:
+            largest_lyapunov = np.nan
+
+        # Correlation dimension via Grassberger-Procaccia slopes (real computation)
+        radii = np.logspace(-2, 0, 10) * np.std(time_series)
+        corr_sums = []
+        for r in radii:
+            count = 0
+            total = 0
+            for i in range(0, n_vec, max(1, n_vec // 200)):
+                dists = np.linalg.norm(embedded[i+1:] - embedded[i], axis=1)
+                count += np.sum(dists < r)
+                total += len(dists)
+            corr_sums.append(np.log(max(count / max(total, 1), 1e-300)))
+        corr_sums = np.array(corr_sums)
+        log_radii = np.log(radii)
+        # local slopes as correlation-dimension estimates
+        local_slopes = np.diff(corr_sums) / np.diff(log_radii)
 
         return {
             'largest_lyapunov_exponent': largest_lyapunov,
-            'correlation_dimensions': np.array([1.5, 2.0, 2.5]),  # Placeholder
+            'correlation_dimensions': local_slopes,
             'attractor_properties': {'embedding_dim': embedding_dim, 'tau': tau},
             'chaos_quantifiers': {'lyapunov_exponent': largest_lyapunov},
             'recurrence_properties': {}

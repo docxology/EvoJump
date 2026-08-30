@@ -40,15 +40,15 @@ EvoJump represents a groundbreaking analytical framework that conceptualizes evo
 - **Temporal Animation Systems**: Animated visualization of developmental processes
 - **Advanced Visualizations**: Heatmaps, violin plots, ridge plots, phase portraits
 - **Comparative Visualization Tools**: Multi-condition, multi-genotype trajectory comparison
-- **Real-Time Analysis Interface**: Interactive parameter adjustment with immediate feedback
+- **Interactive Plotting**: Plotly-based exploratory visualizations with hover inspection
 - **Publication-Quality Graphics**: High-resolution exports for scientific publications
 
 ### Statistical and Analytical Methods
 - **Time Series Analysis**: Trend analysis, seasonality detection, change point analysis, ARIMA modeling
-- **Multivariate Analysis**: PCA, CCA, cluster analysis, TSNE, UMAP for complex phenotypic datasets
+- **Multivariate Analysis**: PCA, CCA, cluster analysis, TSNE, ICA, Isomap for complex phenotypic datasets
 - **Stochastic Process Modeling**: Jump-diffusion, Lévy processes, Fractional Brownian Motion, Cox-Ingersoll-Ross
 - **Advanced Analytics**: Wavelet analysis, copula methods, extreme value theory, regime switching detection
-- **Machine Learning Integration**: Deep learning, ensemble methods, Gaussian processes, automated ML pipelines
+- **Machine Learning Integration**: Random forests, gradient boosting, SVR, neural networks, Gaussian processes
 - **Bayesian Methods**: Bayesian inference, posterior sampling, credible intervals
 - **Network Analysis**: Graph theory, community detection, centrality measures
 
