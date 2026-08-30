@@ -213,6 +213,11 @@ TrajectoryVisualizer
    .. automethod:: plot_trajectories
    .. automethod:: plot_cross_sections
    .. automethod:: plot_landscapes
+   .. automethod:: plot_heatmap
+   .. automethod:: plot_violin
+   .. automethod:: plot_ridge
+   .. automethod:: plot_phase_portrait
+   .. automethod:: create_animation
    .. automethod:: create_animation
 
 PlotConfig
