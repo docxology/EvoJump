@@ -1,11 +1,7 @@
 # EvoJump: A Comprehensive Framework for Evolutionary Ontogenetic Analysis
 
-[![Python Version](https://img.shields.io/badge/python-3.8+-blue.svg)](https://python.org)
+[![Python Version](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Documentation Status](https://readthedocs.org/projects/evojump/badge/?version=latest)](https://evojump.readthedocs.io/)
-[![Build Status](https://github.com/evojump/evojump/workflows/CI/badge.svg)](https://github.com/evojump/evojump/actions)
-[![Coverage Status](https://coveralls.io/repos/github/evojump/evojump/badge.svg?branch=main)](https://coveralls.io/github/evojump/evojump?branch=main)
-[![PyPI Version](https://img.shields.io/pypi/v/evojump)](https://pypi.org/project/evojump/)
 
 EvoJump represents a groundbreaking analytical framework that conceptualizes evolutionary and developmental biology through a novel "cross-sectional laser" metaphor. This system treats ontogenetic development as a temporal progression where a "jumprope-like" distribution sweeps across a fixed analytical plane (the laser), generating dynamic cross-sectional views of phenotypic distributions throughout an organism's developmental timeline.
 
@@ -55,7 +51,7 @@ EvoJump represents a groundbreaking analytical framework that conceptualizes evo
 ## 📦 Installation
 
 ### Requirements
-- Python 3.8 or higher
+- Python 3.9 or higher (packaging bounds `requires-python` to `>=3.9,<3.15`)
 - NumPy ≥ 1.21.0
 - SciPy ≥ 1.7.0
 - Pandas ≥ 1.3.0
@@ -75,10 +71,16 @@ uv add evojump
 
 ### Development Install
 ```bash
-git clone https://github.com/evojump/evojump.git
-cd evojump
+git clone https://github.com/docxology/EvoJump.git
+cd EvoJump
 uv sync
 ```
+
+> **Note (v0.2.0):** packaging is fixed — `uv sync` now resolves and installs
+> correctly (previously broken package discovery and platform markers; see
+> CHANGELOG). Run the test suite by invoking the venv python directly:
+> `.venv/bin/python -m pytest tests/` (invoking through `uv run` can stall
+> under heavy machine load).
 
 ## 🏁 Quick Start
 
@@ -250,103 +252,94 @@ EvoJump follows test-driven development (TDD) with comprehensive test coverage a
 
 ### Quick Start Testing
 
+`run_all_tests.py` is a thin wrapper that forwards extra arguments to pytest
+verbatim (see its own usage line); the canonical invocation is pytest itself.
+Invoke the venv python directly — `uv run` can stall under heavy load.
+
 ```bash
 # Run all tests quickly (no coverage, fast feedback)
-python run_all_tests.py --quick
+.venv/bin/python -m pytest tests/ -q --no-cov
 
-# Run tests with comprehensive coverage report
-python run_all_tests.py --coverage --verbose
+# Run with coverage (pyproject enforces the coverage floor)
+.venv/bin/python -m pytest tests/
 
-# Run all validation checks (tests + linting + documentation)
-python run_all_tests.py --all
+# Run a specific module
+.venv/bin/python -m pytest tests/test_datacore.py -q
 
-# Run performance benchmarks
-python run_all_tests.py --benchmark --parallel
+# Run in parallel (requires pytest-xdist)
+.venv/bin/python -m pytest tests/ -n auto
 ```
 
 ### Detailed Test Options
 
 ```bash
 # Run tests with coverage and HTML/XML reports
-pytest --cov=evojump --cov-report=html --cov-report=xml
+.venv/bin/python -m pytest tests/ --cov=evojump --cov-report=html --cov-report=xml
 
 # Run specific test modules
-pytest tests/test_datacore.py
-pytest tests/test_jumprope.py
-pytest tests/test_laserplane.py
+.venv/bin/python -m pytest tests/test_datacore.py
+.venv/bin/python -m pytest tests/test_jumprope.py
+.venv/bin/python -m pytest tests/test_laserplane.py
 
 # Run tests in parallel
-pytest -n auto
+.venv/bin/python -m pytest tests/ -n auto
 
-# Run only integration tests
-pytest -k "integration or fit or analyze or compare"
-
-# Run only unit tests
-pytest -k "not integration and not fit and not analyze and not compare"
+# Run only integration-flavoured tests
+.venv/bin/python -m pytest tests/ -k "integration or fit or analyze or compare"
 
 # Run with strict markers and configuration
-pytest --strict-markers --strict-config
+.venv/bin/python -m pytest tests/ --strict-markers --strict-config
 ```
 
 ### Test Coverage
 
-- **173 test methods** across 8 comprehensive test files
-- **95%+ code coverage** requirement enforced
+- **Coverage floor enforced via pyproject** (68% aggregate; see pyproject.toml for the live number)
 - **Real data testing** - no mocks, all tests use biological/synthetic data
 - **Integration testing** - cross-module interaction validation
 - **Performance validation** - large dataset and efficiency testing
 
 ### Test Files Overview
 
-| Test File | Purpose | Test Methods | Coverage |
-|-----------|---------|--------------|----------|
-| `test_datacore.py` | Data management | 24 | DataCore, TimeSeriesData |
-| `test_jumprope.py` | Jump-diffusion modeling | 22 | ModelParameters, stochastic processes |
-| `test_laserplane.py` | Cross-sectional analysis | 25 | Distribution fitting, statistical tests |
-| `test_trajectory_visualizer.py` | Visualization | 19 | Plotting, animation, graphics |
-| `test_analytics_engine.py` | Statistical analysis | 39 | Time series, multivariate, Bayesian |
-| `test_evolution_sampler.py` | Evolutionary analysis | 21 | Population modeling, phylogenetics |
-| `test_advanced_features.py` | Advanced stochastic models | 23 | FBM, CIR, Levy processes |
-| `test_cli.py` | Command-line interface | 20 | Argument parsing, subcommands |
+| Test File | Purpose |
+|-----------|---------|
+| `test_datacore.py` | Data management (DataCore, TimeSeriesData) |
+| `test_jumprope.py` | Jump-diffusion modeling (ModelParameters, stochastic processes) |
+| `test_laserplane.py` | Cross-sectional analysis (distribution fitting, statistical tests) |
+| `test_trajectory_visualizer.py` | Visualization (plotting, animation, graphics) |
+| `test_analytics_engine.py` | Statistical analysis (time series, multivariate, Bayesian) |
+| `test_evolution_sampler.py` | Evolutionary analysis (population modeling, phylogenetics) |
+| `test_advanced_features.py` | Advanced stochastic models (FBM, CIR, Levy processes) |
+| `test_cli.py` | Command-line interface (argument parsing, subcommands) |
+| `test_drosophila_case_study.py` | Drosophila biological case study |
+| `test_audit_regression_2026_08_30.py` | v0.2.0 audit-and-hardening regression pins |
+| `test_methods_lane_changepoints.py` | Change-point detection methods (BOCPD) |
+| `test_methods_lane_laserplane.py` | LaserPlane methods additions |
+| `test_viz_lane_animation.py` | Visualization lane: animation |
+| `test_viz_lane_heatmap.py` | Visualization lane: heatmap |
+| `test_viz_lane_kde.py` | Visualization lane: KDE |
 
 ### Performance Testing
 
 ```bash
-# Run performance benchmarks
-python run_all_tests.py --benchmark
+# Run performance-flavoured tests
+.venv/bin/python -m pytest tests/ -k "benchmark or performance or simulate or fit"
 
-# Run specific performance tests
-pytest -k "benchmark or performance or simulate or fit" --benchmark-only
-
-# Profile test execution time
-python run_all_tests.py --coverage --profile
-
-# Monitor memory usage during tests
-python run_all_tests.py --coverage --memory
+# Time a specific module
+.venv/bin/python -m pytest tests/test_analytics_engine.py -q --durations=10
 ```
 
 ### Code Quality Testing
 
 ```bash
-# Run all code quality checks
-python run_all_tests.py --lint
-
-# Check code formatting (Black)
+# Formatting / style / types (install dev extras first: uv sync --group dev)
 black --check --diff src/ tests/
-
-# Check style guide compliance (Flake8)
 flake8 src/ tests/
-
-# Check type annotations (MyPy)
 mypy src/ tests/
 ```
 
 ### Documentation Testing
 
 ```bash
-# Check documentation completeness
-python run_all_tests.py --docs
-
 # Build Sphinx documentation
 python -m sphinx -b html docs/ docs/_build/html
 
@@ -431,14 +424,14 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 ### Development Setup
 ```bash
-git clone https://github.com/evojump/evojump.git
+git clone https://github.com/docxology/EvoJump.git
 cd evojump
 uv sync --group dev
 ```
 
 ### Key Development Principles
 - Follow test-driven development (TDD)
-- Maintain high test coverage (>95%)
+- Maintain high test coverage (see the pyproject coverage floor)
 - Use real methods and data in tests (no mocks)
 - Write comprehensive documentation
 - Follow scientific computing best practices
@@ -479,16 +472,16 @@ If you use EvoJump in your research, please cite:
   title={EvoJump: A Comprehensive Framework for Evolutionary Ontogenetic Analysis},
   author={EvoJump Development Team},
   year={2024},
-  url={https://github.com/evojump/evojump}
+  url={https://github.com/docxology/EvoJump}
 }
 ```
 
 ## 🔗 Links
 
-- **Homepage**: https://github.com/evojump/evojump
+- **Homepage**: https://github.com/docxology/EvoJump
 - **Documentation**: https://evojump.readthedocs.io/
-- **Issues**: https://github.com/evojump/evojump/issues
-- **Discussions**: https://github.com/evojump/evojump/discussions
+- **Issues**: https://github.com/docxology/EvoJump/issues
+- **Discussions**: https://github.com/docxology/EvoJump/discussions
 
 ## 🎯 Project Status & Achievements
 
@@ -497,8 +490,8 @@ If you use EvoJump in your research, please cite:
 EvoJump is now a fully functional, production-ready framework with:
 
 - **8 Core Modules** - Complete data management, modeling, analysis, and visualization
-- **173 Test Methods** - Comprehensive test coverage across all components
-- **13 Example Scripts** - Demonstrating all features and use cases
+- **Comprehensive test suite** - 15 test files covering all components
+- **Examples** - see `examples/` for demonstrating features and use cases
 - **Multiple Testing Modes** - Quick, full, benchmark, CI/CD ready
 - **Complete Documentation** - User guides, API reference, scientific context
 - **Advanced Analytics** - Bayesian, network, causal, dimensionality reduction
@@ -516,7 +509,7 @@ EvoJump is now a fully functional, production-ready framework with:
 | **EvolutionSampler** | ✅ Complete | 79% | 21 tests | Population genetics |
 | **Advanced Features** | ✅ Complete | 100% | 23 tests | Stochastic processes |
 | **CLI Interface** | ✅ Complete | 83% | 20 tests | Command-line tools |
-| **Drosophila Case Study** | ✅ Complete | 100% | 8 tests | Biological application |
+| **Drosophila Case Study** | ✅ Complete | — | see `test_drosophila_case_study.py` | Biological application |
 
 ### 🧬 **Scientific Applications**
 
@@ -532,7 +525,7 @@ EvoJump successfully demonstrates applications in:
 ### 🚀 **Key Innovations**
 
 1. **Novel Metaphor** - "Cross-sectional laser" concept for developmental analysis
-2. **Multiple Stochastic Processes** - 6 different models (OU, geometric, FBM, CIR, Levy, compound Poisson)
+2. **Multiple Stochastic Processes** - 7 different models (jump-diffusion [OU with jumps], geometric jump-diffusion, compound Poisson, fractional Brownian motion, CIR, Levy)
 3. **Advanced Analytics** - Bayesian inference, network analysis, causal discovery
 4. **Rich Visualization** - Static plots, animations, interactive graphics
 5. **Scientific Rigor** - Real data testing, TDD principles, comprehensive validation
@@ -542,14 +535,14 @@ EvoJump successfully demonstrates applications in:
 
 - **📖 AGENTS.md** - Complete testing framework documentation
 - **📋 README.md** - Comprehensive user guide and API reference
-- **💡 13 Examples** - From basic usage to advanced case studies
-- **🧪 173 Tests** - Ensuring reliability and correctness
+- **💡 Examples** - From basic usage to advanced case studies (see `examples/`)
+- **🧪 Comprehensive test suite** - Ensuring reliability and correctness
 - **🎨 Multiple Output Formats** - Plots, animations, reports, JSON data
 
 ### 🏆 **Quality Assurance**
 
 - **Test-Driven Development** - All features developed with comprehensive testing
-- **95%+ Coverage Target** - Maintained across all modules
+- **Enforced coverage floor** - Maintained via the pyproject pytest addopts
 - **CI/CD Ready** - Automated testing and validation workflows
 - **Code Quality** - Black formatting, Flake8 style, MyPy type checking
 - **Performance Benchmarks** - Profiling and optimization validation
@@ -581,7 +574,7 @@ EvoJump builds upon decades of research in developmental biology, evolutionary t
   title={EvoJump: A Comprehensive Framework for Evolutionary Ontogenetic Analysis},
   author={EvoJump Development Team},
   year={2024},
-  url={https://github.com/evojump/evojump}
+  url={https://github.com/docxology/EvoJump}
 }
 ```
 
