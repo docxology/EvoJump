@@ -586,12 +586,14 @@ Examples Index
 --------------
 
 **Basic Usage**
-  * :doc:`examples/basic_usage`
   * :doc:`examples/working_demo`
+  * Legacy: ``examples/archive/basic_usage_fixed.py`` (basic_usage example
+    was archived; see ``examples/archive/README.md``)
 
 **Advanced Usage**
   * :doc:`examples/comprehensive_demo`
-  * :doc:`examples/advanced_analytics_demo`
+  * Legacy: ``examples/archive/thin_orchestrator_examples.py`` and
+    ``examples/archive/thin_orchestrator_working.py``
   * :doc:`examples/comprehensive_advanced_analytics_demo`
 
 **Visualization**
@@ -601,11 +603,8 @@ Examples Index
 
 **Orchestration**
   * :doc:`examples/simple_orchestrator`
-  * :doc:`examples/thin_orchestrator_examples`
-  * :doc:`examples/thin_orchestrator_working`
 
 **Command Line**
-  * :doc:`examples/cli_usage`
 
 API Stability
 -------------

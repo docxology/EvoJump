@@ -11,7 +11,7 @@ Basic Usage
 
 The most fundamental example showing core EvoJump functionality:
 
-.. literalinclude:: ../examples/basic_usage.py
+.. literalinclude:: ../examples/archive/basic_usage_fixed.py
    :language: python
    :caption: Basic usage example
 
@@ -110,21 +110,17 @@ Basic orchestration pattern:
    :language: python
    :caption: Simple orchestrator example
 
-Thin Orchestrator Examples
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+Thin Orchestrator Examples (archived)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Advanced orchestration patterns for complex workflows:
+These orchestration examples were archived to ``examples/archive/`` (see
+``examples/archive/README.md``); paths updated to match:
 
-.. literalinclude:: ../examples/thin_orchestrator_examples.py
+.. literalinclude:: ../examples/archive/thin_orchestrator_examples.py
    :language: python
    :caption: Thin orchestrator examples
 
-Thin Orchestrator Working
-~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Production-ready orchestration patterns:
-
-.. literalinclude:: ../examples/thin_orchestrator_working.py
+.. literalinclude:: ../examples/archive/thin_orchestrator_working.py
    :language: python
    :caption: Thin orchestrator working example
 
