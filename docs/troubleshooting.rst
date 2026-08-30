@@ -676,10 +676,37 @@ When reporting bugs or issues:
 
 **Support Channels**
 
-* **GitHub Issues**: https://github.com/evojump/evojump/issues
-* **Discussions**: https://github.com/evojump/evojump/discussions
+* **GitHub Issues**: https://github.com/docxology/EvoJump/issues
+* **Discussions**: https://github.com/docxology/EvoJump/discussions
 * **Documentation**: https://evojump.readthedocs.io/
 * **Email**: support@evojump.org
+
+**Verified v0.2.0 Gotchas (2026-08-30 audit pass)**
+
+**SciPy >= 1.15 two-sample KSTest breakage**
+  * ``scipy.stats.kstest(data1, data2)`` with the two-sample string/callable
+    forms changed argument handling in SciPy 1.15 and can raise or silently
+    misbehave (this repo pins ``scipy>=1.7.0`` so users on new SciPy hit it).
+  * Use frozen distributions instead:
+    ``kstest(data, scipy.stats.norm(loc, scale).cdf)`` — the codebase does
+    exactly this in ``src/evojump/laserplane.py`` (verified against
+    scipy 1.18.1 in the project venv).
+
+**``uv run`` stalls under heavy machine load**
+  * On a busy machine (load average in the double digits from concurrent
+    builds), ``uv run`` can hang before launching the interpreter.
+  * Invoke the venv python directly:
+    ``.venv/bin/python -m pytest tests/ -q --no-cov`` (verified working during
+    the v0.2.0 audit pass; the full suite ran this way in ~38 min under load).
+
+**pandas 3.x dtype changes**
+  * pandas 3.x tightened dtype inference and copy-on-write semantics. Verified
+    in this project's venv (pandas 3.0.5): numeric-column detection in
+    ``DataCore`` uses ``select_dtypes(include=[np.number])``, so a time column
+    read as strings (mixed formats in the CSV) silently drops out of numeric
+    processing. If your time axis behaves oddly after a pandas upgrade, force
+    ``dtype={'time': float}`` (or your column name) via ``read_csv`` kwargs —
+    ``DataCore.load_from_csv`` forwards extra kwargs to ``pandas.read_csv``.
 
 **Known Issues and Limitations**
 
