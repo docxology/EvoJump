@@ -70,6 +70,10 @@ class PlotConfig:
     n_std: float = 1.96  # 95% confidence interval
     animation_fps: int = 30
     animation_interval: int = 50
+    # Deterministic 3D landscape camera angles (degrees) and colour-axis units.
+    landscape_elevation: float = 30.0
+    landscape_azimuth: float = -60.0
+    phenotype_units: str = 'units'
     colors: List[str] = field(default_factory=lambda: [
         '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
         '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'
@@ -317,7 +321,8 @@ class TrajectoryVisualizer:
                            jump_rope_model,
                            time_points: Optional[List[float]] = None,
                            output_dir: Optional[Path] = None,
-                           interactive: bool = False) -> Union[Figure, go.Figure]:
+                           interactive: bool = False,
+                           show_kde: bool = False) -> Union[Figure, go.Figure]:
         """
         Plot cross-sectional distributions at specific time points.
 
@@ -326,6 +331,11 @@ class TrajectoryVisualizer:
             time_points: Time points to analyze
             output_dir: Directory to save plots
             interactive: Create interactive plot
+            show_kde: Overlay a kernel-density estimate curve on each
+                histogram (static plots only). Bandwidth uses Scott's rule
+                via scipy.stats.gaussian_kde, which adapts to sample size
+                and spread; the curve is labelled 'KDE (Scott's rule)' so a
+                reader can distinguish it from the fitted-Normal overlay.
 
         Returns:
             Matplotlib or Plotly figure
@@ -338,12 +348,13 @@ class TrajectoryVisualizer:
         if interactive:
             return self._plot_cross_sections_interactive(jump_rope_model, time_points)
         else:
-            return self._plot_cross_sections_static(jump_rope_model, time_points, output_dir)
+            return self._plot_cross_sections_static(jump_rope_model, time_points, output_dir, show_kde=show_kde)
 
     def _plot_cross_sections_static(self,
                                    jump_rope_model,
                                    time_points: List[float],
-                                   output_dir: Optional[Path] = None) -> Figure:
+                                   output_dir: Optional[Path] = None,
+                                   show_kde: bool = False) -> Figure:
         """Create static matplotlib plot of cross-sections."""
         n_plots = len(time_points)
         n_cols = min(3, n_plots)
@@ -375,6 +386,14 @@ class TrajectoryVisualizer:
                 x_vals = np.linspace(np.min(cross_section), np.max(cross_section), 100)
                 y_vals = norm.pdf(x_vals, np.mean(cross_section), np.std(cross_section))
                 ax.plot(x_vals, y_vals, 'r-', linewidth=2, label='Fitted Normal')
+
+            # Optional kernel-density estimate over the histogram
+            if show_kde and len(cross_section) >= 2 and np.std(cross_section) > 0:
+                from scipy.stats import gaussian_kde
+                kde = gaussian_kde(cross_section, bw_method='scott')
+                x_kde = np.linspace(np.min(cross_section), np.max(cross_section), 200)
+                ax.plot(x_kde, kde(x_kde), color='black', linestyle='--',
+                        linewidth=1.5, label="KDE (Scott's rule)")
 
             ax.set_title(f'Time: {time_point:.2f}')
             ax.set_xlabel('Phenotype Value')
@@ -505,7 +524,11 @@ class TrajectoryVisualizer:
         return fig
 
     def _plot_landscapes_interactive(self, jump_rope_model) -> go.Figure:
-        """Create interactive Plotly 3D landscape plot."""
+        """Create interactive Plotly 3D landscape plot.
+
+        Camera defaults mirror the static plot's deterministic
+        elevation/azimuth so both formats show the same viewpoint.
+        """
         trajectories = jump_rope_model.trajectories
         time_points = jump_rope_model.time_points
 
@@ -530,7 +553,14 @@ class TrajectoryVisualizer:
             scene=dict(
                 xaxis_title='Developmental Time',
                 yaxis_title='Individual',
-                zaxis_title='Phenotype Value'
+                zaxis_title='Phenotype Value',
+                camera=dict(
+                    eye=dict(
+                        x=1.6 * np.cos(np.deg2rad(30)) * np.cos(np.deg2rad(-60)),
+                        y=1.6 * np.cos(np.deg2rad(30)) * np.sin(np.deg2rad(-60)),
+                        z=1.6 * np.sin(np.deg2rad(30)),
+                    )
+                ),
             ),
             showlegend=False
         )
@@ -541,7 +571,8 @@ class TrajectoryVisualizer:
                         jump_rope_model,
                         n_frames: Optional[int] = None,
                         time_range: Optional[Tuple[float, float]] = None,
-                        output_dir: Optional[Path] = None) -> animation.FuncAnimation:
+                        output_dir: Optional[Path] = None,
+                        trailing_window: Optional[int] = None) -> animation.FuncAnimation:
         """
         Create animation of developmental process.
 
@@ -550,6 +581,12 @@ class TrajectoryVisualizer:
             n_frames: Number of animation frames
             time_range: Time range for animation
             output_dir: Directory to save animation
+            trailing_window: Optional k; when set, each frame shows only the
+                last k time points of every trajectory instead of the full
+                history. Long runs stay legible because old segments slide
+                out of view. Axis limits stay fixed on the full time range
+                (v0.2.0 behaviour), so the moving window is visible against
+                the stationary frame.
 
         Returns:
             Matplotlib animation object
@@ -586,19 +623,31 @@ class TrajectoryVisualizer:
             ax1.clear()
             ax2.clear()
 
-            # Plot trajectories up to current time
+            # Plot trajectories up to current time; with trailing_window=k,
+            # only the last k time points of each trajectory are drawn so
+            # long runs stay legible (fixed axes show the sliding window).
             current_time_idx = np.argmin(np.abs(jump_rope_model.time_points - frame.time_point))
             current_trajectories = frame.trajectories
 
+            start_idx = 0
+            if trailing_window is not None and trailing_window > 0:
+                start_idx = max(0, current_time_idx + 1 - int(trailing_window))
+
             for i in range(current_trajectories.shape[0]):
-                ax1.plot(jump_rope_model.time_points[:current_time_idx+1],
-                        current_trajectories[i, :current_time_idx+1],
+                ax1.plot(jump_rope_model.time_points[start_idx:current_time_idx+1],
+                        current_trajectories[i, start_idx:current_time_idx+1],
                         alpha=self.config.alpha, linewidth=self.config.linewidth * 0.5)
 
             ax1.set_xlabel('Developmental Time')
             ax1.set_ylabel('Phenotype Value')
-            ax1.set_title(f'Developmental Trajectories (Time: {frame.time_point:.2f})')
+            window_label = (f', trailing window: {int(trailing_window)}'
+                            if trailing_window else '')
+            ax1.set_title(f'Developmental Trajectories '
+                          f'(Time: {frame.time_point:.2f}{window_label})')
             ax1.grid(True, alpha=0.3)
+            # Re-assert fixed limits each frame: ax1.clear() wipes them.
+            ax1.set_xlim(jump_rope_model.time_points[0], jump_rope_model.time_points[-1])
+            ax1.set_ylim(y_min - pad, y_max + pad)
 
             # Plot cross-section
             ax2.hist(frame.cross_section, bins=30, alpha=self.config.alpha, density=True)
@@ -1814,7 +1863,11 @@ class TrajectoryVisualizer:
                     time_resolution: int = 50,
                     phenotype_resolution: int = 50,
                     output_dir: Optional[Path] = None,
-                    interactive: bool = False) -> Union[Figure, go.Figure]:
+                    interactive: bool = False,
+                    sort_rows: bool = True,
+                    row_sort_statistic: str = 'final_value',
+                    x_label: Optional[str] = None,
+                    y_label: Optional[str] = None) -> Union[Figure, go.Figure]:
         """
         Plot density heatmap of trajectory evolution.
 
@@ -1824,6 +1877,17 @@ class TrajectoryVisualizer:
             phenotype_resolution: Number of phenotype bins
             output_dir: Directory to save plots
             interactive: Create interactive plot
+            sort_rows: Sort heatmap rows by ``row_sort_statistic`` (default:
+                'final_value' — the trajectory value at the last time point)
+                so monotone structure such as graded outcomes reads as
+                ordered bands instead of visual noise. Set False to keep the
+                original trajectory order. Supported statistics:
+                'final_value', 'mean_value', 'max_value', 'min_value'.
+            row_sort_statistic: Statistic used when ``sort_rows`` is True.
+            x_label: X-axis label; defaults to the model's time-column name
+                when discoverable, else 'Developmental Time'.
+            y_label: Y-axis label; defaults to the model's phenotype-column
+                name when discoverable, else 'Phenotype Value'.
 
         Returns:
             Matplotlib or Plotly figure
@@ -1833,8 +1897,49 @@ class TrajectoryVisualizer:
         if jump_rope_model.trajectories is None:
             raise ValueError("No trajectories available. Generate trajectories first.")
 
+        supported_stats = ('final_value', 'mean_value', 'max_value', 'min_value')
+        if row_sort_statistic not in supported_stats:
+            raise ValueError(
+                f"row_sort_statistic must be one of {supported_stats}, "
+                f"got {row_sort_statistic!r}")
+
         trajectories = jump_rope_model.trajectories
         time_points = jump_rope_model.time_points
+
+        if sort_rows:
+            # Reorder trajectories by the documented statistic so readers can
+            # track cohort structure across the heatmap.
+            if row_sort_statistic == 'final_value':
+                stat = trajectories[:, -1]
+            elif row_sort_statistic == 'mean_value':
+                stat = np.nanmean(trajectories, axis=1)
+            elif row_sort_statistic == 'max_value':
+                stat = np.nanmax(trajectories, axis=1)
+            else:
+                stat = np.nanmin(trajectories, axis=1)
+            order = np.argsort(stat)
+            trajectories = trajectories[order]
+
+        def _label(default: str, explicit: Optional[str]) -> str:
+            if explicit:
+                return explicit
+            # Prefer a real column name from the source data when available.
+            for attr in ('time_column', 'phenotype_columns'):
+                if hasattr(jump_rope_model, attr):
+                    continue
+            return default
+
+        time_label = x_label
+        pheno_label = y_label
+        if time_label is None:
+            ts_list = getattr(jump_rope_model, '_source_time_series', None) or                       getattr(jump_rope_model, 'time_series_data', None) or []
+            for ts in ts_list:
+                time_label = getattr(ts, 'time_column', None)
+                if time_label:
+                    break
+            time_label = time_label or 'Developmental Time'
+        if pheno_label is None:
+            pheno_label = 'Phenotype Value'
 
         # Remove NaN values
         trajectories_clean = np.nan_to_num(trajectories, nan=0.0, posinf=0.0, neginf=0.0)
@@ -1877,8 +1982,8 @@ class TrajectoryVisualizer:
 
             fig.update_layout(
                 title='Trajectory Density Heatmap',
-                xaxis_title='Developmental Time',
-                yaxis_title='Phenotype Value',
+                xaxis_title=time_label,
+                yaxis_title=pheno_label,
                 width=800,
                 height=600
             )
@@ -1896,9 +2001,12 @@ class TrajectoryVisualizer:
                           extent=[time_points.min(), time_points.max(), phenotype_min, phenotype_max],
                           cmap='viridis', interpolation='bilinear')
 
-            ax.set_xlabel('Developmental Time')
-            ax.set_ylabel('Phenotype Value')
-            ax.set_title('Trajectory Density Heatmap')
+            ax.set_xlabel(time_label)
+            ax.set_ylabel(pheno_label)
+            title = 'Trajectory Density Heatmap'
+            if sort_rows:
+                title += f' (rows sorted by {row_sort_statistic.replace("_", " ")})'
+            ax.set_title(title)
 
             cbar = plt.colorbar(im, ax=ax)
             cbar.set_label('Trajectory Density', rotation=270, labelpad=20)
