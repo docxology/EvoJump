@@ -150,6 +150,30 @@ CompoundPoisson
    :undoc-members:
    :show-inheritance:
 
+FractionalBrownianMotion
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: evojump.jumprope.FractionalBrownianMotion
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+CoxIngersollRoss
+~~~~~~~~~~~~~~~~
+
+.. autoclass:: evojump.jumprope.CoxIngersollRoss
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+LevyProcess
+~~~~~~~~~~~
+
+.. autoclass:: evojump.jumprope.LevyProcess
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 LaserPlaneAnalyzer
 ~~~~~~~~~~~~~~~~~~
 
@@ -232,8 +256,13 @@ AnalyticsEngine
    .. automethod:: predictive_modeling
    .. automethod:: bayesian_analysis
    .. automethod:: network_analysis
+   .. automethod:: shortest_path_analysis
    .. automethod:: causal_inference
    .. automethod:: advanced_dimensionality_reduction
+   .. automethod:: wavelet_analysis
+   .. automethod:: copula_analysis
+   .. automethod:: extreme_value_analysis
+   .. automethod:: regime_switching_analysis
    .. automethod:: spectral_analysis
    .. automethod:: nonlinear_dynamics_analysis
    .. automethod:: information_theory_analysis
@@ -522,7 +551,7 @@ Version Compatibility
 ---------------------
 
 **Python Versions**
-  * Fully compatible: Python 3.8, 3.9, 3.10, 3.11, 3.12, 3.13
+  * Requires Python 3.9+ (``requires-python >=3.9,<3.15``; primary testing on 3.12)
   * Limited support: Python 3.7 (some features may not work)
 
 **Dependency Versions**

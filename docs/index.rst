@@ -81,8 +81,8 @@ For development:
 
 .. code-block:: bash
 
-   git clone https://github.com/evojump/evojump.git
-   cd evojump
+   git clone https://github.com/docxology/EvoJump.git
+   cd EvoJump
    pip install -e .
 
 Documentation Contents

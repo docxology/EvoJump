@@ -7,7 +7,7 @@ Getting Started
 ---------------
 
 **Prerequisites**
-  * Python 3.8+ development environment
+  * Python 3.9+ development environment
   * Git version control system
   * Familiarity with scientific Python ecosystem
   * Understanding of evolutionary biology concepts (helpful but not required)

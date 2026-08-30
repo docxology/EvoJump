@@ -145,7 +145,7 @@ Core Technologies
 ~~~~~~~~~~~~~~~~~
 
 **Programming Language**
-  * Python 3.8+ (primary implementation)
+  * Python 3.9+ (primary implementation; ``requires-python >=3.9,<3.15``)
   * Type hints throughout the codebase
   * Async/await support for I/O operations
 

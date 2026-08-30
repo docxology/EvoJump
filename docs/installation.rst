@@ -7,8 +7,8 @@ Requirements
 ------------
 
 **Python Version**
-  * Python 3.8 or higher required
-  * Tested on Python 3.8, 3.9, 3.10, 3.11, 3.12, 3.13
+  * Python 3.9 or higher required (packaging bounds ``requires-python`` to ``>=3.9,<3.15``)
+  * Tested primarily on Python 3.12 (project venv)
 
 **System Requirements**
   * Operating System: Linux, macOS, Windows
@@ -73,8 +73,8 @@ For contributors and advanced users:
 .. code-block:: bash
 
    # Clone the repository
-   git clone https://github.com/evojump/evojump.git
-   cd evojump
+   git clone https://github.com/docxology/EvoJump.git
+   cd EvoJump
 
    # Sync dependencies and install in development mode
    uv sync
@@ -235,9 +235,9 @@ Getting Help
 
 **Documentation**: https://evojump.readthedocs.io/
 
-**GitHub Issues**: https://github.com/evojump/evojump/issues
+**GitHub Issues**: https://github.com/docxology/EvoJump/issues
 
-**Discussions**: https://github.com/evojump/evojump/discussions
+**Discussions**: https://github.com/docxology/EvoJump/discussions
 
 **Email Support**: support@evojump.org
 
