@@ -13,6 +13,26 @@ import numpy as np
 from typing import Optional, List
 from pathlib import Path
 
+try:
+    from importlib.metadata import version as _package_version
+except ImportError:  # pragma: no cover - Python < 3.8 fallback
+    _package_version = None
+
+
+def get_version() -> str:
+    """Return the installed package version, falling back to a default."""
+    if _package_version is not None:
+        try:
+            return _package_version("evojump")
+        except Exception:
+            pass
+    try:
+        from . import __version__ as _v
+        return str(_v)
+    except Exception:
+        return "unknown"
+
+
 from . import datacore
 from . import jumprope
 from . import laserplane
@@ -73,6 +93,12 @@ Examples:
     )
 
     # Global options
+    parser.add_argument(
+        '--version',
+        action='version',
+        version=f'%(prog)s {get_version()}',
+        help='Show the EvoJump package version and exit'
+    )
     parser.add_argument(
         '--verbose', '-v',
         action='count',
@@ -452,9 +478,19 @@ def sample_command(args: argparse.Namespace) -> int:
 
 
 def main(args: Optional[List[str]] = None) -> int:
-    """Main CLI entry point."""
+    """Main CLI entry point.
+
+    Exit codes: 0 = success, 1 = runtime failure, 2 = usage error.
+    """
     parser = create_parser()
-    parsed_args = parser.parse_args(args)
+    try:
+        parsed_args = parser.parse_args(args)
+    except SystemExit as exc:
+        # argparse raises SystemExit(2) on usage errors (bad args, --help is 0).
+        code = exc.code
+        if isinstance(code, int) and code != 0:
+            raise SystemExit(2) from None
+        raise
     global_output = parsed_args.output
 
     # Set up logging
@@ -475,8 +511,9 @@ def main(args: Optional[List[str]] = None) -> int:
     elif parsed_args.command == 'sample':
         return sample_command(parsed_args)
     else:
-        parser.print_help()
-        return 1
+        # No subcommand supplied: usage error (exit code 2).
+        parser.print_help(sys.stderr)
+        return 2
 
 
 if __name__ == '__main__':
