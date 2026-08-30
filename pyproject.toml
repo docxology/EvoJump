@@ -112,6 +112,12 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 
+# Packaging note: the pytest suite enforces a 68% coverage floor via
+# --cov-fail-under=68 in [tool.pytest.ini_options] below (measured over
+# src/evojump; see [tool.coverage.run]). The [tool.uv] environments block pins
+# uv-managed installs to macOS (darwin); other platforms should pip-install
+# from pyproject directly. The console entry point evojump-cli resolves to
+# evojump.cli:main (exit codes: 0 success, 1 runtime failure, 2 usage error).
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
