@@ -61,9 +61,9 @@ System Components
 
 **JumpRope Engine**
   * Jump-diffusion stochastic process modeling
-  * Multiple model types (Ornstein-Uhlenbeck, geometric, compound Poisson)
+  * Seven model types (jump-diffusion [OU with jumps], ornstein-uhlenbeck, geometric-jump-diffusion, compound-poisson, fractional-brownian, cir, levy)
   * Parameter estimation using maximum likelihood
-  * Trajectory simulation and generation
+  * Seeded, reproducible trajectory simulation and generation
 
 **LaserPlane Analyzer**
   * Cross-sectional analysis algorithms

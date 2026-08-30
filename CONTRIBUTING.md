@@ -12,8 +12,8 @@ We are committed to providing a welcoming and inspiring community for all. Pleas
 
 1. **Fork and clone the repository**:
 ```bash
-git clone https://github.com/yourusername/evojump.git
-cd evojump
+git clone https://github.com/docxology/EvoJump.git
+cd EvoJump
 ```
 
 2. **Create a virtual environment and install dependencies**:
@@ -30,10 +30,10 @@ pip install -e ".[dev]"
 3. **Verify your setup**:
 ```bash
 # Run all tests
-python run_all_tests.py --quick
+.venv/bin/python -m pytest tests/ -q --no-cov
 
-# Run with coverage
-python run_all_tests.py --coverage
+# Run with coverage (pyproject enforces the coverage floor)
+.venv/bin/python -m pytest tests/
 ```
 
 ## Development Workflow
@@ -44,8 +44,8 @@ EvoJump follows strict test-driven development practices:
 
 1. **Write tests first**: Before implementing new features, write comprehensive tests
 2. **Use real data**: All tests must use real biological or synthetic data (no mocks)
-3. **Maintain coverage**: Ensure 95%+ code coverage for all new code
-4. **Run tests frequently**: Use `python run_all_tests.py --quick` for rapid feedback
+3. **Maintain coverage**: Meet the coverage floor enforced in pyproject pytest addopts
+4. **Run tests frequently**: Use `.venv/bin/python -m pytest tests/ -q --no-cov` for rapid feedback
 
 ### Code Quality Standards
 
@@ -167,7 +167,7 @@ When submitting a pull request:
 
 1. **Ensure all tests pass**:
 ```bash
-python run_all_tests.py --all
+.venv/bin/python -m pytest tests/
 ```
 
 2. **Verify code quality**:
@@ -331,7 +331,7 @@ Releases are managed by project maintainers:
 
 - **GitHub Issues**: Bug reports and feature requests
 - **GitHub Discussions**: General questions and discussions
-- **Documentation**: https://evojump.readthedocs.io/
+- **Documentation**: https://github.com/docxology/EvoJump
 - **Examples**: See `examples/` directory
 
 ## Recognition
