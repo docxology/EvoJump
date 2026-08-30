@@ -138,7 +138,7 @@ EvoJump's direct likelihood approach avoids state space augmentation while still
 
 Future computational improvements could include:
 
-**GPU Acceleration**: CUDA support for large-scale simulation and MCMC sampling.
+**GPU Acceleration**: Optional CUDA support (via CuPy, currently on Linux x86_64) for large-scale simulation; the MCMC sampler is CPU-based NumPy and would need porting for GPU execution.
 
 **Approximate Bayesian Computation**: Methods for intractable likelihoods.
 

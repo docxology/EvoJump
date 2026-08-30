@@ -18,7 +18,7 @@ EvoJump's architecture balances mathematical rigor, computational efficiency, an
 
 **DataCore**: Data management and preprocessing with time series structures, quality validation, missing data handling, metadata management, and reproducible workflows.
 
-**JumpRope**: Stochastic process modeling with base `StochasticProcess` class and implementations for OU with jumps, fBM, CIR, Lévy, compound Poisson, and geometric jump-diffusion processes. Supports maximum likelihood, method of moments, and Bayesian MCMC estimation.
+**JumpRope**: Stochastic process modeling with base `StochasticProcess` class and implementations for OU with jumps, fBM, CIR, Lévy, compound Poisson, and geometric jump-diffusion processes. Supports maximum likelihood (exact Poisson-mixture log-likelihoods for the jump models) and method-of-moments estimation. Bayesian inference is provided separately: conjugate Normal-Inverse-Gamma Bayesian linear regression with split-$\hat{R}$ and log-evidence diagnostics in AnalyticsEngine, and Metropolis-Hastings MCMC in EvolutionSampler.
 
 **LaserPlane**: Cross-sectional analysis implementing the "laser plane" metaphor with distribution fitting, moment computation, goodness-of-fit testing, and bootstrap confidence intervals.
 
@@ -46,6 +46,18 @@ This section details key algorithms implementing the stochastic processes and st
 
 **Moment Matching**: For processes with tractable moments, we match empirical moments (sample mean, variance, autocorrelation) to their theoretical expressions. The OU process equilibrium equals the sample mean, the reversion speed is estimated from lag-1 autocorrelation via $\hat{\kappa} = -\log(\hat{\rho})/\Delta t$, and the diffusion coefficient from the equilibrium variance relationship. This method is computationally efficient and provides good initial estimates for more sophisticated inference.
 
+### Population Sampling Methods
+
+**EvolutionSampler** provides three sampling modes over the empirical population, all reproducible through seeded NumPy `Generator` instances. **Monte Carlo** mode samples individuals with replacement at each timepoint. **Importance sampling** applies an exponential tilt to the standardized mean phenotype (temperature-controlled), computes normalized importance weights, performs systematic resampling, and reports the effective sample size (ESS = $1/\sum w_i^2$) as a diagnostic of weight degeneracy. **MCMC** mode runs a real Metropolis-Hastings chain: the state is a Gaussian random walk in phenotype space targeting a Gaussian density around the observed population mean, with a 10% burn-in and a recorded acceptance rate. These modes replace earlier placeholder resampling and give reproducible population-level inference.
+
+### Survival Analysis
+
+The analytics engine implements **Kaplan-Meier survival curve estimation** with Nelson-Aalen cumulative hazard estimation, Greenwood-variance confidence intervals on the survival curve, and the true Kaplan-Meier median survival time (resolved from the curve rather than interpolation of summary statistics). This supports time-to-event questions in developmental data, such as time-to-metamorphosis or time-to-first-movement under different treatments.
+
+### Nonlinear Dynamics
+
+Chaotic and nonlinear structure in developmental trajectories is quantified with real algorithms: the **Rosenstein method** for the largest Lyapunov exponent (divergence of nearest-neighbor trajectories in phase space) and **Grassberger-Procaccia** correlation-dimension estimation from scaling of correlation sums. Network-based trait-dependency analyses use persisted graph objects with shortest-path analyses available downstream.
+
 ### Wavelet Transform Implementation
 
 The continuous wavelet transform is computed using the PyWavelets library, which provides efficient implementations of multiple wavelet families. For a given signal and set of scales, the CWT computes wavelet coefficients by convolving the signal with scaled and translated versions of the mother wavelet. The power spectrum is obtained by squaring coefficient magnitudes, and the dominant temporal scale is identified as the scale with maximum mean power across all time points. This reveals which frequencies or periodicities dominate the developmental trajectory.
@@ -53,6 +65,20 @@ The continuous wavelet transform is computed using the PyWavelets library, which
 ### Copula Fitting
 
 Copula fitting proceeds in two steps: first, transform marginal data to uniform $[0,1]$ distributions using empirical ranks; second, fit the copula dependence structure to these uniform margins. For Gaussian copulas, we transform uniform margins to standard normal via the inverse normal CDF and estimate the correlation parameter. For Clayton copulas, we compute Kendall's $\tau$ and convert to the copula parameter via $\theta = 2\tau/(1-\tau)$. This approach separates marginal distributions from dependence structure, enabling flexible modeling of complex trait relationships.
+
+## Changelog of Methods (v0.2.0)
+
+Version 0.2.0 corrected several methodological descriptions that had drifted from the implementation. The most substantive corrections:
+
+- **Exact jump-model likelihoods.** The OU-with-jumps, geometric jump-diffusion, and compound Poisson log-likelihoods previously used Gaussian approximations that ignored the Poisson jump mixing; they now compute the **exact Poisson-mixture one-step likelihood** (zero-jump and one-jump Gaussian components summed in log space via log-sum-exp), matching the simulation model exactly. The derivations in Section 3 were updated to match (Equation \ref{eq:ou_mixture_density}).
+- **Real MCMC and importance sampling.** The population sampler previously resampled placeholder weights; it now performs real exponential-tilt importance sampling with systematic resampling and ESS diagnostics, and true Metropolis-Hastings MCMC with recorded acceptance rates.
+- **Honest survival analysis.** Kaplan-Meier now includes Nelson-Aalen hazards, Greenwood confidence intervals, and the true KM median rather than a smoothed surrogate.
+- **Seeded reproducibility.** All stochastic routines accept explicit seeds (`fit(seed=...)`, `generate_trajectories(seed=...)`, seeded samplers), replacing shared global RNG state.
+- **Conjugate Bayesian regression.** Bayesian linear regression now uses exact Normal-Inverse-Gamma conjugate updates with split-$\hat{R}$ and log-evidence diagnostics, replacing an earlier resampling-based approach.
+- **Pedigree-gated heritability.** Parent-offspring heritability requires an actual pedigree; when none is available the estimator returns NaN with a warning instead of a spurious number.
+- **Lyapunov and dimension estimators.** Largest Lyapunov exponent (Rosenstein) and correlation dimension (Grassberger-Procaccia) are now computed with their published algorithms rather than surrogate statistics.
+
+Sections 3, 5, and 12 were updated in this pass so that every stated statistical claim matches the v0.2.0 implementation.
 
 ## Performance Optimization
 
@@ -62,7 +88,7 @@ Critical computational loops are vectorized using NumPy's array operations, repl
 
 ### Computational Efficiency
 
-The framework is designed with performance in mind through NumPy vectorization of core operations. Critical loops use array operations that leverage optimized C-level implementations. The architecture supports JIT compilation via Numba for performance-critical paths when needed, and parallel processing via multiprocessing for independent trajectory generation, though these optimizations are applied selectively based on computational requirements.
+The framework is designed with performance in mind through NumPy vectorization of core operations. Critical loops use array operations that leverage optimized C-level implementations. Optional JIT compilation (via Numba) and parallel processing (via multiprocessing) are available as opt-in dependencies for performance-critical paths; the core modeling engine itself uses seeded NumPy/SciPy routines with no JIT requirement.
 
 ### Memory Efficiency
 
@@ -128,7 +154,7 @@ The visualization framework provides methods for generating trajectory density h
 
 ### Project Configuration
 
-EvoJump uses modern Python packaging standards with pyproject.toml configuration. Dependencies include NumPy (>=1.21.0) for numerical operations, SciPy (>=1.7.0) for statistical functions, pandas (>=1.3.0) for data management, matplotlib (>=3.5.0) and Plotly (>=5.0.0) for visualization, scikit-learn (>=1.0.0) for machine learning methods, PyWavelets (>=1.3.0) for wavelet analysis, NetworkX (>=2.6.0) for network analysis, statsmodels (>=0.13.0) for statistical modeling, and seaborn (>=0.11.0) for enhanced visualizations. Version constraints balance feature requirements with compatibility. The package requires Python >=3.8.
+EvoJump uses modern Python packaging standards with pyproject.toml configuration. Dependencies include NumPy (>=1.21.0) for numerical operations, SciPy (>=1.7.0) for statistical functions, pandas (>=1.3.0) for data management, matplotlib (>=3.5.0) and Plotly (>=5.0.0) for visualization, scikit-learn (>=1.0.0) for machine learning methods, PyWavelets (>=1.3.0) for wavelet analysis, NetworkX (>=2.6.0) for network analysis, statsmodels (>=0.13.0) for statistical modeling, and seaborn (>=0.11.0) for enhanced visualizations. Version constraints balance feature requirements with compatibility. The package requires Python >=3.9,<3.15.
 
 ### Development Workflow
 

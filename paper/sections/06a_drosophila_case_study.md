@@ -89,9 +89,10 @@ Key evolutionary parameters estimated:
 | Parameter | Value | Interpretation |
 |-----------|-------|---------------|
 | Effective Population Size | 85 | Accounts for selection and drift |
-| Heritability | 0.42 | Moderate genetic contribution |
 | Selection Coefficient | 0.12 | 12% fitness advantage |
 | Evolutionary Rate | 0.08 | 8% change per generation |
+
+Heritability in this case study is an illustrative value from the simulation design rather than a fitted estimate: as of v0.2.0 the parent-offspring heritability estimator is pedigree-gated and returns NaN with a warning when no pedigree is supplied, rather than emitting a spurious number. Providing the case study's simulated pedigree table enables a real estimate; the reported 0.42 corresponds to the generative heritability used in the simulation.
 
 ## Network Analysis of Marker Correlations
 

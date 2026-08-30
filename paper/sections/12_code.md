@@ -359,7 +359,7 @@ Each visualization method supports both static (matplotlib) and interactive (Plo
 [project]
 name = "evojump"
 version = "0.1.0"
-requires-python = ">=3.8"
+requires-python = ">=3.9,<3.15"
 dependencies = [
     "numpy>=1.21.0",
     "scipy>=1.7.0",
@@ -579,7 +579,7 @@ generate_copula_analysis(fbm_model, 'figures/figure_4_copula.png')
 
 ### Software Requirements
 
-- Python 3.8 or higher
+- Python 3.9 or higher (3.15 exclusive)
 - NumPy 1.21.0 or higher
 - SciPy 1.7.0 or higher
 - Matplotlib 3.5.0 or higher

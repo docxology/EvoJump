@@ -124,9 +124,13 @@ Initially (small $t-s$), variance is small: the current state strongly predicts 
 
 We employ maximum likelihood estimation (see Section 5 for computational implementation details). The log-likelihood for observed data $\{x_{t_0}, x_{t_1}, \ldots, x_{t_n}\}$ is:
 
-$$\ell(\kappa, \theta, \sigma, \lambda) = \sum_{i=1}^{n} \log p(x_{t_i} | x_{t_{i-1}}) \label{eq:ou_likelihood}$$
+$$\ell(\kappa, \theta, \sigma, \lambda, \mu_J, \sigma_J) = \sum_{i=1}^{n} \log p(x_{t_i} | x_{t_{i-1}}) \label{eq:ou_likelihood}$$
 
-where the transition density can be computed using characteristic functions or numerical methods. Results from applying this estimation procedure to synthetic and real data are presented in Section 6.
+**Exact transition density (Poisson mixture).** For the OU process with compound Poisson jumps, the one-step transition density is a Poisson mixture. With probability $p_0 = e^{-\lambda \Delta t}$ no jump occurs in $[t, t+\Delta t]$ and the increment is Gaussian around the deterministic OU one-step mean $\mu_0(x_{t}) = x_t + \kappa(\theta - x_t)\Delta t$ with variance $\sigma^2 \Delta t$; with the complementary probability one or more jumps occur, and the leading component adds the jump size distribution $N(\mu_J, \sigma_J^2)$. The implemented exact one-step density sums these mixture components in log space:
+
+$$p(x_{t+\Delta t} | x_t) = e^{-\lambda \Delta t}\, \phi\left(x_{t+\Delta t};\, \mu_0,\, \sigma^2 \Delta t\right) + \left(1 - e^{-\lambda \Delta t}\right) \phi\left(x_{t+\Delta t};\, \mu_0 + \mu_J,\, \sigma^2 \Delta t + \sigma_J^2\right) \label{eq:ou_mixture_density}$$
+
+where $\phi(\cdot; m, s^2)$ is the Gaussian density. Evaluating each mixture component with $\log$-space summation (via log-sum-exp) gives numerical stability across the parameter ranges used in Section 6. The compound Poisson and geometric jump-diffusion models use analogous Poisson-mixture log-likelihoods in level and log-return space, respectively. Results from applying this estimation procedure to synthetic and real data are presented in Section 6.
 
 ## Fractional Brownian Motion
 
@@ -202,7 +206,7 @@ where:
 - $\delta = \frac{4\kappa\theta}{\sigma^2}$ (degrees of freedom)—measures the "strength" of mean reversion relative to noise
 - $\lambda = \frac{2\kappa X_t e^{-\kappa\Delta t}}{\sigma^2(1-e^{-\kappa\Delta t})}$ (non-centrality parameter)—encodes dependence on current state
 
-This analytical tractability enables efficient maximum likelihood estimation and simulation.
+This analytical tractability is a classical property of the CIR process. In the current implementation, the CIR log-likelihood uses a Gaussian (Euler) approximation to this exact non-central chi-square transition density rather than the exact form; the exact density remains the reference for future work, and the approximation is adequate for the small time steps used in the validation studies of Section 6.
 
 ### Stationary Distribution
 
@@ -285,4 +289,4 @@ where $m_j$ are moment functions.
 We can incorporate prior information:
 $$p(\boldsymbol{\theta} | \mathbf{X}) \propto p(\mathbf{X} | \boldsymbol{\theta}) p(\boldsymbol{\theta}) \label{eq:bayesian_posterior}$$
 
-Posterior sampling via MCMC provides uncertainty quantification for parameters.
+The framework implements Bayesian inference in two places. First, a **conjugate Normal-Inverse-Gamma (NIG) Bayesian linear regression** in the analytics engine provides exact posterior updates for linear trend models, with split-$\hat{R}$ diagnostics computed across the posterior draws and a real log-evidence (model-evidence) value for model comparison. Second, a Metropolis-Hastings **MCMC sampler** in the population-level sampler provides posterior-style sampling over empirical population statistics, reporting acceptance rates for chain diagnostics. For the stochastic process models themselves, likelihood-based and moment-based estimation (Sections above) remain the primary inference routes; the Lévy and fBM likelihoods are Gaussian approximations (Section 7 discusses this limitation).
