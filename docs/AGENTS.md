@@ -10,3 +10,14 @@
 - Factual claims added here must trace to `src/`, `tests/`, `pyproject.toml`,
   or existing docs. If unverifiable, write "Not documented in repo — needs
   owner input" instead of inventing content.
+- Model-type and method claims: `JumpRope.fit` accepts seven model types
+  (`jump-diffusion` default, `ornstein-uhlenbeck`, `geometric-jump-diffusion`,
+  `compound-poisson`, `fractional-brownian`, `cir`, `levy`) — see
+  `src/evojump/jumprope.py` `fit()`. Verify method existence in
+  `src/evojump/analytics_engine.py` (e.g. `shortest_path_analysis`,
+  BOCPD change-point detection) before documenting.
+- Test invocation under load: `.venv/bin/python -m pytest tests/` — do not
+  route through `uv run` (stalls under heavy machine load; observed during
+  the 2026-08-30 audit pass).
+- Known stale-spot: `src/evojump/jumprope.py` `fit()` docstring lists only
+  three model types while the implementation accepts seven — trust the code.
