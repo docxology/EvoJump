@@ -10,6 +10,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Updated license from MIT to Apache License 2.0
 
+### Docs (2026-08-30 documentation deep pass)
+- README: removed fictional `run_all_tests.py` flags (`--all`, `--benchmark`,
+  `--profile`, `--memory`, `--lint`, `--docs` all fail with pytest
+  "unrecognized arguments"); documented the wrapper's real forward-to-pytest
+  contract and canonical `.venv/bin/python -m pytest` invocations.
+- README: badge block and all repo URLs corrected from the nonexistent
+  `github.com/evojump/evojump` to `github.com/docxology/EvoJump`; unverifiable
+  CI/coveralls/PyPI/RTD badges removed; Python 3.9+ packaging bound stated.
+- README: Quick Start verified by execution (runs verbatim under the venv).
+- docs: API reference now lists FBM/CIR/Levy process classes and the
+  `shortest_path_analysis`, `wavelet_analysis`, `copula_analysis`,
+  `extreme_value_analysis`, `regime_switching_analysis` methods (all verified
+  present in source); Sphinx version bumped to 0.2.0.
+- docs/troubleshooting: added verified v0.2.0 gotchas — SciPy >= 1.15
+  two-sample `kstest` breakage (use frozen CDFs), `uv run` stalls under heavy
+  load (invoke `.venv/bin/python` directly), pandas 3.x numeric-dtype
+  selection in DataCore.
+- docs: Python 3.9+ (not 3.8+) across installation/architecture/contributing/
+  api_reference; JumpRope documented as seven stochastic processes.
+
 ## [0.2.0] - 2026-08-30 (audit & hardening pass)
 
 ### Fixed
@@ -285,7 +305,7 @@ The framework provides researchers with novel tools for analyzing developmental 
 
 ---
 
-For complete details on any release, see the GitHub releases page: https://github.com/evojump/evojump/releases
+For complete details on any release, see the GitHub releases page: https://github.com/docxology/EvoJump/releases
 
-For questions or issues, please visit: https://github.com/evojump/evojump/issues
+For questions or issues, please visit: https://github.com/docxology/EvoJump/issues
 
