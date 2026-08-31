@@ -1,7 +1,7 @@
 EvoJump Documentation
 =====================
 
-.. image:: https://img.shields.io/badge/python-3.8+-blue.svg
+.. image:: https://img.shields.io/badge/python-3.9+-blue.svg
    :target: https://python.org
    :alt: Python Version
 

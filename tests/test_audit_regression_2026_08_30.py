@@ -176,11 +176,19 @@ class TestAnalyticsFixes:
         assert res.model_evidence != 0.0
 
 
+# Cold-start imports of pandas/numba/dask from a loaded external drive can
+# exceed 240s under fleet load (sampled: child stuck in PyImport chains, not
+# in evojump code). 900s bounds real work while still catching hangs.
+CLI_SUBPROCESS_TIMEOUT_S = 900
+
+
 class TestCliFixes:
+
     def _run_cli_py(self, code: str) -> subprocess.CompletedProcess:
         return subprocess.run(
             [sys.executable, '-c', code],
-            capture_output=True, text=True, timeout=240,
+            capture_output=True, text=True,
+            timeout=CLI_SUBPROCESS_TIMEOUT_S,
             cwd=str(Path(__file__).resolve().parents[1]))
 
     def test_model_type_choices_complete(self):
@@ -209,7 +217,8 @@ class TestCliFixes:
         proc = subprocess.run(
             [sys.executable, '-m', 'evojump.cli', '--output', str(out),
              'visualize', str(pkl), '--plot-type', 'trajectories'],
-            capture_output=True, text=True, timeout=240,
+            capture_output=True, text=True,
+            timeout=CLI_SUBPROCESS_TIMEOUT_S,
             cwd=str(Path(__file__).resolve().parents[1]),
             env=None)
         # previously crashed with TypeError (unbound call); must now succeed

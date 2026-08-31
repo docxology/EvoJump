@@ -69,11 +69,11 @@ r-integration = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/evojump/evojump"
+Homepage = "https://github.com/docxology/EvoJump"
 Documentation = "https://evojump.readthedocs.io/"
-Repository = "https://github.com/evojump/evojump"
-Issues = "https://github.com/evojump/evojump/issues"
-Changelog = "https://github.com/evojump/evojump/blob/main/CHANGELOG.md"
+Repository = "https://github.com/docxology/EvoJump"
+Issues = "https://github.com/docxology/EvoJump/issues"
+Changelog = "https://github.com/docxology/EvoJump/blob/main/CHANGELOG.md"
 
 [project.scripts]
 evojump-cli = "evojump.cli:main"
