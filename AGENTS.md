@@ -9,7 +9,7 @@ This document outlines the comprehensive testing framework for the EvoJump proje
 EvoJump follows a strict test-driven development approach with the following core principles:
 
 - **Real Data Testing**: All tests use real biological and synthetic data, never mocks
-- **Comprehensive Coverage**: 95%+ code coverage requirement across all modules
+- **Comprehensive Coverage**: coverage floor of 68% enforced via `--cov-fail-under=68` in `pyproject.toml` `[tool.pytest.ini_options]` (measured over `src/evojump`; last measurement 65.9% per `coverage.xml`, 2026-08-31 — reconcile after a fresh full-suite run)
 - **Integration Testing**: Tests validate interactions between all major components
 - **Edge Case Validation**: Extensive testing of error conditions and boundary cases
 - **Performance Validation**: Tests ensure computational efficiency for large datasets
@@ -102,54 +102,25 @@ EvoJump follows a strict test-driven development approach with the following cor
 
 ### Running Tests
 
-The project uses both pytest and the comprehensive `run_all_tests.py` script for complete validation:
+`run_all_tests.py` is a thin wrapper that forwards extra args to pytest verbatim
+(see its usage line); the canonical invocation is pytest itself. Invoke the venv
+python directly — `uv run` can stall under heavy load.
 
-#### Quick Testing (run_all_tests.py)
 ```bash
-# Run all tests quickly (no coverage, fast feedback)
-python run_all_tests.py --quick
+# Fast feedback (no coverage)
+.venv/bin/python -m pytest tests/ -q --no-cov
 
-# Run tests with comprehensive coverage report
-python run_all_tests.py --coverage --verbose
+# Full suite (coverage floor enforced from pyproject.toml)
+.venv/bin/python -m pytest tests/
 
-# Run all validation checks (tests + linting + documentation)
-python run_all_tests.py --all
+# Single module / verbose / parallel
+.venv/bin/python -m pytest tests/test_datacore.py -q
+.venv/bin/python -m pytest tests/ -v
+.venv/bin/python -m pytest tests/ -n auto
 
-# Run performance benchmarks
-python run_all_tests.py --benchmark --parallel
-
-# Run code quality checks only
-python run_all_tests.py --lint
-
-# Check documentation completeness
-python run_all_tests.py --docs
-```
-
-#### Detailed Testing (pytest)
-```bash
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=evojump --cov-report=html
-
-# Run specific test file
-pytest tests/test_datacore.py
-
-# Run with verbose output
-pytest -v
-
-# Run specific test class or method
-pytest tests/test_jumprope.py::TestOrnsteinUhlenbeckJump::test_simulate_trajectory
-
-# Run tests in parallel
-pytest -n auto
-
-# Run only integration tests
-pytest -k "integration or fit or analyze or compare"
-
-# Run only unit tests
-pytest -k "not integration and not fit and not analyze and not compare"
+# Filtered runs
+.venv/bin/python -m pytest tests/ -k "integration or fit or analyze or compare"
+.venv/bin/python -m pytest tests/ -k "not integration and not fit and not analyze and not compare"
 ```
 
 ### Test Configuration
@@ -176,7 +147,7 @@ addopts = [
 
 ## Coverage Requirements
 
-- **Minimum Coverage**: 95% across all modules
+- **Minimum Coverage**: 68% aggregate floor via pyproject `--cov-fail-under=68`; check current number with `tail -5 coverage.xml` (line-rate attribute) after a run
 - **Branch Coverage**: Validated for critical paths
 - **Integration Coverage**: All module interactions tested
 - **Performance Coverage**: Large dataset handling validated

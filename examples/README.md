@@ -5,7 +5,6 @@ This directory contains comprehensive examples demonstrating the usage of the Ev
 ## Example Categories
 
 ### 🚀 **Basic Usage Examples**
-- **`basic_usage_fixed.py`** - Complete workflow from data loading to visualization
 - **`working_demo.py`** - Working demonstration of all core features
 
 ### 📊 **Advanced Analytics Examples**
@@ -20,7 +19,7 @@ This directory contains comprehensive examples demonstrating the usage of the Ev
 - **`simple_animation_demo.py`** - Simple trajectory animation
 
 ### 🧬 **Case Study Examples**
-- **`drosophila_case_study.py`** - Complete fruit fly biology analysis (coming soon)
+- **`drosophila_case_study.py`** - Complete fruit fly biology analysis (see `../tests/test_drosophila_case_study.py`)
 
 ### 🏗️ **Architecture Examples**
 - **`thin_orchestrator_examples.py`** - Thin orchestrator patterns

@@ -5,6 +5,22 @@
 
 EvoJump represents a groundbreaking analytical framework that conceptualizes evolutionary and developmental biology through a novel "cross-sectional laser" metaphor. This system treats ontogenetic development as a temporal progression where a "jumprope-like" distribution sweeps across a fixed analytical plane (the laser), generating dynamic cross-sectional views of phenotypic distributions throughout an organism's developmental timeline.
 
+
+## Status at a glance (agent orientation)
+
+Verified 2026-08-31 on this checkout — re-verify with the commands shown.
+
+- **What this is:** a Python framework for evolutionary ontogenetic analysis
+  (jump-diffusion models over developmental trajectories). Details: [Features](#-features)
+  and [Architecture](#-architecture) below.
+- **Current state:** v0.2.0 packaging fixed, suite stable. Test roster: `ls tests/test_*.py`
+  (16 files). Coverage floor is enforced in `pyproject.toml`
+  (`--cov-fail-under=68`); last recorded measurement 65.9% (`coverage.xml`, 2026-08-31 00:20 —
+  below floor, reconcile after a fresh full run on an idle machine).
+- **Verify (primary command):** `MPLBACKEND=Agg .venv/bin/python -m pytest tests/ -q --no-cov`
+  (do NOT use `uv run` — stalls under heavy load; see Installation note below).
+- **What to do next:** the single authoritative backlog is [`TODO.md`](TODO.md);
+  change history: [`CHANGELOG.md`](CHANGELOG.md).
 ## 📑 Table of Contents
 
 - [Features](#-features)
@@ -314,6 +330,7 @@ Invoke the venv python directly — `uv run` can stall under heavy load.
 | `test_audit_regression_2026_08_30.py` | v0.2.0 audit-and-hardening regression pins |
 | `test_methods_lane_changepoints.py` | Change-point detection methods (BOCPD) |
 | `test_methods_lane_laserplane.py` | LaserPlane methods additions |
+| `test_methods_lane_postaudit.py` | Post-audit corrections regression pins |
 | `test_viz_lane_animation.py` | Visualization lane: animation |
 | `test_viz_lane_heatmap.py` | Visualization lane: heatmap |
 | `test_viz_lane_kde.py` | Visualization lane: KDE |
@@ -490,7 +507,7 @@ If you use EvoJump in your research, please cite:
 EvoJump is now a fully functional, production-ready framework with:
 
 - **8 Core Modules** - Complete data management, modeling, analysis, and visualization
-- **Comprehensive test suite** - 15 test files covering all components
+- **Comprehensive test suite** - 16 test files covering all components (`ls tests/test_*.py`; verified 2026-08-31)
 - **Examples** - see `examples/` for demonstrating features and use cases
 - **Multiple Testing Modes** - Quick, full, benchmark, CI/CD ready
 - **Complete Documentation** - User guides, API reference, scientific context
