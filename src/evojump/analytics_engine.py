@@ -919,8 +919,18 @@ class BayesianAnalyzer:
         post_prec = prec0 + s_xx
         post_mean = (prec0 * m0 + s_xy) / post_prec
         post_a = a0 + n / 2.0
-        rss = np.sum((y_data - y_mean - (s_xy / s_xx if s_xx > 0 else 0.0) * (x_data - x_mean)) ** 2)
-        post_b = b0 + 0.5 * (np.sum(y_data**2) + prec0 * m0**2 - post_prec * post_mean**2)
+        # RSS about the fitted regression line (centered residuals).
+        # NOTE: post_b must use the same centered decomposition; using
+        # uncentered sum(y**2) with centered sufficient stats silently
+        # inflates the posterior scale.
+        slope_hat = (s_xy / s_xx) if s_xx > 0 else 0.0
+        rss = np.sum((y_data - y_mean - slope_hat * (x_data - x_mean)) ** 2)
+        # Conjugate update in centered form:
+        # b_n = b0 + 0.5 * (Tyy + prec0 * m0^2 - post_prec * post_mean^2)
+        # with Tyy the centered sum of squares of y (consistent with the
+        # centered Sxy/Sxx sufficient statistics above).
+        t_yy = np.sum((y_data - y_mean) ** 2)
+        post_b = b0 + 0.5 * (t_yy + prec0 * m0 ** 2 - post_prec * post_mean ** 2)
         post_b = max(post_b, 1e-12)
 
         rng = np.random.default_rng()
@@ -951,9 +961,16 @@ class BayesianAnalyzer:
             'posterior_var': float(np.var(beta_samples)),
         }
 
-        # Laplace/BIC-style evidence approximation (log marginal likelihood)
-        log_evidence = (post_a * np.log(post_b) + 0.5 * np.log(prec0)
-                        - 0.5 * np.log(post_prec) - n / 2 * np.log(2 * np.pi))
+        # Exact NIG log marginal likelihood (conjugate evidence):
+        # log p(y) = lgamma(a_n) - lgamma(a_0) + a_0*log(b_0) - a_n*log(b_n)
+        #            + 0.5*log(prec_0) - 0.5*log(post_prec)
+        #            - (n/2)*log(2*pi)
+        # (centered-data form; slope-only model with known intercept at y_mean)
+        from math import lgamma
+        log_evidence = (lgamma(post_a) - lgamma(a0)
+                        + a0 * np.log(max(b0, 1e-300)) - post_a * np.log(max(post_b, 1e-300))
+                        + 0.5 * np.log(prec0) - 0.5 * np.log(post_prec)
+                        - n / 2.0 * np.log(2 * np.pi))
 
         return BayesianResult(
             posterior_samples=posterior_samples,

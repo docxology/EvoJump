@@ -287,7 +287,8 @@ class PhylogeneticAnalyzer:
                 try:
                     log_likelihood = self._compute_gaussian_loglikelihood(traits, transformed_matrix)
                     return -log_likelihood
-                except:
+                except (ValueError, np.linalg.LinAlgError) as exc:
+                    logger.debug("phylogenetic signal objective failed: %s", exc)
                     return np.inf
 
             # Optimize lambda
@@ -333,7 +334,8 @@ class PhylogeneticAnalyzer:
 
             return log_likelihood
 
-        except:
+        except (ValueError, FloatingPointError) as exc:
+            logger.debug("gaussian log-likelihood failed: %s", exc)
             return -np.inf
 
 
@@ -421,7 +423,7 @@ class QuantitativeGenetics:
                                 corr = np.corrcoef(trait1_data, trait2_data)[0, 1]
                                 if not np.isnan(corr):
                                     correlations.append(corr)
-                            except:
+                            except (ValueError, FloatingPointError):
                                 continue
 
                     if correlations:
@@ -610,17 +612,26 @@ class EvolutionSampler:
         observed_mean = pool.mean(axis=0)
         observed_std = pool.std(axis=0) + 1e-12
 
-        def log_target(x: np.ndarray) -> float:
+        def log_target_idx(idx: int) -> float:
+            x = pool[idx]
             return -0.5 * np.sum(((x - observed_mean) / (observed_std * mcmc_scale)) ** 2)
 
+        # Discrete index-to-index Metropolis-Hastings: symmetric random-walk
+        # proposal on indices with a Gaussian tilt. Both directions have
+        # identical proposal probability q(j|i) = q(i|j) (symmetric kernel on
+        # the index lattice), so detailed balance holds exactly -- unlike the
+        # previous phenotype-space proposal with nearest-individual snapping,
+        # which broke reversibility.
+        idx_sigma = max(step_size * len(pool), 1.0)
         current_idx = int(self._rng.integers(0, len(pool)))
         samples = np.zeros((n_samples, pool.shape[1]))
         accepted = 0
         for i in range(n_samples + burn_in):
-            proposal = pool[current_idx] + self._rng.normal(0, step_size * observed_std)
-            log_alpha = log_target(proposal) - log_target(pool[current_idx])
+            proposal_idx = int(current_idx + round(self._rng.normal(0, idx_sigma)))
+            proposal_idx = proposal_idx % len(pool)  # wrap: keeps q symmetric
+            log_alpha = log_target_idx(proposal_idx) - log_target_idx(current_idx)
             if np.log(self._rng.uniform()) < log_alpha:
-                current_idx = proposal_idx = int(np.argmin(np.abs(pool - proposal).sum(axis=1)))
+                current_idx = proposal_idx
                 accepted += 1
             if i >= burn_in:
                 samples[i - burn_in] = pool[current_idx]

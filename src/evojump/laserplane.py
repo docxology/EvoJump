@@ -677,8 +677,11 @@ class LaserPlaneAnalyzer:
 
     def _bootstrap_confidence_intervals(self,
                                       data: np.ndarray,
-                                      n_bootstrap: int) -> Dict[str, Tuple[float, float]]:
-        """Compute bootstrap confidence intervals."""
+                                      n_bootstrap: int,
+                                      rng: Optional[np.random.Generator] = None) -> Dict[str, Tuple[float, float]]:
+        """Compute bootstrap confidence intervals (seeded generator)."""
+        if rng is None:
+            rng = np.random.default_rng(0)
         if len(data) < 4:
             return {
                 'mean_ci': (np.nan, np.nan),
@@ -691,7 +694,7 @@ class LaserPlaneAnalyzer:
         bootstrap_stds = []
 
         for _ in range(n_bootstrap):
-            bootstrap_sample = np.random.choice(data, size=len(data), replace=True)
+            bootstrap_sample = rng.choice(data, size=len(data), replace=True)
             bootstrap_means.append(np.mean(bootstrap_sample))
             bootstrap_medians.append(np.median(bootstrap_sample))
             bootstrap_stds.append(np.std(bootstrap_sample, ddof=1))

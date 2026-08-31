@@ -31,6 +31,8 @@ Examples:
     >>> params = model.estimate_parameters()
 """
 
+import math
+from math import lgamma
 import numpy as np
 import pandas as pd
 from scipy import stats, optimize, integrate
@@ -208,7 +210,11 @@ class OrnsteinUhlenbeckJump(StochasticProcess):
 
 
 class GeometricJumpDiffusion(StochasticProcess):
-    """Geometric jump-diffusion process."""
+    """Geometric jump-diffusion process.
+
+    Note: the one-step density used by log_likelihood is a TWO-component
+    (no-jump / single-jump) truncation of the full compound-Poisson mixture;
+    multiple jumps within one step are absorbed into the single-jump component."""
 
     def __init__(self, parameters: ModelParameters, rng: Optional[np.random.Generator] = None):
         """Initialize geometric jump-diffusion process."""
@@ -251,8 +257,12 @@ class GeometricJumpDiffusion(StochasticProcess):
             if data[i-1] <= 0 or data[i] <= 0:
                 continue
 
-            # Log-returns with Poisson jump mixture in log space
+            # Log-returns with Poisson jump mixture in log space.
+            # The jump component is a density over the PRICE, so transforming
+            # to log-return space requires the Jacobian |d price / d log_return|
+            # = exp(log_return) (= the observed price data[i]).
             log_return = np.log(data[i] / data[i-1])
+            jacobian = np.log(data[i])
             p0 = np.exp(-self.parameters.jump_intensity * dt)
             mu = self.parameters.drift * dt
             sigma = self.parameters.diffusion * np.sqrt(dt)
@@ -262,7 +272,7 @@ class GeometricJumpDiffusion(StochasticProcess):
                     np.log(max(p0, 1e-300)) + norm.logpdf(log_return, mu, sigma),
                     np.log(max(1.0 - p0, 1e-300)) + lognorm.logpdf(
                         np.exp(log_return), s=self.parameters.jump_std,
-                        scale=np.exp(self.parameters.jump_mean)),
+                        scale=np.exp(self.parameters.jump_mean)) + jacobian,
                 ]
                 log_likelihood += np.logaddexp.reduce(comps)
 
@@ -369,8 +379,10 @@ class CompoundPoisson(StochasticProcess):
         k_max = 20
         # Precompute log poisson pmf for k = 0..k_max
         ks = np.arange(k_max + 1)
+        # math.lgamma(k+1) == log(k!) and stays valid on numpy>=2.0
+        # (np.math was removed there).
         log_pmf = ks * np.log(max(lam, 1e-300)) - lam - np.array(
-            [np.log(float(np.math.factorial(k))) for k in ks]) if lam > 0 else np.where(ks == 0, 0.0, -np.inf)
+            [lgamma(k + 1.0) for k in ks]) if lam > 0 else np.where(ks == 0, 0.0, -np.inf)
         log_pmf = np.asarray(log_pmf, dtype=float)
 
         log_likelihood = 0.0
