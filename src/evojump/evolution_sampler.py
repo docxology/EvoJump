@@ -140,21 +140,74 @@ class PopulationModel:
             Effective population size estimate
         """
         if method == 'temporal':
-            # Temporal method using allele frequency changes
-            # This is a simplified implementation
-            n_individuals = len(self.individuals)
+            # The temporal method REQUIRES genetic markers (allele-frequency
+            # changes across time points); phenotypes alone cannot identify Ne.
+            # This method no longer fabricates an estimate from phenotypic
+            # variance. Use `predict_phenotypic_response` for the honest
+            # phenotype-only analogue (Lande equation R = h2 * S).
+            freq_cols = [c for c in self.population_data.columns
+                         if str(c).startswith('freq_')]
+            if len(freq_cols) == 0 or self.time_points is None or len(self.time_points) < 2:
+                warnings.warn(
+                    "temporal Ne estimation requires allele-frequency columns "
+                    "(prefixed 'freq_') at >= 2 time points; returning NaN. "
+                    "Phenotypes alone cannot identify Ne - see "
+                    "predict_phenotypic_response for the Lande-equation analogue.")
+                return np.nan
 
-            # Assume we can estimate from phenotypic variance
-            # This would typically use genetic markers
-            phenotypic_variance = self.population_data.select_dtypes(include=[np.number]).var().mean()
-
-            # Rough approximation
-            ne_estimate = n_individuals * 0.5  # Conservative estimate
-
-            return ne_estimate
+            # Waples (1989) plan-II temporal method:
+            # F = mean over alleles of Var(p_t2 - p_t1) / (p_bar (1 - p_bar));
+            # Ne = 1 / (2F) per generation.
+            f_values = []
+            times = sorted(self.time_points)
+            t1_data = self.population_data[self.population_data[self.time_column] == times[0]]
+            t2_data = self.population_data[self.population_data[self.time_column] == times[-1]]
+            for col in freq_cols:
+                p1 = float(np.nanmean(t1_data[col].to_numpy(dtype=float)))
+                p2 = float(np.nanmean(t2_data[col].to_numpy(dtype=float)))
+                p_bar = 0.5 * (p1 + p2)
+                if 0.0 < p_bar < 1.0:
+                    f_values.append((p2 - p1) ** 2 / (p_bar * (1.0 - p_bar)))
+            if not f_values:
+                return np.nan
+            f_stat = float(np.mean(f_values))
+            if f_stat <= 0:
+                return np.inf
+            return 1.0 / (2.0 * f_stat)
 
         else:
             raise ValueError(f"Unsupported method: {method}")
+
+    def compute_selection_differential(self, phenotype: str) -> float:
+        """Selection differential S = mean(after selection) - mean(before).
+
+        With time-series phenotype data (no explicit fitness column), S is
+        the change in mean phenotype between the first and last time points.
+        """
+        if phenotype not in self.population_data.columns:
+            return np.nan
+        if self.time_column not in self.population_data.columns or self.time_points is None or len(self.time_points) < 2:
+            return np.nan
+        times = sorted(self.time_points)
+        first = self.population_data[self.population_data[self.time_column] == times[0]][phenotype].dropna()
+        last = self.population_data[self.population_data[self.time_column] == times[-1]][phenotype].dropna()
+        if len(first) < 1 or len(last) < 1:
+            return np.nan
+        return float(last.mean() - first.mean())
+
+    def predict_phenotypic_response(self, phenotype: str, h2: float) -> float:
+        """Lande (1979) response to selection R = h2 * S.
+
+        Honest phenotype-only analogue of a full quantitative-genetic
+        projection: uses the measured selection differential S (first vs last
+        time point) and a SUPPLIED narrow-sense heritability h2 in [0, 1].
+        """
+        if h2 is None or not (0.0 <= h2 <= 1.0):
+            raise ValueError("h2 must be supplied and lie in [0, 1]")
+        s = self.compute_selection_differential(phenotype)
+        if s is None or np.isnan(s):
+            return np.nan
+        return float(h2 * s)
 
 
 class PhylogeneticAnalyzer:

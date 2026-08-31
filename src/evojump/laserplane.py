@@ -127,17 +127,24 @@ class DistributionFitter:
             elif distribution == 'uniform':
                 if np.min(data) == np.max(data):
                     return {'distribution': None, 'parameters': None, 'aic': np.inf}
-                params = dist_class.fit(data, floc=np.min(data), fscale=np.max(data)-np.min(data))
+                # scipy uniform.fit raises when loc and scale are both fixed;
+                # the MLE is exactly (min, range), so set it directly.
+                params = (np.min(data), np.max(data) - np.min(data))
 
-            # Calculate AIC for model comparison
+            # Calculate information criteria for model comparison
             log_likelihood = self._compute_log_likelihood(data, dist_class, params)
             n_params = len(params)
             aic = 2 * n_params - 2 * log_likelihood
+            bic = n_params * np.log(len(data)) - 2 * log_likelihood
+            aicc = np.inf if len(data) - n_params - 1 <= 0 else aic + 2 * n_params * (n_params + 1) / (len(data) - n_params - 1)
 
             return {
                 'distribution': distribution,
                 'parameters': params,
                 'aic': aic,
+                'bic': bic,
+                'aicc': aicc,
+                'n_params': n_params,
                 'log_likelihood': log_likelihood
             }
 
@@ -146,21 +153,75 @@ class DistributionFitter:
             return {'distribution': None, 'parameters': None, 'aic': np.inf}
 
     def _select_best_distribution(self, data: np.ndarray) -> str:
-        """Select best fitting distribution using AIC."""
+        """Select best fitting distribution using AICc."""
         best_distribution = 'normal'
-        best_aic = np.inf
+        best_aicc = np.inf
         results = {}
 
         for dist_name in self.supported_distributions.keys():
             result = self.fit_distribution(data, dist_name)
             results[dist_name] = result
 
-            if result['aic'] < best_aic:
-                best_aic = result['aic']
+            if result.get('aicc', np.inf) < best_aicc:
+                best_aicc = result['aicc']
                 best_distribution = dist_name
 
-        logger.info(f"Selected best distribution: {best_distribution} (AIC: {best_aic})")
+        logger.info(f"Selected best distribution: {best_distribution} (AICc: {best_aicc})")
+        self._last_selection = self._vuong_check(data, results, best_distribution)
         return best_distribution
+
+    def _vuong_check(self, data: np.ndarray, results: Dict[str, Any], best_distribution: str) -> Dict[str, Any]:
+        """Vuong-style likelihood-ratio check between the top two candidates.
+
+        For non-nested models the LR statistic (with an Akaike-style
+        small-sample adjustment) is referred to a standard normal, using the
+        pointwise variance of the log-likelihood difference. Reports a
+        p-value for the null that both models are equally close to the true
+        data-generating process.
+        """
+        fitted = {k: v for k, v in results.items() if v.get('distribution') is not None}
+        if len(fitted) < 2:
+            return {'comparison': None, 'lr_statistic': np.nan,
+                    'p_value': np.nan, 'verdict': 'insufficient_fits'}
+
+        ranked = sorted(fitted.items(), key=lambda kv: kv[1]['aicc'])
+        (name1, fit1), (name2, fit2) = ranked[0], ranked[1]
+
+        if fit1['log_likelihood'] <= -np.inf or fit2['log_likelihood'] <= -np.inf:
+            return {'comparison': None, 'lr_statistic': np.nan,
+                    'p_value': np.nan, 'verdict': 'non_finite_likelihood'}
+
+        dist1 = self.supported_distributions[name1]
+        dist2 = self.supported_distributions[name2]
+        try:
+            ll1 = dist1.logpdf(data, *fit1['parameters'])
+            ll2 = dist2.logpdf(data, *fit2['parameters'])
+        except Exception:
+            return {'comparison': None, 'lr_statistic': np.nan,
+                    'p_value': np.nan, 'verdict': 'logpdf_evaluation_failed'}
+
+        n = len(data)
+        lr_raw = float(np.sum(ll1 - ll2))
+        # Akaike-style small-sample adjustment for non-nested comparison
+        lr = lr_raw - (fit1['n_params'] - fit2['n_params'])
+        diff = ll1 - ll2
+        omega2 = float(np.var(diff, ddof=1)) if n > 1 else 0.0
+
+        if omega2 <= 0 or not np.isfinite(omega2):
+            statistic, p_value = np.nan, np.nan
+            verdict = 'degenerate_variance'
+        else:
+            statistic = lr / (np.sqrt(n) * np.sqrt(omega2))
+            p_value = 2.0 * (1.0 - stats.norm.cdf(abs(statistic)))
+            verdict = 'best_model_preferred' if p_value < 0.05 and lr > 0 else (
+                'second_model_preferred' if p_value < 0.05 else 'no_significant_difference')
+
+        return {
+            'comparison': (name1, name2),
+            'lr_statistic': statistic,
+            'p_value': p_value,
+            'verdict': verdict
+        }
 
     def _compute_log_likelihood(self,
                               data: np.ndarray,
@@ -235,43 +296,99 @@ class DistributionComparer:
             'significant': p_value < 0.05
         }
 
-    def _anderson_darling_test(self, data1: np.ndarray, data2: np.ndarray) -> Dict[str, Any]:
-        """Perform Anderson-Darling test."""
-        # Anderson-Darling test for k-samples (approximate)
-        result1 = anderson(data1, dist='norm')
-        result2 = anderson(data2, dist='norm')
+    def _anderson_darling_test(self, data1: np.ndarray, data2: np.ndarray,
+                               rng: Optional[np.random.Generator] = None) -> Dict[str, Any]:
+        """Scholz-Stephens Anderson-Darling k-sample test.
 
-        # Combine test statistics
-        combined_stat = result1.statistic + result2.statistic
-        # Approximate p-value (this is a rough approximation)
-        p_value = 1 - norm.cdf(combined_stat)
+        Uses scipy's anderson_ksamp (midrank variant) asymptotic p-value;
+        falls back to a permutation p-value when the asymptotic one is
+        unavailable or out of range.
+        """
+        samples = [data1, data2]
+        try:
+            result = stats.anderson_ksamp(samples, variant='midrank')
+            statistic = float(result.statistic)
+            p_value = float(result.pvalue)
+            method_note = 'anderson_ksamp_asymptotic'
+        except (ValueError, RuntimeError):
+            statistic = self._ad_ksample_statistic(samples)
+            p_value = self._permutation_p_value(samples, self._ad_ksample_statistic,
+                                                rng=rng)
+            method_note = 'anderson_ksamp_permutation'
 
         return {
             'test': 'anderson_darling',
-            'statistic': combined_stat,
+            'statistic': statistic,
             'p_value': p_value,
+            'method': method_note,
             'significant': p_value < 0.05
         }
 
-    def _cramer_von_mises_test(self, data1: np.ndarray, data2: np.ndarray) -> Dict[str, Any]:
-        """Perform Cramer-von Mises test."""
-        # Approximate implementation
-        n1, n2 = len(data1), len(data2)
-        combined = np.concatenate([data1, data2])
-        ranks = stats.rankdata(combined)
+    @staticmethod
+    def _ad_ksample_statistic(samples: List[np.ndarray]) -> float:
+        """Anderson-Darling k-sample statistic on pooled ranks (Scholz-Stephens)."""
+        pooled = np.concatenate(samples)
+        n = len(pooled)
+        ranks = stats.rankdata(pooled)
+        k = len(samples)
+        offsets = np.cumsum([0] + [len(s) for s in samples])[:-1]
+        h = (1.0 / n) * sum(
+            np.sum((ranks[offsets[i]:offsets[i] + len(samples[i])] - (offsets[i] + 1)) ** 2
+                   / (len(samples[i]) * (n - len(samples[i]))))
+            for i in range(k)
+        )
+        return float((n - 1) * h / k - (k - 1))
 
-        # Calculate test statistic
-        statistic = (n1 * n2 / (n1 + n2)**2) * np.sum((ranks[:n1] - np.arange(1, n1+1))**2)
+    @staticmethod
+    def _permutation_p_value(samples: List[np.ndarray], statistic_fn,
+                             n_permutations: int = 2000,
+                             rng: Optional[np.random.Generator] = None) -> float:
+        """Permutation p-value: shuffle group labels, recompute the statistic."""
+        if rng is None:
+            rng = np.random.default_rng(0)
+        observed = statistic_fn(samples)
+        pooled = np.concatenate(samples)
+        sizes = [len(s) for s in samples]
+        count_ge = 0
+        for _ in range(n_permutations):
+            permuted = rng.permutation(pooled)
+            parts = []
+            start = 0
+            for size in sizes:
+                parts.append(permuted[start:start + size])
+                start += size
+            if statistic_fn(parts) >= observed - 1e-12:
+                count_ge += 1
+        return float((count_ge + 1) / (n_permutations + 1))
 
-        # Approximate p-value
-        p_value = 1 - norm.cdf(statistic)
+    def _cramer_von_mises_test(self, data1: np.ndarray, data2: np.ndarray,
+                               rng: Optional[np.random.Generator] = None) -> Dict[str, Any]:
+        """Perform Cramer-von Mises test with a permutation p-value.
+
+        scipy has no analytic two-sample CVM p-value, so an empirical
+        p-value over 2000 label shuffles is reported (honest and cheap).
+        """
+        statistic = self._cvm_statistic([data1, data2])
+        p_value = self._permutation_p_value([data1, data2], self._cvm_statistic, rng=rng)
 
         return {
             'test': 'cramer_von_mises',
             'statistic': statistic,
             'p_value': p_value,
+            'method': '2000-permutation empirical',
             'significant': p_value < 0.05
         }
+
+    @staticmethod
+    def _cvm_statistic(samples: List[np.ndarray]) -> float:
+        """Two-sample Cramér-von Mises statistic (CDF-difference form)."""
+        data1, data2 = samples[0], samples[1]
+        n1, n2 = len(data1), len(data2)
+        n = n1 + n2
+        combined = np.sort(np.concatenate([data1, data2]))
+        f1 = np.searchsorted(np.sort(data1), combined, side='right') / n1
+        f2 = np.searchsorted(np.sort(data2), combined, side='right') / n2
+        return float((n1 * n2 / n**2) * np.sum((f1 - f2) ** 2) / n)
 
     def _mann_whitney_test(self, data1: np.ndarray, data2: np.ndarray) -> Dict[str, Any]:
         """Perform Mann-Whitney U test."""
@@ -324,6 +441,59 @@ class MomentAnalyzer:
         }
 
         return moments
+
+    def assess_normality(self, data: np.ndarray,
+                         alpha: float = 0.05) -> Dict[str, Any]:
+        """D'Agostino-style normality assessment from skew/kurtosis z-scores.
+
+        Reports skewness and excess kurtosis with classical large-sample
+        standard errors, the D'Agostino (1970) transformed skewness z, an
+        Anscombe-Glynn style kurtosis z, and the D'Agostino-Pearson K^2
+        omnibus verdict (chi-square, 2 df).
+        """
+        data = data[~np.isnan(data)]
+        n = len(data)
+        if n < 8:
+            return {'n': n, 'sufficient_data': False,
+                    'verdict': 'insufficient_data'}
+
+        skew = float(stats.skew(data, bias=False))
+        kurt = float(stats.kurtosis(data, bias=False))  # excess kurtosis
+
+        se_skew = float(np.sqrt(6.0 * n * (n - 1) / ((n - 2) * (n + 1) * (n + 3))))
+        se_kurt = float(np.sqrt(24.0 * n * (n - 1) ** 2 / ((n - 3) * (n - 2) * (n + 3) * (n + 5))))
+
+        # D'Agostino (1970) transform of skewness to near-normality
+        b = 3.0 * (n ** 2 + 27 * n - 70) * (n + 1) * (n + 3) / ((n - 2) * (n + 5) * (n + 7) * (n + 9))
+        w2 = -1.0 + np.sqrt(2.0 * (b - 1.0))
+        delta = 1.0 / np.sqrt(0.5 * np.log(w2))
+        y = skew * np.sqrt((w2 - 1.0) * (n + 1) * (n + 3) / (12.0 * (n - 2)))
+        z_skew = float(delta * np.log(y + np.sqrt(y ** 2 + 1.0))) if w2 > 1 and np.isfinite(y) else skew / se_skew
+
+        z_kurt = kurt / se_kurt
+
+        p_skew = 2.0 * (1.0 - stats.norm.cdf(abs(z_skew)))
+        p_kurt = 2.0 * (1.0 - stats.norm.cdf(abs(z_kurt)))
+
+        k2 = z_skew ** 2 + z_kurt ** 2
+        p_omnibus = float(stats.chi2.sf(k2, df=2))
+
+        return {
+            'n': n,
+            'sufficient_data': True,
+            'skewness': skew,
+            'skewness_se': se_skew,
+            'skewness_z': z_skew,
+            'skewness_p': p_skew,
+            'excess_kurtosis': kurt,
+            'kurtosis_se': se_kurt,
+            'kurtosis_z': z_kurt,
+            'kurtosis_p': p_kurt,
+            'omnibus_k2': k2,
+            'omnibus_p': p_omnibus,
+            'verdict': 'not_normal' if p_omnibus < alpha else 'consistent_with_normal',
+            'alpha': alpha
+        }
 
     def compute_quantiles(self, data: np.ndarray, quantiles: List[float] = None) -> Dict[str, float]:
         """Compute quantiles of the data."""

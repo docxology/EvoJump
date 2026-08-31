@@ -663,11 +663,103 @@ class ChangePointDetector:
 
         return change_points
 
-    def _bayesian_change_detection(self, **kwargs) -> List[Dict[str, Any]]:
-        """Bayesian change point detection."""
-        # Simplified Bayesian change detection
-        # In practice, would implement proper Bayesian online change detection
-        return self._statistical_change_detection(**kwargs)
+    def _bayesian_change_detection(self,
+                                   expected_run_length: float = 25.0,
+                                   hazard: Optional[float] = None,
+                                   mu0: float = 0.0,
+                                   kappa0: float = 1.0,
+                                   alpha0: float = 1.0,
+                                   beta0: float = 1.0,
+                                   threshold: float = 0.5,
+                                   **kwargs) -> List[Dict[str, Any]]:
+        """Bayesian online change-point detection (Adams & MacKay 2007).
+
+        Normal-conjugate BOCPD per phenotype column: Student-t predictive
+        likelihood, hazard h = 1/expected_run_length (or explicit `hazard`),
+        run-length posterior over indices. Change points are reported where
+        the run-length posterior mass at zero (changepoint probability) is
+        >= `threshold` and is a local maximum. The CUSUM path in
+        _statistical_change_detection remains available and unchanged.
+        """
+        change_points = []
+        for col in self.phenotype_columns:
+            series = self.data[col].dropna()
+            if not pd.api.types.is_numeric_dtype(series):
+                continue
+            x = series.to_numpy(dtype=float)
+            if len(x) < 10:
+                continue
+
+            h = hazard if (hazard is not None and hazard > 0) else 1.0 / max(expected_run_length, 1.0)
+
+            # Sufficient statistics for runs of length j: index j holds the
+            # NIG posterior after j observations of the current segment.
+            R = np.zeros(len(x) + 1)
+            R[0] = 1.0
+            mu_t = np.full(len(x) + 1, mu0)
+            kappa_t = np.full(len(x) + 1, kappa0)
+            alpha_t = np.full(len(x) + 1, alpha0)
+            beta_t = np.full(len(x) + 1, beta0)
+
+            cp_probs = np.zeros(len(x))
+            for t_idx, obs in enumerate(x):
+                # Predictive Student-t log-likelihood over active runs 0..t_idx
+                df = 2.0 * alpha_t[:t_idx + 1]
+                scale2 = beta_t[:t_idx + 1] * (kappa_t[:t_idx + 1] + 1.0) / (alpha_t[:t_idx + 1] * kappa_t[:t_idx + 1])
+                z = (obs - mu_t[:t_idx + 1]) / np.sqrt(scale2)
+                log_pred = stats.t.logpdf(z, df) - 0.5 * np.log(scale2)
+
+                pred = np.exp(log_pred - log_pred.max())
+                # Changepoint: new run starts from the prior, so its predictive
+                # is the prior Student-t (NOT the grown runs' predictives).
+                s2_prior = beta0 * (kappa0 + 1.0) / (alpha0 * kappa0)
+                z_prior = (obs - mu0) / np.sqrt(s2_prior)
+                log_prior_pred = stats.t.logpdf(z_prior, 2.0 * alpha0) - 0.5 * np.log(s2_prior)
+                pred_prior = np.exp(log_prior_pred - log_pred.max())
+                cp_prob = float(h * np.sum(R[:t_idx + 1]) * pred_prior)
+                growth = (1.0 - h) * R[:t_idx + 1] * pred
+
+                denom = cp_prob + np.sum(growth)
+                if denom <= 0 or not np.isfinite(denom):
+                    R[:t_idx + 2] = 0.0
+                    R[t_idx + 1] = 1.0
+                else:
+                    R[t_idx + 1] = cp_prob / denom
+                    R[:t_idx + 1] = growth / denom
+                # Normalized posterior mass at run length 0 = P(changepoint now)
+                cp_probs[t_idx] = float(R[t_idx + 1])
+
+                # Shift registers: grown run j+1 = old run j absorbing obs
+                # (NIG conjugate update); fresh run 0 stays at the prior.
+                kappa_old = kappa_t[:t_idx + 1].copy()
+                mu_old = mu_t[:t_idx + 1].copy()
+                alpha_old = alpha_t[:t_idx + 1].copy()
+                beta_old = beta_t[:t_idx + 1].copy()
+                kappa_t[1:t_idx + 2] = kappa_old + 1.0
+                mu_t[1:t_idx + 2] = (kappa_old * mu_old + obs) / (kappa_old + 1.0)
+                alpha_t[1:t_idx + 2] = alpha_old + 0.5
+                beta_t[1:t_idx + 2] = (beta_old + 0.5 * kappa_old * (obs - mu_old) ** 2 / (kappa_old + 1.0))
+                mu_t[0] = mu0
+                kappa_t[0] = kappa0
+                alpha_t[0] = alpha0
+                beta_t[0] = beta0
+
+            # Report local maxima of changepoint probability above threshold
+            for idx in range(1, len(cp_probs) - 1):
+                if (cp_probs[idx] >= threshold
+                        and cp_probs[idx] >= cp_probs[idx - 1]
+                        and cp_probs[idx] >= cp_probs[idx + 1]):
+                    time_val = (self.data[self.time_column].iloc[idx]
+                                if self.time_column in self.data.columns else idx)
+                    change_points.append({
+                        'variable': col,
+                        'time_index': idx,
+                        'time_value': time_val,
+                        'changepoint_probability': float(cp_probs[idx]),
+                        'method': 'bocpd'
+                    })
+
+        return change_points
 
     def _information_criterion_change_detection(self, **kwargs) -> List[Dict[str, Any]]:
         """Information criterion-based change detection."""
