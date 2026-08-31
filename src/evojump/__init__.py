@@ -43,7 +43,9 @@ from . import laserplane
 from . import trajectory_visualizer
 from . import evolution_sampler
 from . import analytics_engine
-from . import cli
+# NOTE: `cli` is intentionally not imported here. Importing it eagerly makes
+# `python -m evojump.cli` emit a RuntimeWarning ('evojump.cli found in
+# sys.modules ... prior to execution'). `import evojump.cli` still works.
 
 # Import main classes for direct access
 from .datacore import DataCore, TimeSeriesData, MetadataManager
@@ -61,7 +63,6 @@ __all__ = [
     "trajectory_visualizer",
     "evolution_sampler",
     "analytics_engine",
-    "cli",
     # Classes
     "DataCore",
     "TimeSeriesData",
