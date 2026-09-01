@@ -15,7 +15,10 @@ from pathlib import Path
 
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'examples'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+_examples_dir = os.path.join(os.path.dirname(__file__), '..', 'examples')
+if _examples_dir not in sys.path:
+    sys.path.append(_examples_dir)
 
 from examples.drosophila_case_study import (
     DrosophilaPopulation,
