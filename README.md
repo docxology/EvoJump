@@ -506,7 +506,7 @@ If you use EvoJump in your research, please cite:
 
 EvoJump is now a fully functional, production-ready framework with:
 
-- **8 Core Modules** - Complete data management, modeling, analysis, and visualization
+- **7 Core Modules** - Complete data management, modeling, analysis, and visualization (`ls src/evojump/*.py`; verified 2026-08-31)
 - **Comprehensive test suite** - 16 test files covering all components (`ls tests/test_*.py`; verified 2026-08-31)
 - **Examples** - see `examples/` for demonstrating features and use cases
 - **Multiple Testing Modes** - Quick, full, benchmark, CI/CD ready
@@ -515,6 +515,8 @@ EvoJump is now a fully functional, production-ready framework with:
 - **Professional Architecture** - Modular, extensible, maintainable design
 
 ### 📊 **Technical Specifications**
+
+Coverage/test counts in this table are prose values of unstated provenance; the executable truth is `coverage.xml` (line-rate 0.6588 as of 2026-08-31) and `htmlcov/`. Re-measure after a full-suite run on an idle machine.
 
 | Component | Status | Coverage | Tests | Examples |
 |-----------|--------|----------|-------|----------|

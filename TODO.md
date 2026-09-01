@@ -6,13 +6,13 @@ moved to the "Done (verified)" section with date. Agent-ergonomics pass
 
 ## Minor
 
-- [ ] examples/README.md lists `basic_usage_fixed.py` which does not exist on disk (verified 2026-08-31: `ls examples/basic_usage_fixed.py` → No such file) — remove or restore the file (`examples/README.md`).
-- [ ] examples/README.md marks `drosophila_case_study.py` "(coming soon)" but the file exists and has a passing test (`tests/test_drosophila_case_study.py`) — drop the "(coming soon)" (`examples/README.md`).
-- [ ] tests/README.md says `uv run pytest tests/` — known to stall under heavy load on this machine (README/CHANGELOG v0.2.0 note); point to `.venv/bin/python -m pytest tests/ -q --no-cov` (`tests/README.md`).
-- [ ] tests/AGENTS.md file roster (verified 2026-08-29, 9 files) predates the six newer test modules; refresh to the live set via `ls tests/test_*.py` (`tests/AGENTS.md`).
-- [ ] src/AGENTS.md and tests/AGENTS.md "Verify" snippets use `uv run` despite the documented stall — align with root README commands (`src/AGENTS.md`, `tests/AGENTS.md`).
-- [ ] README "Technical Specifications" per-module coverage/test-count table (84%/83%/78%... "24 tests" etc.) is prose truth with no stated measurement date; either re-measure and date it, or link to `coverage.xml` + `htmlcov/` as the executable truth (`README.md`).
-- [ ] README "8 Core Modules" claim vs 7 modules in `src/evojump/` (analytics_engine, cli, datacore, evolution_sampler, jumprope, laserplane, trajectory_visualizer — verified 2026-08-31); recount or state what the 8th is (`README.md`).
+- [x] examples/README.md listed `basic_usage_fixed.py` (absent on disk) plus two thin_orchestrator examples (also absent) — FIXED 2026-08-31: run-snippet now points to `working_demo.py`; stale Architecture Examples section removed.
+- [x] examples/README.md `drosophila_case_study.py` "(coming soon)" — STALE 2026-08-31: the phrase is already absent from the file (fixed in a prior pass); no edit needed.
+- [x] tests/README.md `uv run pytest` guidance — STALE 2026-08-31: file already routes to `.venv/bin/python -m pytest` and warns against `uv run`; no edit needed.
+- [x] tests/AGENTS.md file roster — STALE 2026-08-31: file already states the live roster (16 files verified 2026-08-31, lane modules named); no edit needed.
+- [x] src/AGENTS.md and tests/AGENTS.md "Verify" snippets using `uv run` — STALE 2026-08-31: neither file contains `uv run` in its Verify section; src/AGENTS.md already uses `.venv/bin/python -m pytest ../tests/`; no edit needed.
+- [x] README "Technical Specifications" table undated prose coverage — FIXED 2026-08-31: provenance note added pointing to `coverage.xml` (line-rate 0.6588, 2026-08-31) and `htmlcov/` as executable truth; re-measure deferred per Major item.
+- [x] README "8 Core Modules" claim vs 7 modules in `src/evojump/` — FIXED 2026-08-31: changed to 7 with verification command.
 
 ## Medium
 
@@ -30,5 +30,7 @@ moved to the "Done (verified)" section with date. Agent-ergonomics pass
 - [ ] Author-identity discrepancy between `paper/README.md` (Daniel Ari Friedman) and `paper/paper.md` ("EvoJump Development Team") already flagged in `docs/manuscript/MANUSCRIPT_STATUS.md` — needs owner decision, not a doc-pass edit.
 
 ## Done (verified)
+
+- [x] 2026-08-31 (second doc pass): Minor items 1 fixed; items 2-5 found already-fixed/stale and closed with evidence; items 6-7 fixed.
 
 - [x] 2026-08-31: agent-ergonomics pass — see `REVIEW_LOG_2026-08-31.md` for the cold-start audit and every change made.

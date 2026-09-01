@@ -21,10 +21,6 @@ This directory contains comprehensive examples demonstrating the usage of the Ev
 ### 🧬 **Case Study Examples**
 - **`drosophila_case_study.py`** - Complete fruit fly biology analysis (see `../tests/test_drosophila_case_study.py`)
 
-### 🏗️ **Architecture Examples**
-- **`thin_orchestrator_examples.py`** - Thin orchestrator patterns
-- **`thin_orchestrator_working.py`** - Working thin orchestrator implementation
-
 ### ⚡ **Performance Examples**
 - **`performance_benchmarks.py`** - Performance testing and benchmarking
 
@@ -32,7 +28,7 @@ This directory contains comprehensive examples demonstrating the usage of the Ev
 
 ```bash
 # Basic usage demonstration
-python examples/basic_usage_fixed.py
+python examples/working_demo.py
 
 # Comprehensive analysis
 python examples/comprehensive_demo.py
