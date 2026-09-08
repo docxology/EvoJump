@@ -12,7 +12,7 @@
     }
   ],
   "description": "<p>EvoJump models ontogenetic development as a jump-diffusion process sweeping across a fixed analytical plane (the laser plane), yielding dynamic cross-sectional views of phenotypic distributions across a developmental timeline. It bundles data ingestion and QC (DataCore), stochastic process modeling across seven processes including jump-diffusion, OU, compound-Poisson, fractional Brownian motion, CIR, and L&eacute;vy processes (JumpRope), cross-sectional distribution analysis (LaserPlane), trajectory visualization and animation (TrajectoryVisualizer), population-level evolutionary sampling (EvolutionSampler), and a broad statistical analysis engine (AnalyticsEngine).</p>",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "keywords": [
     "evo-devo",
     "ontogeny",

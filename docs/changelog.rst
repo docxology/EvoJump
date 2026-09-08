@@ -12,6 +12,19 @@ versions.
 The format is based on `Keep a Changelog <https://keepachangelog.com/en/1.0.0/>`_,
 and the project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0.html>`_.
 
+0.5.2 (2026-09-08) — Zenodo paper-PDF deposit
+---------------------------------------------
+
+Fixed
+~~~~~
+
+- The v0.5.1 Zenodo deposit accepted only the source archive (the bucket
+  rejected the PDF upload with HTTP 415 on ``Content-Type: application/pdf``);
+  this release's record archives **both** ``evojump-0.5.2.zip`` and the
+  compiled ``evojump_paper.pdf`` (uploaded via the multipart file endpoint).
+
+No code changes since 0.5.1.
+
 0.5.1 (2026-09-08) — documentation accuracy & Zenodo paper deposit
 ------------------------------------------------------------------
 
