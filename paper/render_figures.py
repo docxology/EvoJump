@@ -9,9 +9,16 @@ Usage:
     python render_figures.py [--figures_dir FIGURES_DIR]
 
 Figures generated:
-    - figure_2_heatmap.png: Trajectory density heatmap
-    - figure_3_violin.png: Violin plots of distribution evolution
+    - figure_1_comparison.png: Stochastic model comparison (9 panels)
+    - figure_2_comprehensive.png: Comprehensive trajectory analysis
+    - figure_3_<model>_heatmap.png: Per-model trajectory density heatmaps
+    - figure_3_<model>_violin.png: Per-model violin plots of distribution evolution
+    - figure_3_<model>_ridge.png: Per-model ridge plots
+    - figure_3_<model>_phase.png: Per-model phase portraits
     - figure_4_copula.png: Copula analysis of dependencies
+
+Drosophila case-study figures are generated separately by
+render_drosophila_figures.py (build_paper.sh orchestrates both scripts).
 """
 
 import numpy as np
@@ -21,7 +28,6 @@ from pathlib import Path
 import sys
 import os
 import argparse
-import subprocess
 from typing import Dict, List, Tuple
 
 # Add src directory to path for imports
@@ -377,18 +383,6 @@ def main():
 
     # Generate main figures
     generated_figures = generate_all_figures(models, model_names, figures_dir)
-
-    # Generate Drosophila figures
-    print("\nGenerating Drosophila case study figures...")
-    result = subprocess.run([
-        sys.executable, "render_drosophila_figures.py"
-    ], cwd=figures_dir.parent, capture_output=True, text=True)
-
-    if result.returncode == 0:
-        print("✅ Drosophila figures generated successfully!")
-    else:
-        print("⚠️  Drosophila figure generation failed!")
-        print("Error:", result.stderr)
 
     # Print summary
     print()

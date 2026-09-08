@@ -173,7 +173,7 @@ def create_multiple_models_for_animation():
         if f.exists():
             f.unlink()
 
-    return models
+    return models, time_points
 
 def run_comprehensive_animation_demo():
     """Run comprehensive animation demo with multiple animation types."""
@@ -271,6 +271,7 @@ def run_comprehensive_animation_demo():
 
     # Create comparative animation
     anim2_dir = base_output_dir / "animation_2_multi_condition"
+    anim2_dir.mkdir(parents=True, exist_ok=True)
     fig, axes = plt.subplots(2, 2, figsize=(16, 12))
 
     def animate_multi_condition(frame_idx):
@@ -414,15 +415,16 @@ def run_comprehensive_animation_demo():
     print("\n🎬 Animation 3: Model Comparison Animation")
     print("-" * 50)
 
-    models = create_multiple_models_for_animation()
+    models, model_time_points = create_multiple_models_for_animation()
     anim3_dir = base_output_dir / "animation_3_model_comparison"
+    anim3_dir.mkdir(parents=True, exist_ok=True)
 
     # Create comparative animation
     fig, axes = plt.subplots(2, 3, figsize=(18, 10))
 
     def animate_model_comparison(frame_idx):
-        current_time = time_points[frame_idx % len(time_points)]
-        current_time_idx = frame_idx % len(time_points)
+        current_time = model_time_points[frame_idx % len(model_time_points)]
+        current_time_idx = frame_idx % len(model_time_points)
 
         for ax in axes.flat:
             ax.clear()
@@ -436,13 +438,13 @@ def run_comprehensive_animation_demo():
             if model.trajectories is not None:
                 # Plot individual trajectories (subset)
                 for j in range(min(8, model.trajectories.shape[0])):
-                    axes[0, 0].plot(time_points[:current_time_idx+1],
+                    axes[0, 0].plot(model_time_points[:current_time_idx+1],
                                   model.trajectories[j, :current_time_idx+1],
                                   alpha=0.4, color=color, linewidth=0.8)
 
                 # Plot mean trajectory
                 mean_traj = np.mean(model.trajectories, axis=0)
-                axes[0, 0].plot(time_points[:current_time_idx+1],
+                axes[0, 0].plot(model_time_points[:current_time_idx+1],
                               mean_traj[:current_time_idx+1],
                               color=color, linewidth=3, label=model_name.replace('_', ' ').title())
 
@@ -452,7 +454,7 @@ def run_comprehensive_animation_demo():
                               color=color, density=True)
 
                 # Plot parameter evolution
-                axes[1, 0].plot(time_points[:current_time_idx+1],
+                axes[1, 0].plot(model_time_points[:current_time_idx+1],
                               mean_traj[:current_time_idx+1],
                               color=color, linewidth=2, label=model_name.replace('_', ' ').title())
 
@@ -495,7 +497,7 @@ def run_comprehensive_animation_demo():
         for i, (model_name, model) in enumerate(models.items()):
             if model.trajectories is not None:
                 mean_traj = np.mean(model.trajectories, axis=0)
-                ax3d.plot(time_points[:current_time_idx+1], [i] * (current_time_idx+1),
+                ax3d.plot(model_time_points[:current_time_idx+1], [i] * (current_time_idx+1),
                          mean_traj[:current_time_idx+1], color=colors[i], linewidth=3,
                          label=model_name.replace('_', ' ').title())
 
@@ -510,7 +512,7 @@ def run_comprehensive_animation_demo():
 
     anim3 = animation.FuncAnimation(
         fig, animate_model_comparison,
-        frames=len(time_points),
+        frames=len(model_time_points),
         interval=300,
         blit=False,
         repeat=True
@@ -578,6 +580,7 @@ def run_comprehensive_animation_demo():
 
     # Create evolutionary animation
     anim4_dir = base_output_dir / "animation_4_evolutionary_dynamics"
+    anim4_dir.mkdir(parents=True, exist_ok=True)
     fig, axes = plt.subplots(2, 2, figsize=(15, 10))
 
     def animate_evolution(frame_idx):
@@ -744,8 +747,8 @@ def run_comprehensive_animation_demo():
 
 if __name__ == '__main__':
     results = run_comprehensive_animation_demo()
-    print("
-✅ Comprehensive animation demo completed successfully!"    print(f"📊 Status: {results['status']}")
+    print("\n✅ Comprehensive animation demo completed successfully!")
+    print(f"📊 Status: {results['status']}")
     print(f"🎬 Generated: {results['animations_generated']} animations")
     print(f"📁 Output directory: {results['animation_directories'][0] if results['animation_directories'] else 'N/A'}")
     print(f"📋 Report: {results['report_file']}")

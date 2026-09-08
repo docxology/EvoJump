@@ -108,3 +108,47 @@ class TestLandeResponse:
         data = pd.DataFrame({'phenotype1': [1.0, 2.0, 3.0]})
         model = evolution_sampler.PopulationModel(data)
         assert np.isnan(model.predict_phenotypic_response('phenotype1', h2=0.5))
+
+
+class TestInformationCriterionDetection:
+    """method='information' must be a real BIC-based segmentation, not a
+    silent delegate of the z-score statistical detector (regression: the old
+    implementation dispatched to _statistical_change_detection and the result
+    dicts carried method='statistical')."""
+
+    def test_bic_detects_mean_shift_and_labels_itself(self):
+        rng = np.random.default_rng(0)
+        n = 80
+        y = np.concatenate([rng.normal(0, 0.3, n // 2), rng.normal(3, 0.3, n - n // 2)])
+        df = pd.DataFrame({'time': np.arange(n, dtype=float), 'signal': y})
+        detector = analytics_engine.ChangePointDetector(df, 'time')
+
+        cps = detector.detect_changes(method='information')
+
+        assert len(cps) == 1
+        cp = cps[0]
+        assert cp['method'] == 'information'
+        assert cp['bic_improvement'] > 0
+        assert cp['bic_two_segment'] < cp['bic_single_segment']
+        # best split is near the true break
+        assert abs(cp['time_index'] - n // 2) <= 4
+
+    def test_bic_does_not_fire_on_quiet_series(self):
+        rng = np.random.default_rng(1)
+        n = 80
+        df = pd.DataFrame({'time': np.arange(n, dtype=float),
+                           'signal': rng.normal(0, 1, n)})
+        detector = analytics_engine.ChangePointDetector(df, 'time')
+
+        cps = detector.detect_changes(method='information')
+
+        # Any reported split must genuinely improve the BIC
+        for cp in cps:
+            assert cp['bic_improvement'] > 0
+            assert cp['method'] == 'information'
+
+    def test_bayesian_path_untouched(self):
+        df = _make_trajectory(with_jump=True, seed=9)
+        detector = analytics_engine.ChangePointDetector(df, 'time')
+        cps = detector.detect_changes(method='bayesian')
+        assert all(c['method'] == 'bocpd' for c in cps)

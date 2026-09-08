@@ -1,0 +1,32 @@
+{
+  "title": "EvoJump: A Comprehensive Framework for Evolutionary Ontogenetic Analysis",
+  "upload_type": "software",
+  "publication_type": "article",
+  "access_right": "open",
+  "license": "Apache-2.0",
+  "creators": [
+    {
+      "name": "Friedman, Daniel Ari",
+      "affiliation": "Active Inference Institute",
+      "orcid": "0000-0001-6232-9096"
+    }
+  ],
+  "description": "<p>EvoJump models ontogenetic development as a jump-diffusion process sweeping across a fixed analytical plane (the laser plane), yielding dynamic cross-sectional views of phenotypic distributions across a developmental timeline. It bundles data ingestion and QC (DataCore), stochastic process modeling across seven processes including jump-diffusion, OU, compound-Poisson, fractional Brownian motion, CIR, and L&eacute;vy processes (JumpRope), cross-sectional distribution analysis (LaserPlane), trajectory visualization and animation (TrajectoryVisualizer), population-level evolutionary sampling (EvolutionSampler), and a broad statistical analysis engine (AnalyticsEngine).</p>",
+  "version": "0.3.0",
+  "keywords": [
+    "evo-devo",
+    "ontogeny",
+    "jump-diffusion",
+    "stochastic processes",
+    "quantitative genetics",
+    "phenotypic distributions",
+    "evolutionary biology"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/docxology/EvoJump",
+      "relation": "isSupplementTo",
+      "scheme": "url"
+    }
+  ]
+}

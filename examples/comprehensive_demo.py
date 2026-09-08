@@ -189,7 +189,12 @@ def run_comprehensive_demo():
 
     # Step 8: Evolutionary analysis
     print("\n🧬 Step 8: Performing evolutionary analysis...")
-    sampler = EvolutionSampler(data_core)
+    # EvolutionSampler treats every non-time column as a phenotype; give it a
+    # numeric-only frame so string columns (genotype, treatment) don't break it
+    sampler = EvolutionSampler(
+        sample_data.select_dtypes(include=[np.number]),
+        time_column='time'
+    )
 
     # Evolutionary sampling
     mc_samples = sampler.sample(n_samples=200, method='monte-carlo')
@@ -205,7 +210,12 @@ def run_comprehensive_demo():
 
     # Step 9: Time series analysis
     print("\n⏰ Step 9: Performing time series analysis...")
-    analytics = AnalyticsEngine(data_core)
+    # Multivariate analysis (PCA) requires numeric columns; use a numeric-only
+    # frame so string columns (individual_id, genotype, treatment) don't break it
+    analytics = AnalyticsEngine(
+        sample_data.select_dtypes(include=[np.number]),
+        time_column='time'
+    )
 
     ts_results = analytics.analyze_time_series()
     print(f"   ✅ Change points detected: {len(ts_results.change_points)}")
@@ -306,19 +316,20 @@ def run_comprehensive_demo():
     print(f"   • 🏔️ 3D landscape plots: {output_dir}/phenotypic_landscape.png")
     print(f"   • 📋 Analysis report: {output_dir}/comprehensive_analysis_report.json")
 
-    print("
-🔬 Key Scientific Results:"    print("   • Stochastic model successfully fitted to developmental data"    print(f"   • Cross-sectional distributions identified as: {cross_section_results[10.0].distribution_fit.get('distribution', 'unknown')}")
+    print("\n🔬 Key Scientific Results:")
+    print("   • Stochastic model successfully fitted to developmental data")
+    print(f"   • Cross-sectional distributions identified as: {cross_section_results[10.0].distribution_fit.get('distribution', 'unknown')}")
     print(f"   • Significant developmental differences found: {len(comparison.significant_differences)} stages differ")
     print(f"   • Population genetic parameters estimated: Ne = {pop_stats.effective_population_size:.0f}")
     print(f"   • Multivariate analysis completed: {len(pca_results['explained_variance_ratio'])} PCA components")
 
     # Clean up
-    print("
-🧹 Cleaning up..."    data_file.unlink()
+    print("\n🧹 Cleaning up...")
+    data_file.unlink()
     print(f"   ✅ Removed temporary data file: {data_file}")
 
-    print("
-" + "=" * 60)    print("🚀 EvoJump Comprehensive Demo - COMPLETE!")
+    print("\n" + "=" * 60)
+    print("🚀 EvoJump Comprehensive Demo - COMPLETE!")
     print("🎯 All outputs generated successfully!")
     print("📁 Check the 'evojump_outputs' directory for all generated files")
     print("=" * 60)
@@ -352,7 +363,7 @@ if __name__ == '__main__':
 
     print("\n🎯 To explore the results:")
     print(f"   1. Open the output directory: {results['outputs']['directory']}")
-    print("   2. View the generated plots (PNG files)"
-    print("   3. Examine the comprehensive analysis report (JSON file)"
-    print("   4. All outputs are ready for scientific analysis!"
+    print("   2. View the generated plots (PNG files)")
+    print("   3. Examine the comprehensive analysis report (JSON file)")
+    print("   4. All outputs are ready for scientific analysis!")
 

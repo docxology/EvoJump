@@ -81,22 +81,42 @@ class TimeSeriesData:
 
         Rows are first ordered by the time column so interpolation is temporal
         rather than row-order dependent; the original row order is restored
-        afterwards. Forward fill only applies to leading/trailing gaps after
-        interpolation (limit_direction='both' would fabricate interior values;
-        it does not).
+        positionally afterwards (duplicate index labels are safe). Forward
+        fill only applies to leading/trailing gaps of phenotype columns after
+        interpolation; the time column itself is never filled. Missing time
+        values raise a ValueError because temporal position cannot be invented.
+
+        Parameters:
+            method: Interpolation method passed to pandas (default 'linear')
+
+        Raises:
+            ValueError: If the time column contains missing values
         """
+        if self.data[self.time_column].isna().any():
+            raise ValueError(
+                f"Time column '{self.time_column}' contains missing values; "
+                "temporal position cannot be interpolated. Drop or fix these "
+                "rows first."
+            )
+
         numeric_columns = self.data.select_dtypes(include=[np.number]).columns
-        original_index = self.data.index
+        fill_columns = [col for col in numeric_columns if col != self.time_column]
+        if not fill_columns:
+            return
 
-        sorted_data = self.data.sort_values(self.time_column)
-        for col in numeric_columns:
-            if col != self.time_column:
-                sorted_data[col] = sorted_data[col].interpolate(method=method)
-        # ffill/bfill only the boundary gaps
-        sorted_data[numeric_columns] = sorted_data[numeric_columns].ffill().bfill()
+        # Positional stable sort by time, positional restore afterwards. A
+        # label-based restore (.loc[original_index]) would take the cross
+        # product of duplicated index labels and silently expand the frame.
+        order = np.argsort(self.data[self.time_column].to_numpy(), kind='stable')
+        inverse_order = np.argsort(order)
 
-        self.data = sorted_data.loc[original_index]
+        sorted_data = self.data.iloc[order]
+        for col in fill_columns:
+            sorted_data[col] = sorted_data[col].interpolate(method=method)
+        # ffill/bfill only the boundary gaps of the phenotype columns
+        sorted_data[fill_columns] = sorted_data[fill_columns].ffill().bfill()
 
+        self.data[fill_columns] = sorted_data[fill_columns].iloc[inverse_order].to_numpy()
         logger.info(f"Interpolated missing data using {method} method")
 
 
@@ -139,7 +159,10 @@ class MetadataManager:
         else:
             raise ValueError(f"Unsupported metadata format: {metadata_file.suffix}")
 
-        # Merge with existing metadata
+        # Merge with existing metadata (yaml.safe_load returns None for an
+        # empty file; update() would fail with an opaque TypeError on None)
+        if loaded_metadata is None:
+            raise ValueError(f"Metadata file {metadata_file} is empty")
         self.metadata.update(loaded_metadata)
         logger.info(f"Loaded metadata from {metadata_file}")
 
@@ -161,16 +184,30 @@ class DataCore:
     """Main class for data management and preprocessing."""
 
     def __init__(self,
-                 time_series_data: List[TimeSeriesData],
+                 time_series_data: Union[TimeSeriesData, List[TimeSeriesData]],
                  metadata_manager: Optional[MetadataManager] = None):
-        """Initialize DataCore with time series data."""
-        self.time_series_data = time_series_data
+        """Initialize DataCore with one or more time series datasets.
+
+        A single TimeSeriesData is accepted for convenience and normalized to
+        a one-element list. Multi-dataset DataCores can be built either by
+        passing a list of manually constructed TimeSeriesData objects or by
+        appending datasets with append().
+        """
+        if isinstance(time_series_data, TimeSeriesData):
+            time_series_data = [time_series_data]
+        self.time_series_data = list(time_series_data)
         self.metadata_manager = metadata_manager or MetadataManager()
 
         # Validate data consistency
         self._validate_data_consistency()
 
-        logger.info(f"Initialized DataCore with {len(time_series_data)} time series datasets")
+        logger.info(f"Initialized DataCore with {len(self.time_series_data)} time series datasets")
+
+    def append(self, time_series: TimeSeriesData) -> None:
+        """Append a time series dataset and re-validate consistency."""
+        self.time_series_data.append(time_series)
+        self._validate_data_consistency()
+        logger.info(f"Appended time series dataset (now {len(self.time_series_data)} datasets)")
 
     @classmethod
     def load_from_csv(cls,
@@ -239,6 +276,14 @@ class DataCore:
         """
         Load data from HDF5 file.
 
+        Both layouts are supported and detected automatically:
+
+        - the layout written by ``save_processed_data(format='hdf5')``:
+          one ``dataset_<i>`` group per stored series, each group becoming
+          one ``TimeSeriesData`` (multi-series files round-trip), and
+        - flat files where each top-level dataset is a column (or a group
+          of per-column datasets, flattened as ``group/subkey``).
+
         Parameters:
             file_path: Path to HDF5 file
             time_column: Name of time column
@@ -247,33 +292,100 @@ class DataCore:
 
         Returns:
             DataCore instance
+
+        Raises:
+            ValueError: If column datasets have unequal lengths or no
+                data columns are found
         """
         logger.info(f"Loading data from {file_path}")
 
+        def column_name(key: str) -> str:
+            # Flattened group paths cannot be positional column names
+            return key.replace('/', '_')
+
+        def to_series(node: h5py.Dataset, key: str) -> pd.Series:
+            values = node[:]
+            if node.dtype.kind == 'S':
+                values = np.char.decode(values, 'utf-8')
+            elif node.dtype == object and values.size > 0:
+                values = np.array([
+                    v.decode('utf-8', errors='replace') if isinstance(v, bytes) else v
+                    for v in values.ravel()
+                ], dtype=object).reshape(values.shape)
+            return pd.Series(values, name=column_name(key))
+
+        datasets: Dict[str, pd.Series] = {}
+
         with h5py.File(file_path, 'r') as f:
-            # Load data
-            data_dict = {}
-            for key in f.keys():
-                if isinstance(f[key], h5py.Dataset):
-                    data_dict[key] = f[key][:]
-                elif isinstance(f[key], h5py.Group):
-                    # Handle groups if needed
-                    for subkey in f[key].keys():
-                        data_dict[f"{key}/{subkey}"] = f[key][subkey][:]
+            def is_series_group(key: str) -> bool:
+                """True for the 'dataset_<i>' groups written by save_processed_data."""
+                node = f[key]
+                label = key.rsplit('_', 1)[-1]
+                return (
+                    key.startswith('dataset_') and label.isdigit()
+                    and isinstance(node, h5py.Group)
+                )
 
-            raw_data = pd.DataFrame(data_dict)
+            keys = list(f.keys())
+            save_layout = bool(keys) and all(is_series_group(key) for key in keys)
+            dataset_groups = [key for key in keys if is_series_group(key)]
+            if save_layout:
+                # save_processed_data layout: one group per series
+                frames = []
+                for group_name in sorted(dataset_groups, key=lambda k: int(k.rsplit('_', 1)[-1])):
+                    group = f[group_name]
+                    group_data = {}
+                    for subkey in group.keys():
+                        node = group[subkey]
+                        if isinstance(node, h5py.Dataset):
+                            group_data[column_name(subkey)] = to_series(node, subkey)
+                    lengths = {len(s) for s in group_data.values()}
+                    if len(lengths) > 1:
+                        raise ValueError(
+                            f"Cannot load {file_path}: group '{group_name}' has "
+                            f"datasets of unequal lengths "
+                            f"{ {k: len(v) for k, v in group_data.items()} }; "
+                            "columns of one series must share a length"
+                        )
+                    frames.append(pd.DataFrame(group_data))
+                raw_frames = frames
+            else:
+                # Flat layout: top-level datasets (and groups) are columns
+                def collect(prefix: str, group: h5py.Group) -> None:
+                    for key in group.keys():
+                        node = group[key]
+                        if isinstance(node, h5py.Dataset):
+                            datasets[column_name(f"{prefix}{key}")] = to_series(node, f"{prefix}{key}")
+                        elif isinstance(node, h5py.Group):
+                            collect(f"{prefix}{key}/", node)
 
-        # Auto-detect phenotype columns if not specified
-        if phenotype_columns is None:
-            numeric_cols = raw_data.select_dtypes(include=[np.number]).columns
-            phenotype_columns = [col for col in numeric_cols if col != time_column]
+                collect('', f)
+                lengths = {len(s) for s in datasets.values()}
+                if len(lengths) > 1:
+                    raise ValueError(
+                        f"Cannot load {file_path}: datasets have unequal lengths "
+                        f"{ {k: len(v) for k, v in datasets.items()} }; "
+                        "a flat HDF5 file must store equal-length column arrays"
+                    )
+                if not datasets:
+                    raise ValueError(f"No data columns found in {file_path}")
+                raw_frames = [pd.DataFrame(datasets)]
 
-        # Create TimeSeriesData object
-        time_series = TimeSeriesData(
-            data=raw_data,
-            time_column=time_column,
-            phenotype_columns=phenotype_columns
-        )
+        raw_frames = [frame for frame in raw_frames if len(frame.columns) > 0]
+        time_series_list = []
+        for raw_data in raw_frames:
+            # Auto-detect phenotype columns if not specified
+            if phenotype_columns is None:
+                numeric_cols = raw_data.select_dtypes(include=[np.number]).columns
+                frame_phenotype_columns = [col for col in numeric_cols if col != time_column]
+            else:
+                frame_phenotype_columns = phenotype_columns
+
+            time_series_list.append(TimeSeriesData(
+                data=raw_data,
+                time_column=time_column,
+                phenotype_columns=frame_phenotype_columns
+            ))
 
         # Load metadata if provided
         metadata_manager = None
@@ -281,7 +393,7 @@ class DataCore:
             metadata_manager = MetadataManager(metadata_file)
 
         # Create DataCore instance
-        instance = cls([time_series], metadata_manager)
+        instance = cls(time_series_list, metadata_manager)
 
         # Add loading step to processing history
         instance.metadata_manager.add_processing_step(
@@ -289,7 +401,8 @@ class DataCore:
             {
                 'file_path': str(file_path),
                 'time_column': time_column,
-                'phenotype_columns': phenotype_columns
+                'phenotype_columns': phenotype_columns,
+                'n_datasets': len(time_series_list)
             }
         )
 
@@ -360,23 +473,53 @@ class DataCore:
         logger.info("Data preprocessing completed")
 
     def _remove_outliers(self, ts: TimeSeriesData, method: str = 'iqr', threshold: float = 1.5) -> None:
-        """Remove outliers from time series data."""
+        """Remove outlier rows (row deletion) from time series data.
+
+        One combined keep-mask is computed across all phenotype columns from
+        the original data and applied once, so the result is independent of
+        the phenotype column order. Missing (NaN) values are never treated as
+        outliers. Note that removal deletes rows, which breaks temporal
+        contiguity in a time series; run interpolation first when continuity
+        matters.
+
+        Raises:
+            ValueError: If an unsupported method is requested, or if outlier
+                removal would delete every row.
+        """
+        if method not in ('iqr', 'zscore'):
+            raise ValueError(f"Unsupported outlier method: {method}")
+
+        # Positional mask: safe with duplicate index labels
+        keep = np.ones(len(ts.data), dtype=bool)
         for col in ts.phenotype_columns:
+            series = ts.data[col]
             if method == 'iqr':
-                Q1 = ts.data[col].quantile(0.25)
-                Q3 = ts.data[col].quantile(0.75)
+                Q1 = series.quantile(0.25)
+                Q3 = series.quantile(0.75)
                 IQR = Q3 - Q1
                 lower_bound = Q1 - threshold * IQR
                 upper_bound = Q3 + threshold * IQR
+                col_keep = ((series >= lower_bound) & (series <= upper_bound)).to_numpy()
+            else:  # zscore
+                std_val = series.std()
+                if pd.isna(std_val) or std_val == 0:
+                    # Constant or degenerate column: nothing to flag
+                    continue
+                z_scores = (series - series.mean()) / std_val
+                col_keep = (z_scores.abs() <= threshold).to_numpy()
+            # NaN fails every bound comparison; treat as "not known to be an
+            # outlier" instead of silently deleting the row
+            keep &= col_keep | series.isna().to_numpy()
 
-                mask = (ts.data[col] >= lower_bound) & (ts.data[col] <= upper_bound)
-                ts.data = ts.data[mask].copy()
+        filtered = ts.data[keep].copy()
+        if filtered.empty and not ts.data.empty:
+            raise ValueError(
+                f"Outlier removal (method={method}, threshold={threshold}) would "
+                "remove every row; refusing to empty the dataset. Increase the "
+                "threshold or inspect the data."
+            )
 
-            elif method == 'zscore':
-                z_scores = np.abs((ts.data[col] - ts.data[col].mean()) / ts.data[col].std())
-                mask = z_scores <= threshold
-                ts.data = ts.data[mask].copy()
-
+        ts.data = filtered
         logger.info(f"Removed outliers using {method} method with threshold {threshold}")
 
     def _normalize_data(self, ts: TimeSeriesData, method: str = 'zscore') -> None:
@@ -412,6 +555,7 @@ class DataCore:
             'total_samples': sum(len(ts.data) for ts in self.time_series_data),
             'missing_data_percentage': {},
             'outlier_percentage': {},
+            'outliers_by_column': {},
             'temporal_consistency': {}
         }
 
@@ -420,9 +564,11 @@ class DataCore:
             missing_pct = ts.data.isnull().sum().sum() / (ts.data.shape[0] * ts.data.shape[1]) * 100
             quality_metrics['missing_data_percentage'][f'dataset_{i}'] = missing_pct
 
-            # Outlier detection (using IQR method)
+            # Outlier detection (using IQR method), with a per-column
+            # breakdown so an affected column can be identified
             outliers = 0
             total_values = 0
+            outliers_by_column = {}
             for col in ts.phenotype_columns:
                 Q1 = ts.data[col].quantile(0.25)
                 Q3 = ts.data[col].quantile(0.75)
@@ -433,11 +579,16 @@ class DataCore:
                 col_outliers = ((ts.data[col] < lower_bound) | (ts.data[col] > upper_bound)).sum()
                 outliers += col_outliers
                 total_values += len(ts.data)
+                outliers_by_column[col] = (
+                    col_outliers / len(ts.data) * 100 if len(ts.data) > 0 else 0
+                )
 
             outlier_pct = outliers / total_values * 100 if total_values > 0 else 0
             quality_metrics['outlier_percentage'][f'dataset_{i}'] = outlier_pct
+            quality_metrics['outliers_by_column'][f'dataset_{i}'] = outliers_by_column
 
-            # Temporal consistency
+            # Temporal consistency — always emitted, even for a single time
+            # point, so consumers see a consistent key set per dataset
             time_diffs = np.diff(np.sort(ts.data[ts.time_column].unique()))
             if len(time_diffs) > 0:
                 mean_diff = np.mean(time_diffs)
@@ -446,6 +597,12 @@ class DataCore:
                     'mean_interval': mean_diff,
                     'std_interval': std_diff,
                     'regularity_score': 1 - min(std_diff / mean_diff, 1) if mean_diff > 0 else 0
+                }
+            else:
+                quality_metrics['temporal_consistency'][f'dataset_{i}'] = {
+                    'mean_interval': None,
+                    'std_interval': None,
+                    'regularity_score': None
                 }
 
         # Add validation step to history
@@ -474,7 +631,18 @@ class DataCore:
                 for i, ts in enumerate(self.time_series_data):
                     group = f.create_group(f'dataset_{i}')
                     for col in ts.data.columns:
-                        group.create_dataset(col, data=ts.data[col].values)
+                        values = ts.data[col]
+                        if pd.api.types.is_numeric_dtype(values):
+                            group.create_dataset(col, data=values.to_numpy())
+                        else:
+                            # Non-numeric columns (e.g. strain labels) are
+                            # encoded as UTF-8 strings so the save never fails
+                            logger.warning(
+                                f"Encoding non-numeric column '{col}' as strings in HDF5 output")
+                            group.create_dataset(
+                                col,
+                                data=values.astype(str).to_numpy(),
+                                dtype=h5py.string_dtype(encoding='utf-8'))
         elif format == 'parquet':
             combined_data = pd.concat([ts.data for ts in self.time_series_data], ignore_index=True)
             try:
@@ -508,9 +676,15 @@ class DataCore:
 
             combined = pd.concat(all_data, ignore_index=True)
 
-            # Group by time and compute means
+            # Group by time and compute means. Union the phenotype columns
+            # across datasets: a dataset lacking a column contributes NaN,
+            # which the mean skips.
             time_col = self.time_series_data[0].time_column
-            phenotype_cols = self.time_series_data[0].phenotype_columns
+            phenotype_cols = []
+            for ts in self.time_series_data:
+                for col in ts.phenotype_columns:
+                    if col not in phenotype_cols:
+                        phenotype_cols.append(col)
 
             aggregated = combined.groupby(time_col)[phenotype_cols].mean().reset_index()
             return aggregated
@@ -527,11 +701,25 @@ class DataCore:
         logger.info(f"Filtered data to time range [{min_time}, {max_time}]")
 
     def filter_by_phenotype_range(self, phenotype_column: str, min_val: float, max_val: float) -> None:
-        """Filter all datasets by phenotype value range."""
+        """Filter all datasets by phenotype value range.
+
+        Raises:
+            ValueError: If phenotype_column is not a phenotype column of
+                every dataset (an unknown name is otherwise indistinguishable
+                from 'no rows matched').
+        """
+        missing_datasets = [
+            i for i, ts in enumerate(self.time_series_data)
+            if phenotype_column not in ts.phenotype_columns
+        ]
+        if missing_datasets:
+            raise ValueError(
+                f"Phenotype column '{phenotype_column}' not found in datasets "
+                f"{missing_datasets}"
+            )
         for ts in self.time_series_data:
-            if phenotype_column in ts.phenotype_columns:
-                mask = (ts.data[phenotype_column] >= min_val) & (ts.data[phenotype_column] <= max_val)
-                ts.data = ts.data[mask].copy()
+            mask = (ts.data[phenotype_column] >= min_val) & (ts.data[phenotype_column] <= max_val)
+            ts.data = ts.data[mask].copy()
 
         logger.info(f"Filtered data by {phenotype_column} range [{min_val}, {max_val}]")
 

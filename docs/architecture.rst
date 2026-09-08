@@ -323,27 +323,14 @@ Performance Architecture
 Error Handling Architecture
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-**Exception Hierarchy**
+**Exception Model**
 
-.. code-block::
+There is no ``evojump.exceptions`` module and no custom exception
+hierarchy; EvoJump raises standard built-in exceptions:
 
-   EvoJumpError (base exception)
-   ├── DataError
-   │   ├── ValidationError
-   │   ├── FormatError
-   │   └── MissingDataError
-   ├── ModelError
-   │   ├── FittingError
-   │   ├── ParameterError
-   │   └── SimulationError
-   ├── AnalysisError
-   │   ├── StatisticalError
-   │   ├── ConvergenceError
-   │   └── MethodError
-   └── VisualizationError
-       ├── PlotError
-       ├── AnimationError
-       └── ExportError
+  * ``ValueError`` for invalid parameters and malformed input data
+  * ``FileNotFoundError`` for missing input files (CLI exits with code 1)
+  * ``RuntimeError`` for operations on unfitted or inconsistent models
 
 **Error Recovery**
   * Graceful degradation for partial failures
@@ -352,32 +339,22 @@ Error Handling Architecture
   * User-friendly error messages
 
 **Logging Architecture**
-  * Hierarchical logging system
-  * Configurable log levels and outputs
-  * Structured logging with metadata
-  * Performance impact minimization
+  * Standard-library logging under the ``evojump`` logger hierarchy
+    (``logging.getLogger(__name__)`` in every module)
+  * Configurable log levels and outputs through ``logging`` handlers
+  * The CLI sets the package logger level; library users control the
+    ``evojump`` logger themselves
 
 Configuration System
 ~~~~~~~~~~~~~~~~~~~~
 
-**Configuration Sources**
-  * Environment variables
-  * Configuration files (YAML, JSON, INI)
-  * Runtime configuration objects
-  * Command-line arguments
+There is no persistent configuration layer: no environment variables, no
+configuration files, and no global configuration object. Behavior is
+controlled exclusively through:
 
-**Configuration Hierarchy**
-  1. Built-in defaults
-  2. System-wide configuration
-  3. User configuration files
-  4. Environment variables
-  5. Runtime overrides
-
-**Hot Configuration**
-  * Dynamic configuration updates
-  * Configuration validation
-  * Backward compatibility management
-  * Configuration change notifications
+  * Function and method parameters (e.g. ``n_bootstrap``, ``model_type``)
+  * ``PlotConfig`` dataclass for visualization settings
+  * Command-line arguments for the CLI (which map to the same parameters)
 
 Extensibility Architecture
 ~~~~~~~~~~~~~~~~~~~~~~~~~~

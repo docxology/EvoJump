@@ -43,8 +43,8 @@ class DevelopmentalTrajectoryOrchestrator:
 
         # Validate data quality
         quality = self.data_core.validate_data_quality()
-        print(f"Data quality - Missing: {quality['missing_data_percentage']['dataset_0']".2f"}%, "
-              f"Outliers: {quality['outlier_percentage']['dataset_0']".2f"}%")
+        print(f"Data quality - Missing: {quality['missing_data_percentage']['dataset_0']:.2f}%, "
+              f"Outliers: {quality['outlier_percentage']['dataset_0']:.2f}%")
 
         return self.data_core
 
@@ -59,8 +59,8 @@ class DevelopmentalTrajectoryOrchestrator:
             time_points=time_points
         )
 
-        print(f"Model fitted - Equilibrium: {self.model.fitted_parameters.equilibrium".2f"}, "
-              f"Jump intensity: {self.model.fitted_parameters.jump_intensity".3f"}")
+        print(f"Model fitted - Equilibrium: {self.model.fitted_parameters.equilibrium:.2f}, "
+              f"Jump intensity: {self.model.fitted_parameters.jump_intensity:.3f}")
 
         return self.model
 
@@ -78,8 +78,8 @@ class DevelopmentalTrajectoryOrchestrator:
         for time_point in time_points:
             result = self.analyzer.analyze_cross_section(time_point)
             results[time_point] = result
-            print(f"Time {time_point"4.1f"}: mean = {result.moments['mean']"6.2f"}, "
-                  f"std = {result.moments['std']".2f"}")
+            print(f"Time {time_point:4.1f}: mean = {result.moments['mean']:6.2f}, "
+                  f"std = {result.moments['std']:.2f}")
 
         return results
 
@@ -184,12 +184,12 @@ class EvolutionaryAnalysisOrchestrator:
         genetic_params = patterns['genetic_parameters']
 
         print("Population Statistics:")
-        print(f"  Effective population size: {pop_stats.effective_population_size".0f"}")
-        print(f"  Mean heritability: {np.mean(list(pop_stats.heritability_estimates.values()))".3f"}")
+        print(f"  Effective population size: {pop_stats.effective_population_size:.0f}")
+        print(f"  Mean heritability: {np.mean(list(pop_stats.heritability_estimates.values())):.3f}")
 
         print("Genetic Parameters:")
-        print(f"  Additive variance: {genetic_params['additive_variance']".3f"}")
-        print(f"  Environmental variance: {genetic_params['environmental_variance']".3f"}")
+        print(f"  Additive variance: {genetic_params['additive_variance']:.3f}")
+        print(f"  Environmental variance: {genetic_params['environmental_variance']:.3f}")
 
         return patterns
 
@@ -212,7 +212,7 @@ class EvolutionaryAnalysisOrchestrator:
             target_variable='phenotype_final',
             feature_variables=['phenotype_initial', 'genotype_score']
         )
-        print(f"Predictive modeling R²: {predictions['random_forest'].performance_metrics['test_r2']:".3f"")
+        print(f"Predictive modeling R²: {predictions['random_forest'].performance_metrics['test_r2']:.3f}")
 
         return ts_results, mv_results, predictions
 
@@ -308,7 +308,7 @@ class BatchAnalysisOrchestrator:
             }
 
             print(f"  ✓ {dataset_name}: {result['n_samples']} samples, "
-                  f"mean = {result['cross_section_mean']".2f"}")
+                  f"mean = {result['cross_section_mean']:.2f}")
 
         except Exception as e:
             print(f"  ✗ {dataset_name}: {str(e)}")
@@ -351,8 +351,8 @@ class BatchAnalysisOrchestrator:
 
         if successful:
             means = [r['cross_section_mean'] for r in successful]
-            print(f"  Mean cross-section values: {np.mean(means)".2f"} ± {np.std(means):".2f"")
-            print(f"  Range: {np.min(means)".2f"} - {np.max(means)".2f"}")
+            print(f"  Mean cross-section values: {np.mean(means):.2f} ± {np.std(means):.2f}")
+            print(f"  Range: {np.min(means):.2f} - {np.max(means):.2f}")
 
         self.results = {
             'summary': {

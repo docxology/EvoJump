@@ -43,8 +43,8 @@ python examples/enhanced_animation_demo.py
 # Performance benchmarking
 python examples/performance_benchmarks.py
 
-# Run all examples (for testing)
-python examples/run_all_examples.py
+# Run all examples (for testing; from the repository root)
+python run_all_examples.py
 ```
 
 ## Example Structure
@@ -75,7 +75,6 @@ Examples generate multiple output types:
 - **GIF animations** - Dynamic developmental processes
 - **JSON reports** - Comprehensive analysis results
 - **CSV data** - Processed datasets and results
-- **HTML reports** - Interactive visualizations
 
 ## Scientific Applications
 

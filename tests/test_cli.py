@@ -13,6 +13,7 @@ import tempfile
 from pathlib import Path
 import pandas as pd
 import numpy as np
+import logging
 
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -134,9 +135,9 @@ class TestCLISubcommands:
             output_dir = Path(temp_dir)
 
             try:
-                # Should run without errors
+                # Should run without errors and exit 0
                 result = cli.main(['analyze', str(temp_file), '--output', str(output_dir)])
-
+                assert result == 0
                 # Check that output files were created
                 assert (output_dir / 'analysis_results.json').exists()
                 assert (output_dir / 'data_summary.json').exists()
@@ -157,12 +158,12 @@ class TestCLISubcommands:
             output_file = output_dir / 'model.pkl'
 
             try:
-                # Should run without errors
                 result = cli.main([
                     'fit', str(temp_file),
                     '--model-type', 'jump-diffusion',
                     '--output', str(output_file)
                 ])
+                assert result == 0
 
                 # Check that model file was created
                 assert output_file.exists()
@@ -198,6 +199,7 @@ class TestCLISubcommands:
                     'visualize', str(model_path),
                     '--output', str(output_dir)
                 ])
+                assert result == 0
 
                 # Check that visualization files were created
                 assert (output_dir / 'trajectories.png').exists()
@@ -226,6 +228,7 @@ class TestCLISubcommands:
                     '--samples', '100',
                     '--output', str(output_file)
                 ])
+                assert result == 0
 
                 # Check that samples file was created
                 assert output_file.exists()
@@ -250,8 +253,8 @@ class TestCLIErrorHandling:
 
     def test_missing_input_file(self):
         """Test error handling for missing input file."""
-        with pytest.raises(SystemExit):
-            cli.main(['analyze', 'nonexistent.csv'])
+        # Runtime failure returns 1, per main()'s documented contract.
+        assert cli.main(['analyze', 'nonexistent.csv']) == 1
 
     def test_invalid_model_type(self):
         """Test error handling for invalid model type."""
@@ -274,7 +277,7 @@ class TestCLIErrorHandling:
             temp_file.unlink()
 
     def test_missing_output_directory(self):
-        """Test error handling for missing output directory."""
+        """Test error handling for an unwritable output directory."""
         data = pd.DataFrame({
             'time': [1, 2, 3],
             'phenotype1': [10, 12, 14]
@@ -284,18 +287,169 @@ class TestCLIErrorHandling:
             data.to_csv(f.name, index=False)
             temp_file = Path(f.name)
 
-        try:
-            with pytest.raises(SystemExit):
-                cli.main([
+        # Make the output parent read-only so mkdir fails portably, unlike
+        # '/nonexistent/...' which root containers happily create.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            readonly_parent = Path(temp_dir) / 'readonly'
+            readonly_parent.mkdir()
+            readonly_parent.chmod(0o500)
+            try:
+                if os.name != 'posix' or os.geteuid() == 0:
+                    pytest.skip(
+                        "unwritable-directory test requires POSIX permissions "
+                        "and a non-root user")
+                result = cli.main([
                     'analyze', str(temp_file),
-                    '--output', '/nonexistent/directory/path'
+                    '--output', str(readonly_parent / 'results')
                 ])
+                assert result == 1
+            finally:
+                readonly_parent.chmod(0o700)
+
+        temp_file.unlink()
+
+
+class TestCLIExitCodesAndOutput:
+    """Test exit-code contract, global options, and plot-type coverage."""
+
+    def create_test_data(self, time_col='time'):
+        """Create synthetic test data for CLI tests."""
+        data = pd.DataFrame({
+            time_col: [1, 2, 3, 4, 5, 1, 2, 3, 4, 5],
+            'phenotype1': [10, 12, 14, 16, 18, 11, 13, 15, 17, 19],
+            'phenotype2': [20, 22, 24, 26, 28, 21, 23, 25, 27, 29]
+        })
+        return data
+
+    def _save_fitted_model(self, csv_path):
+        """Fit a model on synthetic data and save it, returning the path."""
+        import evojump as ej
+
+        data_core = ej.DataCore.load_from_csv(str(csv_path), time_column='time')
+        model = ej.JumpRope.fit(data_core, model_type='jump-diffusion', seed=0)
+        model_file = tempfile.NamedTemporaryFile(suffix='.pkl', delete=False)
+        model.save(Path(model_file.name))
+        model_file.close()
+        return Path(model_file.name)
+
+    def test_no_subcommand_returns_usage_error(self):
+        """Test that invoking with no subcommand is a usage error (exit 2)."""
+        assert cli.main([]) == 2
+
+    def test_version_exits_successfully(self):
+        """Test that --version exits 0."""
+        with pytest.raises(SystemExit) as exc_info:
+            cli.main(['--version'])
+        assert exc_info.value.code == 0
+
+    def test_global_output_precedes_subcommand(self):
+        """Test that a global --output given before the subcommand is used."""
+        data = self.create_test_data()
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
+            data.to_csv(f.name, index=False)
+            temp_file = Path(f.name)
+
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                global_out = Path(temp_dir) / 'global_out'
+                result = cli.main([
+                    '--output', str(global_out),
+                    'analyze', str(temp_file)
+                ])
+                assert result == 0
+                assert (global_out / 'analysis_results.json').exists()
         finally:
             temp_file.unlink()
+
+    def test_fit_with_renamed_time_column(self):
+        """Test that fit accepts a non-default time column via --time-column."""
+        data = self.create_test_data(time_col='age')
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
+            data.to_csv(f.name, index=False)
+            temp_file = Path(f.name)
+
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                output_file = Path(temp_dir) / 'model.pkl'
+                result = cli.main([
+                    'fit', str(temp_file),
+                    '--time-column', 'age',
+                    '--output', str(output_file)
+                ])
+                assert result == 0
+                assert output_file.exists()
+        finally:
+            temp_file.unlink()
+
+    @pytest.mark.parametrize('plot_type,expected_name', [
+        ('trajectories', 'trajectories.png'),
+        ('cross-sections', 'cross_sections.png'),
+        ('landscapes', 'landscape.png'),
+    ])
+    def test_visualize_static_plot_types(self, plot_type, expected_name):
+        """Test each static visualize plot type produces its artifact."""
+        data = self.create_test_data()
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
+            data.to_csv(f.name, index=False)
+            temp_file = Path(f.name)
+
+        model_path = None
+        try:
+            model_path = self._save_fitted_model(temp_file)
+            with tempfile.TemporaryDirectory() as temp_dir:
+                output_dir = Path(temp_dir)
+                result = cli.main([
+                    'visualize', str(model_path),
+                    '--plot-type', plot_type,
+                    '--output', str(output_dir)
+                ])
+                assert result == 0
+                assert (output_dir / expected_name).exists()
+        finally:
+            temp_file.unlink()
+            if model_path is not None:
+                model_path.unlink()
+
+    @pytest.mark.parametrize('plot_type', ['trajectories', 'cross-sections', 'landscapes'])
+    def test_visualize_interactive_writes_html(self, plot_type):
+        """Test that --interactive persists a Plotly HTML artifact."""
+        data = self.create_test_data()
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
+            data.to_csv(f.name, index=False)
+            temp_file = Path(f.name)
+
+        model_path = None
+        try:
+            model_path = self._save_fitted_model(temp_file)
+            with tempfile.TemporaryDirectory() as temp_dir:
+                output_dir = Path(temp_dir)
+                result = cli.main([
+                    'visualize', str(model_path),
+                    '--plot-type', plot_type,
+                    '--interactive',
+                    '--output', str(output_dir)
+                ])
+                assert result == 0
+                assert (output_dir / f'{plot_type}.html').exists()
+        finally:
+            temp_file.unlink()
+            if model_path is not None:
+                model_path.unlink()
 
 
 class TestCLILogging:
     """Test CLI logging functionality."""
+
+    def test_setup_logging_verbosity_levels(self):
+        """Test that verbosity levels map to distinct log levels."""
+        cli.setup_logging(0)
+        assert logging.getLogger('evojump').level == logging.INFO
+        cli.setup_logging(1)
+        assert logging.getLogger('evojump').level == logging.DEBUG
 
     def test_logging_configuration(self):
         """Test that logging is properly configured."""

@@ -480,7 +480,7 @@ visualizer.plot_heatmap(
     fbm_model,
     time_resolution=50,
     phenotype_resolution=50,
-    output_path='figures/figure_2_heatmap.png'
+    output_path='figures/figure_3_fbm_heatmap.png'
 )
 ```
 
@@ -493,24 +493,24 @@ visualizer = ej.TrajectoryVisualizer()
 visualizer.plot_violin(
     cir_model,
     time_points=[1, 3, 5, 7, 9],
-    output_path='figures/figure_3_violin.png'
+    output_path='figures/figure_3_cir_violin.png'
 )
 ```
 
-#### Ridge Plot (Figure 4)
+#### Ridge Plot (Figure 3)
 
 ```python
 import evojump as ej
-# ... (load data_core and fit levy_model as above) ...
+# ... (load data_core and fit cir_model as above) ...
 visualizer = ej.TrajectoryVisualizer()
 visualizer.plot_ridge(
-    levy_model,
+    cir_model,
     n_distributions=10,
-    output_path='figures/figure_4_ridge.png'
+    output_path='figures/figure_3_cir_ridge.png'
 )
 ```
 
-#### Phase Portrait (Figure 5)
+#### Phase Portrait (Figure 3)
 
 ```python
 import evojump as ej
@@ -519,7 +519,7 @@ visualizer = ej.TrajectoryVisualizer()
 visualizer.plot_phase_portrait(
     fbm_model,
     derivative_method='finite_difference',
-    output_path='figures/figure_5_phase_portrait.png'
+    output_path='figures/figure_3_fbm_phase.png'
 )
 ```
 
@@ -599,12 +599,12 @@ uv add evojump
 
 ```python
 # Initialize Drosophila population for selective sweep analysis
+# (parameters match paper/render_drosophila_figures.py)
 population_config = DrosophilaPopulation(
     population_size=100,
-    generations=15,
+    generations=100,
     initial_red_eyed_proportion=0.1,
-    advantageous_trait_fitness=1.2,  # 20% fitness advantage
-    selection_coefficient=0.1
+    selection_coefficient=0.15  # relative fitness of red-eyed allele = 1 + s = 1.15
 )
 ```
 
@@ -612,7 +612,11 @@ population_config = DrosophilaPopulation(
 
 ```python
 def _simulate_selection(self, current_red_eyed: int) -> int:
-    """Simulate one generation of selection and reproduction."""
+    """Simulate one generation of selection and reproduction.
+
+    Haploid selection with relative fitness w = 1 + s for the red-eyed
+    allele (s = selection_coefficient): p' = p (1 + s) / (1 + s p).
+    """
     current_freq = current_red_eyed / self.config.population_size
 
     # Selection differential
@@ -660,7 +664,7 @@ print(f"Mean heritability: {np.mean(list(pop_stats.heritability_estimates.values
 
 ```python
 # Correlation network analysis for hitchhiking detection
-network_results = analytics.network_analysis(correlation_threshold=0.6)
+network_results = analytics.network_analysis(correlation_threshold=0.7)
 ```
 
 ### Bayesian Analysis

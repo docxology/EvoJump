@@ -89,16 +89,19 @@ class TestSamplerFixes:
         params = {'temperature': 2.0}
         result = sampler.sample(n_samples=100, method='importance-sampling',
                                 parameters=params)
-        assert 'ess' in params
-        assert 1.0 <= params['ess'] <= 100.0
+        # Diagnostics are recorded on the result's parameter copy; mutating
+        # the caller's dict was an undocumented side effect (fixed 2026-09-08).
+        assert 1.0 <= result.parameters['ess'] <= 100.0
+        assert 'ess' not in params
 
     def test_mcmc_records_acceptance(self, ts_frame):
         sampler = evolution_sampler.EvolutionSampler(ts_frame)
         sampler.seed(3)
         params = {'step_size': 0.5}
         result = sampler.sample(n_samples=50, method='mcmc', parameters=params)
-        assert 'acceptance_rate' in params
-        assert 0.0 <= params['acceptance_rate'] <= 1.0
+        # Post-burn-in acceptance rate on the result's copy, not the caller's dict.
+        assert 0.0 <= result.parameters['acceptance_rate'] <= 1.0
+        assert 'acceptance_rate' not in params
         assert result.samples.shape[0] == 50
 
     def test_morans_i_positive_for_clustered(self):

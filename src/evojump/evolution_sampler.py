@@ -4,6 +4,9 @@ Evolution Sampler: Population-Level Analysis
 This module handles population-level analysis by sampling multiple developmental trajectories
 and performing comparative evolutionary analysis. Implements phylogenetic comparative methods,
 quantitative genetics approaches, and population dynamics modeling.
+Quantities that cannot be identified from the available data (e.g. dominance
+variance, broad-sense heritability without family structure) are reported as
+``np.nan`` with an ``'available'`` marker rather than placeholder values.
 
 Classes:
     EvolutionSampler: Main class for evolutionary sampling
@@ -108,26 +111,52 @@ class PopulationModel:
 
     def compute_selection_gradient(self, phenotype: str, fitness_measure: str) -> float:
         """
-        Compute selection gradient for a phenotype.
+        Compute the univariate directional selection gradient for a phenotype.
+
+        The gradient is the standardized regression slope of relative fitness
+        on the phenotype,
+
+            beta_std = cov(z, w) / var(z),
+
+        where z and w are the standardized phenotype and fitness. Expressed
+        in standard-deviation units this equals the Pearson correlation
+        r(z, w): +1 (or -1) means fitness increases (decreases) perfectly
+        linearly with the phenotype.
 
         Parameters:
             phenotype: Name of phenotype column
             fitness_measure: Name of fitness column
 
         Returns:
-            Selection gradient
+            Standardized selection gradient in units of SD(fitness) per
+            SD(phenotype); np.nan when either column is missing, either
+            variable has zero variance, or fewer than two finite paired
+            observations are available.
         """
         if phenotype not in self.population_data.columns or fitness_measure not in self.population_data.columns:
             return np.nan
 
-        # Standardize variables
-        pheno_std = (self.population_data[phenotype] - self.population_data[phenotype].mean()) / self.population_data[phenotype].std()
-        fitness_std = (self.population_data[fitness_measure] - self.population_data[fitness_measure].mean()) / self.population_data[fitness_measure].std()
+        pheno = self.population_data[phenotype].to_numpy(dtype=float)
+        fitness = self.population_data[fitness_measure].to_numpy(dtype=float)
+        valid = np.isfinite(pheno) & np.isfinite(fitness)
+        if valid.sum() < 2:
+            return np.nan
+        pheno = pheno[valid]
+        fitness = fitness[valid]
 
-        # Compute covariance
-        covariance = np.cov(pheno_std, fitness_std)[0, 1]
+        pheno_sd = float(pheno.std())
+        fitness_sd = float(fitness.std())
+        if not (pheno_sd > 0 and fitness_sd > 0):
+            return np.nan
 
-        return covariance
+        z = (pheno - pheno.mean()) / pheno_sd
+        w = (fitness - fitness.mean()) / fitness_sd
+
+        # Standardized regression slope: cov(z, w) / var(z). var(z) is 1 by
+        # construction, but the division is kept explicit so the code states
+        # the quantity it documents (the plain covariance would coincide with
+        # it only by accident of the z-scoring).
+        return float(np.mean(z * w) / np.mean(z ** 2))
 
     def estimate_effective_population_size(self, method: str = 'temporal') -> float:
         """
@@ -271,9 +300,23 @@ class PhylogeneticAnalyzer:
             if n < 3:
                 return np.nan
 
-            # Compute phylogenetic variance-covariance matrix
-            # For simplicity, use Brownian motion model
+            # Brownian-motion phylogenetic covariance from the double-centered
+            # squared-distance kernel (validated below), then optimize lambda.
             phylo_matrix = self._compute_brownian_covariance(self.distance_matrix)
+
+            # The likelihood below is only meaningful for a positive
+            # semidefinite covariance structure. The kernel is PSD whenever
+            # the distance matrix is Euclidean (as cophenetic distances of
+            # any tree are); for non-Euclidean input, project to the nearest
+            # PSD matrix rather than let the optimizer chase a degenerate
+            # (-inf) likelihood.
+            eigvals = np.linalg.eigvalsh(phylo_matrix)
+            if eigvals.min() < -1e-8 * max(1.0, float(np.abs(eigvals).max())):
+                warnings.warn(
+                    "distance matrix is not Euclidean: the Brownian-motion "
+                    "kernel is not positive semidefinite; projecting to the "
+                    "nearest PSD matrix before optimizing Pagel's lambda.")
+                phylo_matrix = self._project_psd(phylo_matrix)
 
             # Optimize lambda
             def objective(lambda_val):
@@ -299,15 +342,31 @@ class PhylogeneticAnalyzer:
             raise ValueError(f"Unsupported method: {method}")
 
     def _compute_brownian_covariance(self, distance_matrix: np.ndarray) -> np.ndarray:
-        """Compute Brownian motion covariance matrix from distance matrix."""
-        n = distance_matrix.shape[0]
-        covariance_matrix = np.zeros((n, n))
+        """Compute a Brownian-motion phylogenetic covariance from a distance matrix.
 
-        for i in range(n):
-            for j in range(n):
-                covariance_matrix[i, j] = min(distance_matrix[i, j], distance_matrix[j, i])
+        Uses the double-centered squared-distance (Gower/classical-MDS) kernel
 
-        return covariance_matrix
+            G = -0.5 * J D^2 J,      J = I - (1/n) 11^T,
+
+        which equals the covariance of tip states under a Brownian motion on
+        a tree whose cophenetic distances are D, and is positive semidefinite
+        whenever D is Euclidean. The distance matrix itself is NOT a
+        covariance (it has zero diagonal and need not be PSD).
+        """
+        d = np.asarray(distance_matrix, dtype=float)
+        d_squared = d ** 2
+        n = d.shape[0]
+        centering = np.eye(n) - np.ones((n, n)) / n
+        kernel = -0.5 * centering @ d_squared @ centering
+        # Symmetrize away floating-point asymmetry.
+        return 0.5 * (kernel + kernel.T)
+
+    @staticmethod
+    def _project_psd(matrix: np.ndarray) -> np.ndarray:
+        """Project a symmetric matrix to the nearest positive semidefinite matrix."""
+        eigvals, eigvecs = np.linalg.eigh(matrix)
+        projected = (eigvecs * np.clip(eigvals, 0.0, None)) @ eigvecs.T
+        return 0.5 * (projected + projected.T)
 
     def _compute_gaussian_loglikelihood(self,
                                        traits: np.ndarray,
@@ -485,7 +544,9 @@ class EvolutionSampler:
         """
         logger.info(f"Sampling {n_samples} individuals using {method} method")
 
-        parameters = parameters or {}
+        # Work on a copy: sampling diagnostics are attached to this dict and
+        # the result must not alias (or mutate) the caller's dictionary.
+        parameters = dict(parameters or {})
 
         if method == 'monte-carlo':
             samples = self._monte_carlo_sampling(n_samples, parameters)
@@ -590,10 +651,12 @@ class EvolutionSampler:
 
         State: index into the population. Target: unnormalized density implied
         by the empirical mean phenotype (Gaussian around observed mean with
-        scale ``parameters.get('mcmc_scale', 1.0)``). Proposal: Gaussian
-        random walk in phenotype space with step ``parameters.get('step_size',
-        0.5)`` standard deviations; nearest observed individual accepted.
-        Burn-in is 10% of n_samples.
+        scale ``parameters.get('mcmc_scale', 1.0)``). Proposal: symmetric
+        random walk on the index lattice with step ``parameters.get(
+        'step_size', 0.5)`` of the pool size; wrap-around keeps the kernel
+        symmetric so detailed balance holds exactly.
+        Burn-in is 10% of n_samples; the reported acceptance rate excludes
+        burn-in.
         """
         if self.time_column in self.population_data.columns:
             numeric_columns = self.population_data.select_dtypes(include=[np.number]).columns
@@ -632,11 +695,12 @@ class EvolutionSampler:
             log_alpha = log_target_idx(proposal_idx) - log_target_idx(current_idx)
             if np.log(self._rng.uniform()) < log_alpha:
                 current_idx = proposal_idx
-                accepted += 1
+                if i >= burn_in:
+                    accepted += 1
             if i >= burn_in:
                 samples[i - burn_in] = pool[current_idx]
 
-        parameters['acceptance_rate'] = accepted / (n_samples + burn_in)
+        parameters['acceptance_rate'] = accepted / n_samples if n_samples > 0 else 0.0
         return samples
 
     def analyze_evolutionary_patterns(self) -> Dict[str, Any]:
@@ -644,7 +708,13 @@ class EvolutionSampler:
         Analyze evolutionary patterns in the population.
 
         Returns:
-            Dictionary with evolutionary analysis results
+            Dictionary with evolutionary analysis results. The
+            'phylogenetic_signal' entry is populated only when
+            ``phylogenetic_analyzer.distance_matrix`` is set AND each trait
+            vector has one finite value per matrix row, ordered consistently
+            with the matrix rows (Moran's I pairs the i-th trait value with
+            the i-th row/column of the matrix); otherwise it is left empty
+            because the statistic is undefined, not zero.
         """
         logger.info("Analyzing evolutionary patterns")
 
@@ -655,12 +725,19 @@ class EvolutionSampler:
             'selection_analysis': {}
         }
 
-        # Compute phylogenetic signal for each trait via Moran's I on the
-        # distance matrix (when available); report np.nan as unavailable.
-        for col in self.population_data.columns:
-            if col != self.time_column:
+        # Compute phylogenetic signal for each trait via Moran's I, but only
+        # when a distance matrix has been supplied whose rows correspond, in
+        # order, to the trait vector. Without a matrix the statistic is
+        # undefined (the analyzer would return np.nan unconditionally), so
+        # the entry is skipped entirely.
+        distance_matrix = self.phylogenetic_analyzer.distance_matrix
+        if distance_matrix is not None:
+            n_rows = distance_matrix.shape[0]
+            for col in self.population_data.columns:
+                if col == self.time_column:
+                    continue
                 trait_data = self.population_data[col].dropna().values
-                if len(trait_data) >= 3:
+                if len(trait_data) == n_rows and len(trait_data) >= 3:
                     results['phylogenetic_signal'][col] = (
                         self.phylogenetic_analyzer.compute_morans_i_signal(trait_data))
 
@@ -706,11 +783,12 @@ class EvolutionSampler:
             for col in phenotype_columns:
                 heritability_estimates[col] = self.population_model.estimate_heritability(col)
 
-            # Selection gradients
-            selection_gradients = {}
-            for col in phenotype_columns:
-                # Placeholder fitness measure
-                selection_gradients[col] = self.population_model.compute_selection_gradient(col, col)
+            # Selection gradients require an explicit fitness measure; a
+            # phenotype-only time series has none, so report np.nan rather
+            # than a degenerate phenotype-vs-itself value (which is always
+            # exactly 1.0). Use population_model.compute_selection_gradient(
+            # phenotype, fitness) directly when a fitness column exists.
+            selection_gradients = {col: np.nan for col in phenotype_columns}
 
             # Effective population size
             ne = self.population_model.estimate_effective_population_size()
@@ -745,26 +823,144 @@ class EvolutionSampler:
             )
 
     def _estimate_genetic_parameters(self) -> Dict[str, Any]:
-        """Estimate genetic parameters."""
-        # Placeholder implementation
+        """Estimate genetic parameters from the phenotype time series.
+
+        Additive and environmental variances follow from the measured
+        phenotypic variance (mean within-time-point variance across traits)
+        and the narrow-sense heritability estimated by the population model:
+        V_A = h2 * V_P and V_E = (1 - h2) * V_P.
+
+        Dominance and epistatic variances and broad-sense heritability cannot
+        be identified from a phenotypic time series without family or clonal
+        structure; they are always reported as np.nan. The 'available' flag
+        records whether the additive/environmental split could be estimated
+        at all (it requires a pedigree and replicated observations within at
+        least one time point). No quantity is ever reported as a fabricated
+        placeholder such as 0.0.
+        """
+        pedigree_columns = {'parent', 'offspring'}
+        phenotype_columns = [col for col in self.population_data.columns
+                             if col != self.time_column
+                             and col not in pedigree_columns]
+
+        # Phenotypic variance: mean within-time-point variance per trait,
+        # averaged over traits. Undefined (np.nan) when no time point has
+        # replicated observations.
+        phenotypic_variance = np.nan
+        if phenotype_columns and self.time_column in self.population_data.columns:
+            per_time = (self.population_data
+                        .groupby(self.time_column)[phenotype_columns]
+                        .var())
+            if len(per_time) > 0:
+                phenotypic_variance = float(per_time.mean(axis=0).mean())
+
+        # Narrow-sense heritability from the population model (requires the
+        # explicit 'parent'/'offspring' pedigree; estimate_heritability warns
+        # and returns np.nan otherwise).
+        h2 = np.nan
+        if phenotype_columns:
+            h2 = self.population_model.estimate_heritability(phenotype_columns[0])
+
+        available = bool(np.isfinite(phenotypic_variance) and np.isfinite(h2))
+        if available:
+            additive_variance = float(h2 * phenotypic_variance)
+            environmental_variance = float((1.0 - h2) * phenotypic_variance)
+            narrow_sense = float(h2)
+        else:
+            additive_variance = environmental_variance = narrow_sense = np.nan
+
         return {
-            'additive_variance': 0.0,
-            'dominance_variance': 0.0,
-            'epistatic_variance': 0.0,
-            'environmental_variance': 0.0,
-            'narrow_sense_heritability': 0.0,
-            'broad_sense_heritability': 0.0
+            'additive_variance': additive_variance,
+            'dominance_variance': np.nan,      # not identifiable from phenotypes alone
+            'epistatic_variance': np.nan,      # not identifiable from phenotypes alone
+            'environmental_variance': environmental_variance,
+            'narrow_sense_heritability': narrow_sense,
+            'broad_sense_heritability': np.nan,  # requires clonal/family structure
+            'available': available,
         }
 
     def _analyze_selection(self) -> Dict[str, Any]:
-        """Analyze selection patterns."""
-        # Placeholder implementation
+        """Analyze selection patterns from measured phenotypic change.
+
+        All components are estimated from the phenotype time series; none is
+        fabricated:
+
+        - 'selection_differential': per-trait change in mean phenotype
+          between the first and last time points
+          (``compute_selection_differential``).
+        - 'selection_response': per-trait Lande response R = h2 * S via
+          ``predict_phenotypic_response``, using the heritability estimated
+          by the population model (np.nan when h2 is unavailable).
+        - 'directional_selection': mean over traits of the standardized
+          differential S / SD(first time point).
+        - 'stabilizing_selection' / 'disruptive_selection': mean proportional
+          decrease / increase in phenotypic variance between the first and
+          last time points.
+
+        Entries are np.nan (or empty per-trait dicts) when the underlying
+        quantity cannot be measured, e.g. fewer than two time points or zero
+        phenotypic variance.
+        """
+        pedigree_columns = {'parent', 'offspring'}
+        phenotype_columns = [col for col in self.population_data.columns
+                             if col != self.time_column
+                             and col not in pedigree_columns]
+
+        not_measurable: Dict[str, Any] = {
+            'directional_selection': np.nan,
+            'stabilizing_selection': np.nan,
+            'disruptive_selection': np.nan,
+            'selection_differential': {},
+            'selection_response': {},
+        }
+        if (not phenotype_columns
+                or self.time_column not in self.population_data.columns):
+            return not_measurable
+
+        times = sorted(self.population_data[self.time_column].unique())
+        if len(times) < 2:
+            return not_measurable
+        first = self.population_data[
+            self.population_data[self.time_column] == times[0]][phenotype_columns]
+        last = self.population_data[
+            self.population_data[self.time_column] == times[-1]][phenotype_columns]
+
+        h2 = self.population_model.estimate_heritability(phenotype_columns[0])
+
+        differentials: Dict[str, float] = {}
+        responses: Dict[str, float] = {}
+        directional: List[float] = []
+        for col in phenotype_columns:
+            s = self.population_model.compute_selection_differential(col)
+            differentials[col] = s
+            if np.isfinite(h2):
+                responses[col] = self.population_model.predict_phenotypic_response(col, h2)
+            else:
+                responses[col] = np.nan
+            sd_first = float(first[col].std())
+            if np.isfinite(s) and sd_first > 0:
+                directional.append(s / sd_first)
+
+        var_first = first.var()
+        var_last = last.var()
+        stabilizing: List[float] = []
+        disruptive: List[float] = []
+        for col in phenotype_columns:
+            v0 = float(var_first[col])
+            v1 = float(var_last[col])
+            if np.isfinite(v0) and np.isfinite(v1) and v0 > 0:
+                proportional_change = (v1 - v0) / v0
+                if proportional_change < 0:
+                    stabilizing.append(-proportional_change)
+                elif proportional_change > 0:
+                    disruptive.append(proportional_change)
+
         return {
-            'directional_selection': 0.0,
-            'stabilizing_selection': 0.0,
-            'disruptive_selection': 0.0,
-            'selection_differential': 0.0,
-            'selection_response': 0.0
+            'directional_selection': float(np.mean(directional)) if directional else np.nan,
+            'stabilizing_selection': float(np.mean(stabilizing)) if stabilizing else np.nan,
+            'disruptive_selection': float(np.mean(disruptive)) if disruptive else np.nan,
+            'selection_differential': differentials,
+            'selection_response': responses,
         }
 
     def cluster_individuals(self, n_clusters: int = 3) -> Dict[str, Any]:

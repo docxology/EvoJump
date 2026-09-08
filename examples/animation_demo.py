@@ -109,7 +109,7 @@ def main():
 
             axes[0, 0].set_xlabel('Time')
             axes[0, 0].set_ylabel('Phenotype')
-            axes[0, 0].set_title(f'Trajectories (Time: {current_time".2f"})')
+            axes[0, 0].set_title(f'Trajectories (Time: {current_time:.2f})')
             axes[0, 0].legend()
             axes[0, 0].grid(True, alpha=0.3)
 
@@ -151,11 +151,11 @@ def main():
                 axes[1, 0].grid(True, alpha=0.3)
 
             # Plot 5: Model parameters evolution
-            axes[1, 1].text(0.1, 0.9, f'Current Time: {current_time".2f"}', transform=axes[1, 1].transAxes, fontsize=12)
-            axes[1, 1].text(0.1, 0.8, f'Current Mean: {np.mean(current_data)".3f"}', transform=axes[1, 1].transAxes, fontsize=12)
-            axes[1, 1].text(0.1, 0.7, f'Current Std: {np.std(current_data)".3f"}', transform=axes[1, 1].transAxes, fontsize=12)
-            axes[1, 1].text(0.1, 0.6, f'Current Min: {np.min(current_data)".3f"}', transform=axes[1, 1].transAxes, fontsize=12)
-            axes[1, 1].text(0.1, 0.5, f'Current Max: {np.max(current_data)".3f"}', transform=axes[1, 1].transAxes, fontsize=12)
+            axes[1, 1].text(0.1, 0.9, f'Current Time: {current_time:.2f}', transform=axes[1, 1].transAxes, fontsize=12)
+            axes[1, 1].text(0.1, 0.8, f'Current Mean: {np.mean(current_data):.3f}', transform=axes[1, 1].transAxes, fontsize=12)
+            axes[1, 1].text(0.1, 0.7, f'Current Std: {np.std(current_data):.3f}', transform=axes[1, 1].transAxes, fontsize=12)
+            axes[1, 1].text(0.1, 0.6, f'Current Min: {np.min(current_data):.3f}', transform=axes[1, 1].transAxes, fontsize=12)
+            axes[1, 1].text(0.1, 0.5, f'Current Max: {np.max(current_data):.3f}', transform=axes[1, 1].transAxes, fontsize=12)
             axes[1, 1].set_title('Real-time Statistics')
             axes[1, 1].set_xlim(0, 1)
             axes[1, 1].set_ylim(0, 1)
@@ -181,8 +181,8 @@ def main():
 
     print("\n" + "=" * 50)
     print("Animation demo completed!")
-    print("
-Generated animations:"    print(f"   • {anim1_dir}/animation.gif")
+    print("\nGenerated animations:")
+    print(f"   • {anim1_dir}/animation.gif")
     print(f"   • {anim1_dir}/comprehensive_animation.gif")
 
     return anim1_dir

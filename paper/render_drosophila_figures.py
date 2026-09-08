@@ -63,12 +63,22 @@ class DrosophilaPopulation:
 
     # Genetic parameters (eye color)
     initial_red_eyed_proportion: float = 0.1  # Start with 10% red-eyed (advantageous allele)
-    advantageous_trait_fitness: float = 1.2  # 20% fitness advantage of red-eye allele
+    advantageous_trait_fitness: float = 1.15  # Relative fitness of red-eye allele (1 + selection_coefficient)
 
     # Phenotypic parameters (eye size)
     base_eye_size: float = 10.0  # Baseline eye size (arbitrary units)
     trait_effect_size: float = 2.5  # Eye size increase associated with red-eye allele
     environmental_variance: float = 0.8  # Environmental variation in eye size
+
+    def __post_init__(self):
+        # selection_coefficient drives the sweep dynamics via the mapping
+        # relative fitness = 1 + selection_coefficient; keep the two in sync.
+        if abs(self.advantageous_trait_fitness - (1.0 + self.selection_coefficient)) > 1e-9:
+            raise ValueError(
+                "advantageous_trait_fitness must equal 1 + selection_coefficient "
+                f"(got fitness={self.advantageous_trait_fitness}, "
+                f"selection_coefficient={self.selection_coefficient})"
+            )
 
 
 class DrosophilaDataGenerator:
@@ -131,9 +141,16 @@ class DrosophilaDataGenerator:
         return pd.DataFrame(data_rows)
 
     def _simulate_selection(self, current_red_eyed: int) -> int:
-        """Simulate one generation of selection and reproduction."""
-        current_freq = current_red_eyed / self.config.population_size
+        """Simulate one generation of selection and reproduction.
 
+        Haploid selection with relative fitness w = 1 + s for the red-eyed
+        allele, where s = selection_coefficient (advantageous_trait_fitness
+        is kept equal to 1 + s by __post_init__):
+
+            p' = p (1 + s) / (1 + s p)
+        """
+
+        current_freq = current_red_eyed / self.config.population_size
         # Selection differential
         mean_fitness = (current_freq * self.config.advantageous_trait_fitness +
                        (1 - current_freq) * 1.0)
@@ -168,10 +185,8 @@ class DrosophilaFigureGenerator:
             population_size=100,
             generations=100,  # Extended simulation
             initial_red_eyed_proportion=0.1,
-            advantageous_trait_fitness=1.2,
             selection_coefficient=0.15
         )
-
         # Generate data using the Drosophila data generator
         data_generator = DrosophilaDataGenerator(population_config)
         population_data = data_generator.generate_population_data()
@@ -216,7 +231,7 @@ class DrosophilaFigureGenerator:
         for gen in generations:
             for marker_id in range(n_markers):
                 # Simulate linkage disequilibrium with finer resolution
-                # Distance ranges from 0 (tightly linked) to 2.0 (distant)
+                # Distance ranges from 0 (tightly linked) to 1.9 (distant)
                 linkage_distance = marker_id * 0.1
                 ld_strength = np.exp(-linkage_distance)
 
@@ -309,10 +324,8 @@ class DrosophilaFigureGenerator:
         population_config = DrosophilaPopulation(
             population_size=100,
             generations=100,
-            initial_red_eyed_proportion=0.1,
-            advantageous_trait_fitness=1.2
+            initial_red_eyed_proportion=0.1
         )
-
         data_generator = DrosophilaDataGenerator(population_config)
         population_data = data_generator.generate_population_data()
 

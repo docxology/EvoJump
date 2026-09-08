@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use EvoJump, please cite it as below."
+title: "EvoJump: A Comprehensive Framework for Evolutionary Ontogenetic Analysis"
+authors:
+  - family-names: Friedman
+    given-names: Daniel Ari
+    orcid: "https://orcid.org/0000-0001-6232-9096"
+    affiliation: "Active Inference Institute"
+version: 0.3.0
+date-released: "2026-09-08"
+license: Apache-2.0
+repository-code: "https://github.com/docxology/EvoJump"
+abstract: "EvoJump models ontogenetic development as a jump-diffusion process sweeping across a fixed analytical plane, yielding dynamic cross-sectional views of phenotypic distributions across a developmental timeline. Includes data QC, seven stochastic process models, cross-sectional distribution analysis, visualization/animation, evolutionary sampling, and a statistical analysis engine."
+keywords:
+  - evo-devo
+  - ontogeny
+  - jump-diffusion
+  - stochastic processes
+  - quantitative genetics

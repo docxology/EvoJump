@@ -48,7 +48,22 @@ from dataclasses import dataclass
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 logger = logging.getLogger(__name__)
+
+
+def _json_safe(obj):
+    """Recursively convert values to strict-JSON-safe types (NaN/Inf -> None)."""
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    if isinstance(obj, (np.integer, np.bool_)):
+        return obj.item()
+    if isinstance(obj, (np.floating, float)):
+        value = float(obj)
+        return value if np.isfinite(value) else None
+    return obj
 
 
 @dataclass
@@ -265,10 +280,15 @@ class DrosophilaAnalyzer:
         analytics = self.analyzers['analytics']
         ts_results = analytics.analyze_time_series()
 
-        # Perform multivariate analysis (only on numeric columns)
-        # Skip multivariate for now due to string columns
-        # mv_results = analytics.analyze_multivariate()
-        mv_results = None
+        # Perform multivariate analysis on the numeric columns only
+        # (raw population data contains string columns such as 'eye_color')
+        numeric_data = self.population_data.select_dtypes(include=[np.number])
+        if numeric_data.shape[1] >= 2 and len(numeric_data) >= 3:
+            mv_analytics = AnalyticsEngine(numeric_data, time_column='generation')
+            mv_results = mv_analytics.analyze_multivariate()
+        else:
+            mv_results = None
+            logger.warning("Insufficient numeric columns for multivariate analysis; skipped")
 
         # Perform Bayesian analysis on eye size evolution
         bayesian_results = analytics.bayesian_analysis('eye_size', 'fitness')
@@ -320,12 +340,12 @@ class DrosophilaAnalyzer:
 
         sweep_df = pd.DataFrame(sweep_data)
 
-        # Analyze sweep patterns
-        analytics = self.analyzers['analytics']
-        sweep_analytics = AnalyticsEngine(sweep_df, time_column='generation')
-
-        # Network analysis of marker correlations
-        network_results = sweep_analytics.network_analysis(correlation_threshold=0.6)
+        # Analyze sweep patterns: build a per-marker feature matrix
+        # (rows = generations, columns = marker ids) so the network
+        # correlates markers with each other rather than sweep_df columns
+        marker_matrix = sweep_df.pivot(index='generation', columns='marker_id', values='marker_frequency')
+        marker_analytics = AnalyticsEngine(marker_matrix)
+        network_results = marker_analytics.network_analysis(correlation_threshold=0.6)
 
         return {
             'sweep_data': sweep_df,
@@ -449,6 +469,8 @@ class DrosophilaAnalyzer:
         evolutionary_analysis = self.analyze_evolutionary_patterns()
         sweep_analysis = self.analyze_selective_sweeps()
 
+        heritability_estimates = evolutionary_analysis['evolutionary_patterns']['population_statistics'].heritability_estimates
+
         # Create comprehensive report
         report = {
             'metadata': {
@@ -477,14 +499,17 @@ class DrosophilaAnalyzer:
 
             'evolutionary_patterns': {
                 'effective_population_size': float(evolutionary_analysis['evolutionary_patterns']['population_statistics'].effective_population_size),
-                'mean_heritability': float(np.mean(list(evolutionary_analysis['evolutionary_patterns']['population_statistics'].heritability_estimates.values()))),
+                'mean_heritability': float(np.mean(list(heritability_estimates.values()))) if heritability_estimates else None,
                 'change_points_detected': len(evolutionary_analysis['time_series'].change_points)
             },
 
             'statistical_analysis': {
                 'bayesian_model_evidence': float(evolutionary_analysis['bayesian'].model_evidence),
-                'network_density': float(evolutionary_analysis['multivariate']['network'].network_metrics.get('density', 0)) if evolutionary_analysis['multivariate'] else 0.0,
-                'pca_explained_variance': evolutionary_analysis['multivariate']['principal_components']['explained_variance_ratio'][:3].tolist() if evolutionary_analysis['multivariate'] else [0.0, 0.0, 0.0]
+                'network_density': float(sweep_analysis['network_analysis'].network_metrics['density']),
+                'pca_explained_variance': (
+                    [float(v) for v in evolutionary_analysis['multivariate']['principal_components']['explained_variance_ratio'][:3]]
+                    if evolutionary_analysis['multivariate'] else None
+                )
             },
 
             'scientific_conclusions': {
@@ -495,10 +520,10 @@ class DrosophilaAnalyzer:
             }
         }
 
-        # Save report
+        # Save report (strict JSON: non-finite floats are converted to null)
         report_file = output_dir / 'drosophila_analysis_report.json'
         with open(report_file, 'w') as f:
-            json.dump(report, f, indent=2, default=str)
+            json.dump(_json_safe(report), f, indent=2, default=str, allow_nan=False)
 
         logger.info(f"Comprehensive report saved to {report_file}")
         return report

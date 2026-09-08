@@ -19,7 +19,8 @@ Requirements
 Core Dependencies
 -----------------
 
-The following packages are automatically installed:
+The following packages are installed automatically as runtime dependencies
+(mirroring ``pyproject.toml``):
 
 .. code-block::
 
@@ -33,8 +34,17 @@ The following packages are automatically installed:
    dask>=2022.0.0         # Parallel computing
    h5py>=3.7.0            # HDF5 file support
    sqlalchemy>=1.4.0      # Database operations
-   pyyaml>=6.0            # YAML configuration
+   pyyaml>=6.0            # YAML support
    tqdm>=4.62.0           # Progress bars
+   PyWavelets>=1.3.0      # Wavelet analysis
+   networkx>=2.6.0        # Graph analysis
+   statsmodels>=0.13.0    # Statistical models
+   seaborn>=0.11.0        # Statistical visualization
+
+Test and documentation tooling (also declared in ``pyproject.toml``):
+
+.. code-block::
+
    pytest>=7.0.0          # Testing framework
    pytest-cov>=3.0.0      # Coverage reporting
    sphinx>=5.0.0          # Documentation
@@ -66,7 +76,7 @@ Install with optional dependencies:
    uv add evojump --extra r-integration
 
 Development Installation
------------------------
+------------------------
 
 For contributors and advanced users:
 
@@ -182,53 +192,17 @@ Solution: UV handles installation more efficiently than traditional pip. If issu
 Advanced Configuration
 ----------------------
 
-**Environment Variables**
-
-Set environment variables for custom configuration:
-
-.. code-block:: bash
-
-   export EVOJUMP_LOG_LEVEL=DEBUG
-   export EVOJUMP_CACHE_DIR=/path/to/cache
-   export EVOJUMP_PLOT_BACKEND=plotly  # or matplotlib
-   export EVOJUMP_NUM_THREADS=4
-
-**Configuration File**
-
-Create a configuration file for persistent settings:
-
-.. code-block:: yaml
-   # ~/.evojump/config.yaml
-   logging:
-     level: INFO
-     file: /path/to/evojump.log
-
-   plotting:
-     backend: plotly
-     style: ggplot
-     dpi: 150
-
-   computation:
-     num_threads: 4
-     cache_enabled: true
-     cache_dir: /tmp/evojump_cache
+.. note::
+   EvoJump v0.2.0 supports no environment variables (no ``EVOJUMP_*``
+   variables), no configuration file (no ``~/.evojump/config.yaml``), and
+   no global configuration API (no ``evojump.config`` module). All
+   behavior is controlled through function and method parameters.
 
 **Performance Optimization**
 
-For large datasets:
-
-.. code-block:: python
-
-   import evojump as ej
-
-   # Enable parallel processing
-   ej.config.set_num_threads(8)
-
-   # Enable caching
-   ej.config.enable_cache('/path/to/cache')
-
-   # Set memory limits
-   ej.config.set_memory_limit('4GB')
+For large datasets, chunk the data yourself before constructing analyzers
+and parallelize independent fits with worker processes — see
+:doc:`advanced_usage` for worked examples.
 
 Getting Help
 ------------

@@ -181,9 +181,12 @@ class TimeSeriesAnalyzer:
                 logger.warning(f"Skipping non-numeric column in seasonality: {col}")
                 continue
 
-            if period is None:
+            # Resolve the period per column: a user-supplied period applies
+            # to every column, but auto-detection must never reuse the
+            # previous column's result.
+            col_period = period
+            if col_period is None:
                 # Auto-detect period using autocorrelation
-                from scipy.signal import find_peaks
                 autocorr = np.correlate(series_data, series_data, mode='full')
                 autocorr = autocorr[len(autocorr)//2:]
                 autocorr = autocorr / autocorr[0]
@@ -191,26 +194,27 @@ class TimeSeriesAnalyzer:
                 # Find peaks in autocorrelation
                 peaks, _ = find_peaks(autocorr, height=0.2)
                 if len(peaks) > 0:
-                    period = peaks[0]
+                    col_period = int(peaks[0])
 
-            if period and period < len(series_data):
+
+            if col_period and col_period < len(series_data):
                 # Perform seasonal decomposition
                 try:
                     from statsmodels.tsa.seasonal import seasonal_decompose
                     decomposition = seasonal_decompose(
-                        series_data, model='additive', period=period
+                        series_data, model='additive', period=col_period
                     )
 
                     results[col] = {
-                        'period': period,
+                        'period': col_period,
                         'seasonal_strength': np.var(decomposition.seasonal) / np.var(series_data),
                         'trend_strength': np.var(decomposition.trend) / np.var(series_data),
                         'residual_strength': np.var(decomposition.resid) / np.var(series_data),
                         'seasonal_detected': True
                     }
-                except:
+                except Exception:
                     results[col] = {
-                        'period': period,
+                        'period': col_period,
                         'seasonal_detected': False,
                         'error': 'Decomposition failed'
                     }
@@ -227,10 +231,31 @@ class TimeSeriesAnalyzer:
         Detect change points in time series.
 
         Parameters:
-            method: Change point detection method
+            method: Change point detection method ('cusum' or 'variance')
 
         Returns:
             List of detected change points
+        """
+        if method == 'cusum':
+            # Delegate to the shared CUSUM implementation so both entry
+            # points report identical results.
+            detector = ChangePointDetector(self.data, self.time_column)
+            return detector._statistical_change_detection()
+        elif method == 'variance':
+            return self._variance_change_detection()
+        else:
+            raise ValueError(f"Unsupported change point method: {method}")
+
+    def _variance_change_detection(self, alpha: float = 0.05,
+                                   min_segment: int = 5) -> List[Dict[str, Any]]:
+        """Variance-based change detection with a split-sample F-test gate.
+
+        For every candidate split, compares the pooled variances of the two
+        segments with a two-sided F-test (larger-variance numerator) and
+        reports the most significant split at level `alpha`. The reported
+        confidence is 1 - p_value, so the method stays quiet on constant-
+        variance series instead of always firing (the old behavior appended
+        the argmax window with a hardcoded confidence of 0.8).
         """
         change_points = []
 
@@ -241,50 +266,47 @@ class TimeSeriesAnalyzer:
             if not pd.api.types.is_numeric_dtype(series_data):
                 continue
 
-            if len(series_data) < 10:
+            if len(series_data) < 2 * min_segment:
                 continue
 
-            if method == 'cusum':
-                # CUSUM method
-                mean_val = np.mean(series_data)
-                cusum = np.cumsum(series_data - mean_val)
+            x = series_data.to_numpy(dtype=float)
+            n = len(x)
 
-                # Find maximum deviation
-                max_idx = np.argmax(np.abs(cusum))
-                max_deviation = cusum[max_idx]
+            n_splits = (n - 2 * min_segment) + 1
+            best = None  # (f_stat, p_value, split_idx)
+            for split in range(min_segment, n - min_segment + 1):
+                left = x[:split]
+                right = x[split:]
+                var_l = float(np.var(left, ddof=1))
+                var_r = float(np.var(right, ddof=1))
+                if var_l <= 0 or var_r <= 0:
+                    continue
+                if var_l >= var_r:
+                    f_stat, df1, df2 = var_l / var_r, len(left) - 1, len(right) - 1
+                else:
+                    f_stat, df1, df2 = var_r / var_l, len(right) - 1, len(left) - 1
+                # Two-sided: double the one-sided tail of the larger ratio,
+                # then Bonferroni-correct for scanning all candidate splits
+                # (without the correction, the minimum p over ~n splits
+                # fires on homoscedastic noise).
+                p_value = min(1.0, 2.0 * stats.f.sf(f_stat, df1, df2) * n_splits)
+                if best is None or p_value < best[1]:
+                    best = (f_stat, p_value, split)
 
-                if abs(max_deviation) > 2 * np.std(series_data):
-                    time_val = self.data[self.time_column].iloc[max_idx] if self.time_column in self.data.columns else max_idx
-                    change_points.append({
-                        'variable': col,
-                        'time_index': max_idx,
-                        'time_value': time_val,
-                        'cusum_value': max_deviation,
-                        'confidence': min(abs(max_deviation) / (3 * np.std(series_data)), 1.0),
-                        'method': 'cusum'
-                    })
+            if best is None or best[1] >= alpha:
+                continue
 
-            elif method == 'variance':
-                # Variance-based change detection
-                window_size = max(5, len(series_data) // 4)
-                variances = []
-
-                for i in range(len(series_data) - window_size):
-                    window_var = np.var(series_data[i:i+window_size])
-                    variances.append(window_var)
-
-                if variances:
-                    var_series = pd.Series(variances)
-                    var_change_idx = var_series.idxmax()
-
-                    time_val = self.data[self.time_column].iloc[var_change_idx] if self.time_column in self.data.columns else var_change_idx
-                    change_points.append({
-                        'variable': col,
-                        'time_index': var_change_idx,
-                        'time_value': time_val,
-                        'variance_ratio': variances[var_change_idx] / np.mean(variances),
-                        'confidence': 0.8  # Placeholder
-                    })
+            f_stat, p_value, split = best
+            time_val = self.data[self.time_column].iloc[split] if self.time_column in self.data.columns else split
+            change_points.append({
+                'variable': col,
+                'time_index': split,
+                'time_value': time_val,
+                'variance_ratio': f_stat,
+                'p_value': p_value,
+                'confidence': 1.0 - p_value,
+                'method': 'variance'
+            })
 
         return change_points
 
@@ -422,21 +444,40 @@ class MultivariateAnalyzer:
 
         # Compute canonical correlations
         try:
-            # Solve generalized eigenvalue problem
-            eigenvals, eigenvecs = linalg.eigh(cov12 @ cov21, cov11)
+            # Canonical correlations are the singular values of
+            # cov11^{-1/2} @ cov12 @ cov22^{-1/2}. Squaring them gives the
+            # eigenvalues of the symmetric matrix
+            #   M = cov11^{-1/2} cov12 cov22^{-1} cov21 cov11^{-1/2},
+            # which is the correct generalized eigenproblem for CCA (the
+            # cov22^{-1} factor is essential; without it the "eigenvalues"
+            # are not squared canonical correlations). pinv-style guards
+            # below tolerate rank-deficient blocks.
+            inv_sqrt11 = self._inv_psd_sqrt(cov11)
+            inv_sqrt22 = self._inv_psd_sqrt(cov22)
+            B = inv_sqrt11 @ cov12 @ inv_sqrt22
+            eigvals, eigvecs = linalg.eigh(B @ B.T)
 
-            # Sort by eigenvalues
-            idx = np.argsort(eigenvals)[::-1]
-            eigenvals = eigenvals[idx]
-            eigenvecs = eigenvecs[:, idx]
+            # Eigenvalues are squared canonical correlations; clip tiny
+            # negative round-off and sort descending.
+            eigvals = np.clip(eigvals, 0.0, 1.0)
+            idx = np.argsort(eigvals)[::-1]
+            eigvals = eigvals[idx]
+            eigvecs = eigvecs[:, idx]
 
-            # Canonical correlations
-            canonical_correlations = np.sqrt(np.maximum(eigenvals, 0))
+            canonical_correlations = np.sqrt(eigvals)
+
+            # X-side canonical coefficients: a_k = cov11^{-1/2} v_k
+            canonical_variables_1 = inv_sqrt11 @ eigvecs
+            # Y-side canonical coefficients: b_k = cov22^{-1/2} cov21 a_k / r_k
+            canonical_variables_2 = inv_sqrt22 @ cov21 @ canonical_variables_1
+            nonzero = canonical_correlations > 1e-12
+            canonical_variables_2[:, nonzero] /= canonical_correlations[nonzero]
 
             return {
                 'canonical_correlations': canonical_correlations,
-                'canonical_variables_1': eigenvecs,
-                'eigenvalues': eigenvals,
+                'canonical_variables_1': canonical_variables_1,
+                'canonical_variables_2': canonical_variables_2,
+                'eigenvalues': eigvals,
                 'scaler1_mean': scaler1.mean_,
                 'scaler1_scale': scaler1.scale_,
                 'scaler2_mean': scaler2.mean_,
@@ -446,6 +487,20 @@ class MultivariateAnalyzer:
         except Exception as e:
             logger.warning(f"CCA failed: {e}")
             return {'error': str(e)}
+
+    @staticmethod
+    def _inv_psd_sqrt(matrix: np.ndarray) -> np.ndarray:
+        """Inverse symmetric square root of a PSD matrix (eigh-based).
+
+        Directions with numerically zero eigenvalues map to zero, which is
+        the Moore-Penrose behavior needed for singular covariance blocks.
+        """
+        sym = (matrix + matrix.T) / 2.0
+        vals, vecs = linalg.eigh(sym)
+        tol = np.finfo(float).eps * max(vals.max(), 1.0) * len(vals)
+        inv_sqrt_vals = np.where(vals > tol, 1.0 / np.sqrt(np.where(vals > tol, vals, 1.0)), 0.0)
+        return (vecs * inv_sqrt_vals) @ vecs.T
+
 
     def cluster_analysis(self, n_clusters: int = 3, method: str = 'kmeans') -> Dict[str, Any]:
         """
@@ -761,10 +816,57 @@ class ChangePointDetector:
 
         return change_points
 
-    def _information_criterion_change_detection(self, **kwargs) -> List[Dict[str, Any]]:
-        """Information criterion-based change detection."""
-        # Simplified information criterion approach
-        return self._statistical_change_detection(**kwargs)
+    def _information_criterion_change_detection(self,
+                                                min_segment: int = 5,
+                                                **kwargs) -> List[Dict[str, Any]]:
+        """BIC-based mean-shift change detection.
+
+        For each phenotype column, compares the BIC of a single Gaussian
+        against the best two-segment Gaussian (independent mean and variance
+        per segment) and reports the best split whenever the two-segment
+        model wins. Segments shorter than `min_segment` are never proposed.
+        """
+        change_points = []
+        for col in self.phenotype_columns:
+            series = self.data[col].dropna()
+            if not pd.api.types.is_numeric_dtype(series):
+                continue
+            x = series.to_numpy(dtype=float)
+            n = len(x)
+            if n < 2 * min_segment + 2:
+                continue
+
+            def _gaussian_bic(seg: np.ndarray) -> float:
+                m = len(seg)
+                if m < 2:
+                    return np.inf
+                mu = float(np.mean(seg))
+                var = float(np.var(seg)) + 1e-12
+                loglik = -0.5 * m * (np.log(2.0 * np.pi * var) + 1.0)
+                return 2.0 * np.log(m) - 2.0 * loglik
+
+            bic_single = _gaussian_bic(x)
+            best_k, best_bic = None, bic_single
+            for k in range(min_segment, n - min_segment + 1):
+                bic_split = _gaussian_bic(x[:k]) + _gaussian_bic(x[k:])
+                if bic_split < best_bic:
+                    best_bic, best_k = bic_split, k
+            if best_k is None:
+                continue
+
+            time_val = (self.data[self.time_column].iloc[best_k]
+                        if self.time_column in self.data.columns else best_k)
+            change_points.append({
+                'variable': col,
+                'time_index': best_k,
+                'time_value': time_val,
+                'bic_single_segment': float(bic_single),
+                'bic_two_segment': float(best_bic),
+                'bic_improvement': float(bic_single - best_bic),
+                'method': 'information'
+            })
+
+        return change_points
 
 
 # Advanced Analytic Classes
@@ -887,7 +989,8 @@ class BayesianAnalyzer:
     def bayesian_linear_regression(self,
                                  x_data: np.ndarray,
                                  y_data: np.ndarray,
-                                 n_samples: int = 1000) -> BayesianResult:
+                                 n_samples: int = 1000,
+                                 seed: Optional[int] = None) -> BayesianResult:
         """
         Perform Bayesian linear regression.
 
@@ -895,6 +998,7 @@ class BayesianAnalyzer:
             x_data: Independent variable data
             y_data: Dependent variable data
             n_samples: Number of posterior samples
+            seed: Optional RNG seed for reproducible posterior draws
 
         Returns:
             BayesianResult with posterior analysis
@@ -933,7 +1037,7 @@ class BayesianAnalyzer:
         post_b = b0 + 0.5 * (t_yy + prec0 * m0 ** 2 - post_prec * post_mean ** 2)
         post_b = max(post_b, 1e-12)
 
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(seed)
         # Sample (tau, beta) jointly from the exact posterior
         tau_samples = rng.gamma(shape=post_a, scale=1.0 / post_b, size=n_samples)
         beta_samples = rng.normal(post_mean, np.sqrt(1.0 / (post_prec * tau_samples)))
@@ -1114,7 +1218,7 @@ class NetworkAnalyzer:
         """Compute shortest paths between two variables in the stored graph.
 
         Requires construct_correlation_network() to have been called first.
-        Returns edge-weighted path (distance = 1/|correlation|), plus
+        Returns edge-weighted path (distance = ``1/abs(correlation)``), plus
         unweighted hop count. Raises ValueError if nodes are absent or
         disconnected.
         """
@@ -1555,11 +1659,11 @@ class AnalyticsEngine:
             'high_correlations': high_correlations,
             'mean_correlation': np.mean(np.abs(correlation_matrix.values[np.triu_indices_from(correlation_matrix.values, k=1)]))
         }
-
     def bayesian_analysis(self,
                          x_variable: str,
                          y_variable: str,
-                         n_samples: int = 1000) -> BayesianResult:
+                         n_samples: int = 1000,
+                         seed: Optional[int] = None) -> BayesianResult:
         """
         Perform Bayesian analysis.
 
@@ -1567,19 +1671,17 @@ class AnalyticsEngine:
             x_variable: Independent variable name
             y_variable: Dependent variable name
             n_samples: Number of posterior samples
+            seed: Optional RNG seed passed through to the regression sampler
 
         Returns:
             BayesianResult with Bayesian analysis
         """
         logger.info(f"Performing Bayesian analysis: {x_variable} -> {y_variable}")
 
-        x_data = self.data[x_variable].dropna().values
-        y_data = self.data[y_variable].dropna().values
-
-        # Align data
-        common_indices = set(self.data[x_variable].dropna().index) & set(self.data[y_variable].dropna().index)
-        x_data = self.data[x_variable].loc[list(common_indices)].values
-        y_data = self.data[y_variable].loc[list(common_indices)].values
+        # Drop rows jointly so the x/y pairs stay aligned
+        sub = self.data[[x_variable, y_variable]].dropna()
+        x_data = sub[x_variable].to_numpy(dtype=float)
+        y_data = sub[y_variable].to_numpy(dtype=float)
 
         if len(x_data) < 10:
             logger.warning("Insufficient data for Bayesian analysis")
@@ -1591,7 +1693,7 @@ class AnalyticsEngine:
                 predictive_distributions={}
             )
 
-        return self.bayesian_analyzer.bayesian_linear_regression(x_data, y_data, n_samples)
+        return self.bayesian_analyzer.bayesian_linear_regression(x_data, y_data, n_samples, seed=seed)
 
     def network_analysis(self,
                         correlation_threshold: float = 0.7,
@@ -1686,9 +1788,18 @@ class AnalyticsEngine:
                 confidence_intervals={}
             )
 
-        # Basic survival function estimation
-        times = self.data[time_column].dropna()
-        events = self.data[event_column].dropna()
+        # Basic survival function estimation.
+        # Drop rows jointly so each (time, event) pair stays aligned even
+        # when only one of the two columns has a NaN.
+        sub = self.data[[time_column, event_column]].dropna()
+        times = sub[time_column]
+        events = sub[event_column]
+
+        bad_events = sorted({str(v) for v in pd.unique(events)} - {'0', '1', 'False', 'True', '0.0', '1.0'})
+        if bad_events:
+            raise ValueError(
+                f"Event column must contain only 0/1 indicators; got {bad_events}"
+            )
 
         if len(times) < 2:
             return SurvivalResult(
@@ -1742,13 +1853,19 @@ class AnalyticsEngine:
 
     def spectral_analysis(self,
                          signal_column: str,
-                         sampling_frequency: float = 1.0) -> SpectralResult:
+                         sampling_frequency: float = 1.0,
+                         coherence_column: Optional[str] = None) -> SpectralResult:
         """
         Perform spectral analysis.
 
         Parameters:
             signal_column: Column with signal data
             sampling_frequency: Sampling frequency
+            coherence_column: Optional second column; when given, the
+                magnitude-squared coherence between the two signals is
+                stored in `coherence_matrix` as an (n_frequencies, 2) array
+                of [frequency, coherence]. Without it `coherence_matrix`
+                is empty (coherence is a two-signal quantity).
 
         Returns:
             SpectralResult with spectral analysis
@@ -1791,12 +1908,23 @@ class AnalyticsEngine:
         # Get dominant frequencies
         dominant_frequencies = frequencies[peaks] if len(peaks) > 0 else np.array([])
 
+        # Magnitude-squared coherence against a second column, when requested
+        coherence_matrix = np.array([])
+        if coherence_column is not None and coherence_column in self.data.columns:
+            paired = self.data[[signal_column, coherence_column]].dropna()
+            if len(paired) >= 10:
+                coh_freqs, coh = signal.coherence(
+                    paired[signal_column].to_numpy(dtype=float),
+                    paired[coherence_column].to_numpy(dtype=float),
+                    fs=sampling_frequency,
+                )
+                coherence_matrix = np.column_stack([coh_freqs, coh])
         return SpectralResult(
             power_spectrum=np.column_stack([frequencies, power_spectrum]),
             frequency_peaks=np.column_stack([frequencies[peaks], power_spectrum[peaks]]) if len(peaks) > 0 else np.array([]),
             spectral_entropy=spectral_entropy,
             dominant_frequencies=dominant_frequencies,
-            coherence_matrix=np.array([])  # Placeholder
+            coherence_matrix=coherence_matrix
         )
 
     def nonlinear_dynamics_analysis(self,
@@ -1825,14 +1953,16 @@ class AnalyticsEngine:
             return {'error': 'Insufficient data for nonlinear dynamics analysis'}
 
         # Largest Lyapunov exponent via the Rosenstein (1993) method on a
-        # time-delay-embedded attractor.
+        # time-delay-embedded attractor. Neighbor search is forward-only
+        # (j >= i), which halves the pair cost; pairs closer than the
+        # Theiler window are excluded so temporally adjacent segments of
+        # the same trajectory are not mistaken for distinct neighbors.
         def _embed(series: np.ndarray, m: int, delay: int) -> np.ndarray:
             n = len(series) - (m - 1) * delay
             return np.array([series[i:i + (m - 1) * delay + 1:delay] for i in range(n)])
 
         embedded = _embed(time_series, embedding_dim, tau)
         n_vec = len(embedded)
-        min_separation = max(1, int(np.mean(np.abs(time_series)) * 0) + embedding_dim)  # Theiler window approx
         theiler = embedding_dim  # conservative Theiler window
 
         nearest = np.full(n_vec, -1)
@@ -1860,8 +1990,13 @@ class AnalyticsEngine:
         if ln_divs:
             min_len = min(len(t) for t in ln_divs)
             mean_ln_div = np.mean([t[:min_len] for t in ln_divs], axis=0)
-            k_fit = np.arange(min_len)
-            slope = np.polyfit(k_fit, mean_ln_div, 1)[0]
+            # Rosenstein: fit the slope only over the initial part of the
+            # divergence curve, where exponential growth holds; the tail
+            # saturates at the attractor's finite size and would bias the
+            # estimate downward.
+            n_fit = max(2, min_len // 2)
+            k_fit = np.arange(n_fit)
+            slope = np.polyfit(k_fit, mean_ln_div[:n_fit], 1)[0]
             largest_lyapunov = float(slope)
         else:
             largest_lyapunov = np.nan
@@ -1978,21 +2113,68 @@ class AnalyticsEngine:
             'robust_scale_preferred': scale_estimates.get('mad_normalized', np.nan)
         }
 
-    def _huber_estimate(self, data: np.ndarray, k: float = 1.345) -> float:
-        """Compute Huber M-estimator of location."""
-        # Simplified implementation
-        return np.median(data)  # For now, use median as robust estimator
+    def _huber_estimate(self, data: np.ndarray, k: float = 1.345,
+                        max_iter: int = 100, tol: float = 1e-8) -> float:
+        """Huber M-estimator of location via IRLS with a fixed robust scale.
 
-    def _tukey_biweight_estimate(self, data: np.ndarray, c: float = 4.685) -> float:
-        """Compute Tukey biweight M-estimator of location."""
-        # Simplified implementation
-        return np.median(data)  # For now, use median as robust estimator
+        Scale is held at the normalized MAD (standard practice for
+        location-only M-estimation); psi(u) = u for |u| <= k, k*sign(u)
+        otherwise, with u = (x - mu) / scale.
+        """
+        x = np.asarray(data, dtype=float)
+        mu = float(np.median(x))
+        scale = float(np.median(np.abs(x - mu))) * 1.4826
+        if scale <= 0:
+            return float(mu)
+        for _ in range(max_iter):
+            u = (x - mu) / scale
+            w = np.where(np.abs(u) <= k, 1.0, k / np.abs(u))
+            mu_new = float(np.sum(w * x) / np.sum(w))
+            done = abs(mu_new - mu) < tol
+            mu = mu_new
+            if done:
+                break
+        return float(mu)
+
+    def _tukey_biweight_estimate(self, data: np.ndarray, c: float = 4.685,
+                                 max_iter: int = 100, tol: float = 1e-8) -> float:
+        """Tukey biweight M-estimator of location via IRLS.
+
+        u = (x - mu) / (c * scale) with scale the normalized MAD;
+        w(u) = (1 - u^2)^2 for |u| < 1 and 0 otherwise (redescending psi).
+        """
+        x = np.asarray(data, dtype=float)
+        mu = float(np.median(x))
+        scale = float(np.median(np.abs(x - mu))) * 1.4826
+        if scale <= 0:
+            return float(mu)
+        for _ in range(max_iter):
+            u = (x - mu) / (c * scale)
+            w = np.where(np.abs(u) < 1.0, (1.0 - u ** 2) ** 2, 0.0)
+            denom = float(np.sum(w))
+            if denom <= 0:
+                break
+            mu_new = float(np.sum(w * x) / denom)
+            done = abs(mu_new - mu) < tol
+            if done:
+                break
+        return float(mu)
 
     def _sn_scale_estimate(self, data: np.ndarray) -> float:
-        """Compute SN scale estimator (robust scale estimate)."""
-        # Simplified implementation
-        mad = np.median(np.abs(data - np.median(data)))
-        return mad * 1.1926  # Correction factor for SN estimator
+        """Rousseeuw-Croux Sn scale estimator.
+
+        Sn = 1.1926 * median_i { median_{j != i} |x_i - x_j| }; the 1.1926
+        factor makes Sn consistent with sigma for Gaussian data. Unlike the
+        MAD, Sn stays efficient even for asymmetric contamination.
+        """
+        x = np.asarray(data, dtype=float)
+        n = len(x)
+        if n < 2:
+            return 0.0
+        abs_diff = np.abs(x[:, None] - x[None, :])
+        np.fill_diagonal(abs_diff, np.nan)
+        inner = np.nanmedian(abs_diff, axis=1)
+        return float(1.1926 * np.median(inner))
 
     def spatial_analysis(self,
                         value_column: str,
@@ -2002,7 +2184,12 @@ class AnalyticsEngine:
 
         Parameters:
             value_column: Column with values to analyze
-            spatial_weights: Optional spatial weights matrix
+            spatial_weights: Optional n x n spatial weights matrix W. When
+                given, Moran's I is I = (n / S0) * (z' W z) / (z' z) with z
+                the centered values and S0 = sum(W). When omitted, a
+                linear-adjacency default is used (w_ij = 1 for adjacent
+                observations in sequence order) and the result reports
+                'weights_kind': 'linear_adjacency'.
 
         Returns:
             Dictionary with spatial analysis results
@@ -2017,22 +2204,50 @@ class AnalyticsEngine:
         if len(data_values) < 4:
             return {'morans_i': np.nan, 'spatial_autocorrelation': 'Insufficient data'}
 
-        # Simple Moran's I implementation (placeholder)
-        # In practice, would need proper spatial coordinates and weights
-        mean_val = np.mean(data_values)
-        centered = data_values - mean_val
+        # Moran's I on centered values with an explicit weights matrix.
+        n = len(data_values)
+        if spatial_weights is not None:
+            W = np.asarray(spatial_weights, dtype=float)
+            if W.shape != (n, n):
+                raise ValueError(
+                    f"spatial_weights must be ({n}, {n}) to match the "
+                    f"{n} non-NaN observations of {value_column!r}"
+                )
+            weights_kind = 'supplied'
+        else:
+            W = np.zeros((n, n))
+            adj = np.arange(n - 1)
+            W[adj, adj + 1] = 1.0
+            W[adj + 1, adj] = 1.0
+            weights_kind = 'linear_adjacency'
 
-        # Simple autocorrelation measure
-        autocorr = np.corrcoef(centered[:-1], centered[1:])[0, 1] if len(centered) > 1 else 0.0
+        z = data_values - np.mean(data_values)
+        S0 = float(W.sum())
+        denom = float(z @ z)
+        if S0 <= 0 or denom <= 0:
+            morans_i = np.nan
+        else:
+            morans_i = float((n / S0) * (z @ (W @ z)) / denom)
 
         return {
-            'morans_i': autocorr,
-            'spatial_autocorrelation': 'Positive' if autocorr > 0.1 else 'Negative' if autocorr < -0.1 else 'None'
+            'morans_i': morans_i,
+            'spatial_autocorrelation': 'Positive' if morans_i > 0.1 else 'Negative' if morans_i < -0.1 else 'None',
+            'weights_kind': weights_kind
         }
 
-    def comprehensive_analysis_report(self) -> Dict[str, Any]:
+    def comprehensive_analysis_report(self,
+                                      bayesian_columns: Optional[Tuple[str, str]] = None,
+                                      causal_columns: Optional[Tuple[str, str]] = None) -> Dict[str, Any]:
         """
         Generate comprehensive analysis report with all analytic methods.
+
+        Parameters:
+            bayesian_columns: Optional (x, y) column pair for the Bayesian
+                regression section. Bayesian analysis on the first two
+                arbitrary numeric columns is meaningless, so the section is
+                reported as 'not_analyzed' unless an explicit pair is given.
+            causal_columns: Optional (cause, effect) column pair for the
+                Granger causality section; same 'not_analyzed' default.
 
         Returns:
             Dictionary with comprehensive analysis results
@@ -2060,15 +2275,18 @@ class AnalyticsEngine:
         except Exception as e:
             report['multivariate'] = {'error': str(e)}
 
-        # Bayesian analysis
-        try:
-            numeric_cols = self.data.select_dtypes(include=[np.number]).columns
-            if len(numeric_cols) >= 2:
-                report['bayesian'] = self.bayesian_analysis(numeric_cols[0], numeric_cols[1])
-            else:
-                report['bayesian'] = {'error': 'Insufficient numeric columns'}
-        except Exception as e:
-            report['bayesian'] = {'error': str(e)}
+        # Bayesian analysis needs an explicitly chosen (x, y) pair; running
+        # it on the first two arbitrary numeric columns produced results
+        # with no interpretation.
+        if bayesian_columns is not None:
+            try:
+                report['bayesian'] = self.bayesian_analysis(*bayesian_columns)
+            except Exception as e:
+                report['bayesian'] = {'error': str(e)}
+        else:
+            report['bayesian'] = {
+                'not_analyzed': 'Pass bayesian_columns=(x, y) to run Bayesian regression on a chosen pair'
+            }
 
         # Network analysis
         try:
@@ -2076,15 +2294,17 @@ class AnalyticsEngine:
         except Exception as e:
             report['network'] = {'error': str(e)}
 
-        # Causal inference
-        try:
-            numeric_cols = self.data.select_dtypes(include=[np.number]).columns
-            if len(numeric_cols) >= 2:
-                report['causal'] = self.causal_inference(numeric_cols[0], numeric_cols[1])
-            else:
-                report['causal'] = {'error': 'Insufficient numeric columns'}
-        except Exception as e:
-            report['causal'] = {'error': str(e)}
+        # Same rationale as the Bayesian section: Granger causality is only
+        # meaningful for a hypothesized cause -> effect pair.
+        if causal_columns is not None:
+            try:
+                report['causal'] = self.causal_inference(*causal_columns)
+            except Exception as e:
+                report['causal'] = {'error': str(e)}
+        else:
+            report['causal'] = {
+                'not_analyzed': 'Pass causal_columns=(cause, effect) to run Granger causality on a chosen pair'
+            }
 
         # Information theory
         try:
@@ -2181,16 +2401,15 @@ class AnalyticsEngine:
         logger.info(f"Performing copula analysis between {column1} and {column2}")
         
         if column1 not in self.data.columns or column2 not in self.data.columns:
-            raise ValueError(f"Columns not found in data")
-        
-        # Get data and remove NaNs
-        data1 = self.data[column1].dropna().values
-        data2 = self.data[column2].dropna().values
-        
-        # Ensure equal length
-        min_len = min(len(data1), len(data2))
-        data1 = data1[:min_len]
-        data2 = data2[:min_len]
+            raise ValueError("Columns not found in data")
+
+        # Drop rows jointly so the (column1, column2) pairs stay aligned
+        sub = self.data[[column1, column2]].dropna()
+        data1 = sub[column1].to_numpy(dtype=float)
+        data2 = sub[column2].to_numpy(dtype=float)
+        tau, tau_pval = stats.kendalltau(data1, data2)
+        if len(data1) < 3 or not np.isfinite(tau):
+            raise ValueError("Insufficient variation between columns to fit a copula")
         
         # Transform to uniform margins using empirical CDF
         from scipy.stats import rankdata
@@ -2209,23 +2428,45 @@ class AnalyticsEngine:
         upper_tail_prob = np.mean((u1 > threshold) & (u2 > threshold))
         lower_tail_prob = np.mean((u1 < (1 - threshold)) & (u2 < (1 - threshold)))
         
-        # Fit copula parameters (simplified)
+        # Fit copula parameters
+        degrees_of_freedom = None
         if copula_type == 'gaussian':
-            # Gaussian copula parameter
+            # Gaussian copula: correlation of the inverse-normal-transformed
+            # uniforms (maximum-likelihood for Gaussian margins)
             from scipy.stats import norm
             z1 = norm.ppf(u1)
             z2 = norm.ppf(u2)
             copula_param = np.corrcoef(z1, z2)[0, 1]
+        elif copula_type == 'student':
+            # Bivariate Student-t copula: rho from Kendall's tau
+            # (tau = (2/pi) arcsin(rho) for the t copula) and nu by the
+            # method of moments on excess kurtosis (nu = 4 + 6/excess,
+            # valid for nu > 4; clamped otherwise).
+            copula_param = float(np.sin(np.pi * tau / 2.0))
+            kurt = 0.5 * (float(stats.kurtosis(data1)) + float(stats.kurtosis(data2)))
+            nu = 4.0 + 6.0 / kurt if kurt > 1e-12 else 100.0
+            degrees_of_freedom = float(min(max(nu, 2.1), 100.0))
         elif copula_type == 'clayton':
-            # Clayton copula parameter (method of moments using Kendall's tau)
-            copula_param = 2 * tau / (1 - tau) if tau < 1 else 10.0
+            # Clayton copula parameter (method of moments using Kendall's
+            # tau); Clayton only admits positive dependence.
+            if tau <= 0:
+                raise ValueError(
+                    "Clayton copula requires positive dependence (Kendall's tau > 0); "
+                    f"got tau = {tau:.3f}"
+                )
+            copula_param = 2 * tau / (1 - tau)
         elif copula_type == 'frank':
-            # Frank copula parameter (approximation)
-            copula_param = 4 * tau if abs(tau) < 0.9 else np.sign(tau) * 10.0
+            # Frank copula parameter: exact inversion of
+            # tau = 1 - 4/theta * (1 - Debye1(theta)) for theta > 0
+            # (sign-flipped for negative tau).
+            copula_param = self._frank_theta_from_tau(tau)
         else:
-            copula_param = tau  # Default to Kendall's tau
-        
-        return {
+            raise ValueError(
+                f"Unsupported copula type: {copula_type!r}; "
+                "expected one of 'gaussian', 'student', 'clayton', 'frank'"
+            )
+
+        result = {
             'copula_type': copula_type,
             'copula_parameter': float(copula_param),
             'kendall_tau': float(tau),
@@ -2236,6 +2477,55 @@ class AnalyticsEngine:
             'lower_tail_dependence': float(lower_tail_prob),
             'dependence_class': 'positive' if tau > 0.1 else 'negative' if tau < -0.1 else 'independent'
         }
+        if degrees_of_freedom is not None:
+            result['degrees_of_freedom'] = degrees_of_freedom
+        return result
+
+    @staticmethod
+    def _frank_theta_from_tau(tau: float) -> float:
+        """Solve tau = 1 - 4/theta * (1 - Debye1(theta)) for theta > 0.
+
+        The map theta -> tau is strictly increasing from 0 (theta -> 0+) to
+        1 (theta -> inf), so brentq on a wide positive bracket is exact.
+        Negative tau is handled by symmetry (theta -> -theta).
+        """
+        from scipy.optimize import brentq
+
+        if not np.isfinite(tau):
+            raise ValueError("Kendall's tau is not finite; cannot fit Frank copula")
+        if abs(tau) < 1e-12:
+            return 0.0
+
+        target = abs(tau)
+
+        def _debye1(x: float) -> float:
+            """Debye function D1(x) = (1/x) * integral_0^x t/(e^t - 1) dt.
+
+            scipy.special does not ship it in every version, so compute the
+            integral directly: quadrature on (0, x) for moderate x, and the
+            total integral pi^2/6 minus the exponentially small tail for
+            large x.
+            """
+            from scipy.integrate import quad
+            if x <= 0:
+                return 1.0
+            integrand = lambda t: t / np.expm1(t)
+            if x < 5.0:
+                integral, _ = quad(integrand, 0.0, x, limit=200)
+                return integral / x
+            total, _ = quad(integrand, x, np.inf, limit=200)
+            return (np.pi ** 2 / 6.0 - total) / x
+
+        def _tau_of_theta(theta: float) -> float:
+            # Debye D1 is evaluated at theta itself (not 1/theta): D1 -> 1
+            # as theta -> 0 gives tau -> 0, and D1 -> 0 as theta -> inf
+            # gives tau -> 1, matching the Frank copula's tau range.
+            return 1.0 - 4.0 / theta * (1.0 - _debye1(theta))
+
+        lo, hi = 1e-8, 1e12
+        theta = brentq(lambda th: _tau_of_theta(th) - target, lo, hi, xtol=1e-12, rtol=1e-14)
+        return float(np.sign(tau) * theta)
+        
     
     def extreme_value_analysis(self,
                               column: str,
@@ -2369,17 +2659,22 @@ class AnalyticsEngine:
         
         features = np.array(features)
         
-        # Normalize features
-        features_normalized = (features - features.mean(axis=0)) / features.std(axis=0)
-        
+        # Normalize features; constant windows give zero std, which would
+        # otherwise poison the features with NaN and crash K-means.
+        std = features.std(axis=0)
+        std = np.where(std == 0, 1.0, std)
+        features_normalized = (features - features.mean(axis=0)) / std
+
         # K-means clustering
         kmeans = KMeans(n_clusters=n_regimes, random_state=42)
         regime_labels = kmeans.fit_predict(features_normalized)
-        
-        # Extend labels to full series
-        full_regime_labels = np.zeros(n, dtype=int)
-        for i in range(len(regime_labels)):
-            full_regime_labels[i:i + window_size] = regime_labels[i]
+
+        # Map each observation to the label of the window whose midpoint is
+        # nearest. (Forward-filling each window's label over its span let
+        # later windows overwrite earlier ones, smearing labels backwards.)
+        full_regime_labels = regime_labels[
+            np.clip(np.arange(n) - window_size // 2, 0, len(regime_labels) - 1)
+        ]
         
         # Compute regime statistics
         regime_stats = []
@@ -2394,10 +2689,11 @@ class AnalyticsEngine:
                     'n_observations': int(len(regime_data))
                 })
         
-        # Compute transition matrix
+        # Compute transition matrix between the per-observation labels
+        # (the reported labels), not the window-level ones
         transitions = np.zeros((n_regimes, n_regimes))
-        for i in range(len(regime_labels) - 1):
-            transitions[regime_labels[i], regime_labels[i + 1]] += 1
+        for a, b in zip(full_regime_labels[:-1], full_regime_labels[1:]):
+            transitions[a, b] += 1
         
         # Normalize to get probabilities
         transition_probs = transitions / transitions.sum(axis=1, keepdims=True)

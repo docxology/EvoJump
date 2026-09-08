@@ -353,25 +353,27 @@ Analysis Issues
       # Generate more trajectories
       trajectories = model.generate_trajectories(n_samples=1000)
 
-2. **Use Parametric Methods**
+2. **Use Direct Point Estimates**
+
+   The moments and quantiles in the result are computed directly from the
+   data (no bootstrap), so they remain available even when bootstrap
+   confidence intervals are unreliable:
 
    .. code-block:: python
 
-      # Use analytical confidence intervals
-      result = analyzer.analyze_cross_section(
-          time_point=5.0,
-          bootstrap_samples=0  # Disable bootstrap
-      )
+      result = analyzer.analyze_cross_section(time_point=5.0)
+      print(result.moments)
+      print(result.quantiles)
 
-3. **Reduce Confidence Level**
+3. **Reduce Bootstrap Resamples**
+
+   Confidence intervals are bootstrap-based with a fixed 95% level; there is
+   no ``confidence_level`` parameter. To cut runtime on large datasets,
+   reduce the number of bootstrap resamples:
 
    .. code-block:: python
 
-      # Use 90% instead of 95% confidence
-      result = analyzer.analyze_cross_section(
-          time_point=5.0,
-          confidence_level=0.90
-      )
+      result = analyzer.analyze_cross_section(time_point=5.0, n_bootstrap=200)
 
 Visualization Issues
 --------------------

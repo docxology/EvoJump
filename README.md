@@ -13,10 +13,11 @@ Verified 2026-08-31 on this checkout — re-verify with the commands shown.
 - **What this is:** a Python framework for evolutionary ontogenetic analysis
   (jump-diffusion models over developmental trajectories). Details: [Features](#-features)
   and [Architecture](#-architecture) below.
-- **Current state:** v0.2.0 packaging fixed, suite stable. Test roster: `ls tests/test_*.py`
-  (16 files). Coverage floor is enforced in `pyproject.toml`
-  (`--cov-fail-under=68`); last recorded measurement 65.9% (`coverage.xml`, 2026-08-31 00:20 —
-  below floor, reconcile after a fresh full run on an idle machine).
+- **Current state:** v0.3.0 (comprehensive review & release pass — every module,
+  test file, doc, example, and the manuscript audited and fixed). Test roster:
+  `ls tests/test_*.py` (16 files). Coverage floor is enforced in `pyproject.toml`
+  (`--cov-fail-under=68`); verified full-suite result 412 passed / 86.96%
+  coverage (2026-09-08; re-check with `tail -5 coverage.xml` after a fresh run).
 - **Verify (primary command):** `MPLBACKEND=Agg .venv/bin/python -m pytest tests/ -q --no-cov`
   (do NOT use `uv run` — stalls under heavy load; see Installation note below).
 - **What to do next:** the single authoritative backlog is [`TODO.md`](TODO.md);
@@ -268,8 +269,8 @@ EvoJump follows test-driven development (TDD) with comprehensive test coverage a
 
 ### Quick Start Testing
 
-`run_all_tests.py` is a thin wrapper that forwards extra arguments to pytest
-verbatim (see its own usage line); the canonical invocation is pytest itself.
+`run_tests.py` is a thin wrapper that forwards extra arguments to pytest
+verbatim (see its usage line); the canonical invocation is pytest itself.
 Invoke the venv python directly — `uv run` can stall under heavy load.
 
 ```bash
@@ -516,9 +517,14 @@ EvoJump is now a fully functional, production-ready framework with:
 
 ### 📊 **Technical Specifications**
 
-Coverage/test counts in this table are prose values of unstated provenance; the executable truth is `coverage.xml` (line-rate 0.6588 as of 2026-08-31) and `htmlcov/`. Re-measure after a full-suite run on an idle machine.
+The per-component numbers below are **historical, unverified prose values**
+(v0.1.0-era, unstated provenance) — not a current measurement. Their
+weighted average is inconsistent with the verified aggregate of **70.94%
+(280 tests passed) at commit 1c47a4e** (floor: 68%). The executable truth
+is `coverage.xml` / `htmlcov/` after a fresh full-suite run; re-measure
+before relying on any per-module number.
 
-| Component | Status | Coverage | Tests | Examples |
+| Component | Status | Coverage (historical, unverified) | Tests | Examples |
 |-----------|--------|----------|-------|----------|
 | **DataCore** | ✅ Complete | 84% | 24 tests | Multiple examples |
 | **JumpRope** | ✅ Complete | 83% | 22 tests | Model fitting demos |

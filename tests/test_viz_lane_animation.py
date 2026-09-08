@@ -87,6 +87,37 @@ class TestTrailingWindowAnimation:
         assert 'trailing window: 4' in title
         plt.close(anim._fig)
 
+    def test_frames_carry_distribution_quantiles(self):
+        # Frames store the 2.5/97.5 percentiles of the cross-sectional
+        # distribution; that band is wider than the CI-on-the-mean.
+        model = make_model()
+        controller = trajectory_visualizer.AnimationController(
+            model, trajectory_visualizer.PlotConfig())
+        frames = controller.generate_frames(n_frames=3)
+        non_degenerate = [f for f in frames if np.std(f.cross_section) > 0]
+        assert non_degenerate, "expected at least one non-degenerate cross-section"
+        for frame in non_degenerate:
+            q_lo, q_hi = frame.metadata['distribution_quantiles']
+            assert q_lo < q_hi
+            mean = float(np.mean(frame.cross_section))
+            assert q_lo <= mean <= q_hi
+            ci_width = (frame.confidence_interval[1]
+                        - frame.confidence_interval[0])
+            assert q_hi - q_lo > ci_width, (
+                "distribution quantile band should exceed the SEM band width")
+
+    def test_animation_draws_distribution_quantiles(self):
+        # The histogram panel labels the drawn band as distribution
+        # quantiles, not as a CI of the mean.
+        model = make_model()
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        anim = viz.create_animation(model, n_frames=2)
+        anim._func(0)
+        ax2 = anim._fig.axes[1]
+        labels = [ln.get_label() for ln in ax2.get_lines()]
+        assert '95% distribution quantiles' in labels, labels
+        plt.close(anim._fig)
+
     def test_saved_gif_nontrivial(self, tmp_path):
         model = make_model(n_samples=6, n_times=6)
         viz = trajectory_visualizer.TrajectoryVisualizer()

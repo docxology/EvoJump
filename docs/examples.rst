@@ -487,9 +487,10 @@ Population dynamics and adaptation:
    print(f"Directional selection: {selection['directional_selection']:.3f}")
    print(f"Stabilizing selection: {selection['stabilizing_selection']:.3f}")
 
-   # Heritability analysis
+   # Heritability analysis ('available' is False when no pedigree exists)
    genetics = evolution_results['genetic_parameters']
-   print(f"Narrow-sense heritability: {genetics['narrow_sense_heritability']:.3f}")
+   if genetics.get('available'):
+       print(f"Narrow-sense heritability: {genetics['narrow_sense_heritability']:.3f}")
 
 Quantitative Genetics
 ~~~~~~~~~~~~~~~~~~~~~

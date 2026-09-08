@@ -5,10 +5,104 @@ All notable changes to the EvoJump project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2026-09-08 (comprehensive review & release pass)
+
+A full-repo review pass: every module, test file, docs page, example, and the
+manuscript audited by independent reviewers; findings verified and fixed.
+
+### Fixed
+- **JumpRope**: geometric jump-diffusion one-jump log-likelihood now includes
+  the drift shift and diffusion variance (previously omitted, biasing fits);
+  OU log-likelihood is the full Poisson-Gaussian mixture (k up to 20);
+  `fit()` evaluates objectives on parameter copies so optimizer failure can no
+  longer leak mid-optimization parameters; FBM diffusion standardized to
+  std-deviation units across all processes; Levy alpha estimated via an
+  empirical characteristic-function slope (recoverable below 2, previously
+  structurally biased to 2.0); jump-time detection uses a robust MAD threshold
+  instead of a per-path 95th percentile that flagged ~5% of any diffusion;
+  FBM Hurst regression lag alignment fixed.
+- **LaserPlane**: `compare_distributions` now returns populated
+  test_statistics/p_values/effect_sizes (Cohen's d) — previously empty dicts;
+  beta fits compute likelihood/AIC/BIC/Vuong on the scaled fit data with a
+  change-of-variables Jacobian (the beta branch was previously dead code that
+  never fit); lognormal/gamma information criteria computed on the positive
+  subset used for fitting; `median_ci` is a true order-statistic confidence
+  interval for the median (previously the central 95% of the data); `rng`
+  threads through public comparison/bootstrap APIs for reproducible p-values.
+- **AnalyticsEngine**: CCA solves the proper generalized eigenproblem
+  (`cov11^{-1} cov12 cov22^{-1} cov21`) and returns both coefficient sets;
+  survival analysis drops time/event pairs jointly and validates 0/1 events;
+  seasonality auto-detects the period per column (previously leaked across
+  columns); copula/bayesian analyses drop NaN pairs jointly; Frank copula
+  parameter solved from the exact Kendall-tau relation; student copula
+  implemented; Huber/Tukey/Rousseeuw-Croux Sn robust estimators are real
+  M-estimators (previously median placeholders); variance changepoint
+  detection gated by a Bonferroni-corrected F-test; 'information' changepoint
+  method is a real BIC segmentation; spectral coherence (MSC) available via
+  `coherence_column`; spatial analysis computes true Moran's I from
+  `spatial_weights`; regime switching guards zero-variance features and
+  computes transitions from the full label sequence; seeded Bayesian
+  regression (`seed=`).
+- **DataCore**: interpolation is positionally stable with duplicate index
+  labels (previously expanded rows via `.loc` cross-product); outlier removal
+  applies one combined order-independent mask, never treats NaN as an outlier,
+  and refuses to empty a dataset; NaN time values raise instead of being
+  backfilled; HDF5 load/save round-trip (including the save layout, string
+  columns, group flattening, and clear unequal-length errors); aggregation
+  unions phenotype columns across datasets; a single `TimeSeriesData` is
+  accepted and `append()` added; quality metrics always include
+  `temporal_consistency` plus a per-column outlier breakdown; empty metadata
+  files raise a clear error; unknown phenotype columns raise in
+  `filter_by_phenotype_range`.
+- **EvolutionSampler**: genetic-parameter and selection placeholders replaced
+  with real estimates (or NaN with an `available` marker — previously
+  fabricated zeros); phylogenetic covariance is a double-centered (Gower)
+  kernel with PSD validation (previously the raw distance matrix); selection
+  gradient is the standardized regression slope (documented); Moran's I is
+  computed only with a compatible distance matrix; sampling diagnostics no
+  longer mutate the caller's dict; MCMC acceptance rate excludes burn-in.
+- **CLI**: a global `--output` before the subcommand now survives subparser
+  defaults (previously silently dropped); `visualize --interactive` persists
+  the Plotly figure as HTML (previously exited 0 writing nothing); `-v/-vv`
+  actually change log levels; exit codes consistently 0/1/2;
+  `--time-column` added to fit/sample with input validation everywhere;
+  `analysis_results.json` reports real trajectory counts.
+- **TrajectoryVisualizer**: `networkx` import restored so network plots render
+  instead of silently falling back; `tick_labels=` for matplotlib>=3.9;
+  Agg backend only set when no backend configured; consistent CI band
+  labeling (95% CI of the mean vs ±1 SD); heatmaps ignore NaN instead of
+  imputing zeros; deterministic phase-portrait subsampling; `close=` figure
+  ownership parameter and `_save` helper; animation fps derived from the frame
+  interval; distribution quantiles stored in animation frames.
+- **Examples**: repaired three example scripts that shipped with corrupted
+  string literals (`animation_demo.py`, `comprehensive_animation_demo.py`,
+  `comprehensive_demo.py`) — `run_all_examples.py` failed 3/11 before; the
+  Drosophila case study now emits strict JSON (no NaN tokens) with real
+  PCA/network/Bayesian statistics and a per-marker correlation network figure
+  (previously plotted DataFrame columns and placeholder zeros).
 
 ### Changed
-- Updated license from MIT to Apache License 2.0
+- License changed from MIT to Apache License 2.0.
+- Python floor aligned at 3.9 across `requires-python`, classifiers, black,
+  and mypy (previously mixed 3.8/3.9 metadata).
+- `selection_differential`/`selection_response` in EvolutionSampler results
+  are now per-trait dicts (previously scalar placeholders).
+- `TimeSeriesAnalyzer.detect_change_points('cusum')` delegates to
+  ChangePointDetector (result keys `change_magnitude`/`z_score`).
+
+### Added
+- GitHub Actions CI workflow running the suite on Python 3.9-3.12.
+- `.zenodo.json` and `CITATION.cff` release metadata.
+- `.gitignore`; build/coverage artifacts (`coverage.xml`, `.coverage`,
+  `__pycache__`, `.DS_Store`, `paper/output/`) removed from version control.
+- Parameter-recovery, seeding-reproducibility, and log-likelihood tests across
+  the stochastic processes; per-method visualization lane tests.
+
+### Removed
+- `demo_testing.py` (advertised pytest flags that do not exist) and
+  `run_all_tests.py` (pure alias of `run_tests.py`).
+- `paper/latex_template.tex` (dead template referencing a nonexistent
+  bibliography) and ten unreferenced legacy figure PNGs.
 
 ### Docs (2026-08-30 documentation deep pass)
 - README: removed fictional `run_all_tests.py` flags (`--all`, `--benchmark`,

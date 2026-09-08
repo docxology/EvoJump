@@ -145,7 +145,8 @@ Follow PEP 8 and project-specific conventions:
 
 **Test-Driven Development**
   * Write tests before implementing features
-  * Maintain >95% test coverage
+  * Keep coverage above the enforced 68% floor (``--cov-fail-under=68`` in
+    pyproject.toml; 95%+ on new code is a stretch goal, not a gate)
   * Use real data in tests (no mocks)
   * Test both success and failure cases
 
@@ -330,7 +331,8 @@ Pull Request Guidelines
 
    - Added comprehensive test suite for Bayesian methods
    - All existing tests still pass
-   - Test coverage maintained above 95%
+   - Test coverage meets the enforced 68% floor
+     (``--cov-fail-under=68`` in pyproject.toml)
 
 **Code Changes**
   * Keep PRs focused and atomic

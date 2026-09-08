@@ -98,16 +98,21 @@ class TestHeatmapRowSorting:
         plt.close(fig)
 
     def test_sort_changes_row_order_deterministically(self):
-        # Same input twice -> same sorted output; sorting actually reorders.
+        # Same input twice -> same permutation; sorting actually reorders
+        # an unsorted cohort into ascending final-value order.
         model = make_model()
         trajs = model.trajectories.copy()
         viz = trajectory_visualizer.TrajectoryVisualizer()
-        fig1 = viz.plot_heatmap(model, time_resolution=10,
-                                phenotype_resolution=10, interactive=False)
-        plt.close(fig1)
         final = trajs[:, -1]
         assert not np.all(np.diff(final) >= 0), (
             "test data itself must be unsorted for this assertion to mean anything")
+        order1 = viz._trajectory_sort_order(trajs, 'final_value')
+        order2 = viz._trajectory_sort_order(trajs, 'final_value')
+        assert np.array_equal(order1, order2), "sort must be deterministic"
+        assert np.array_equal(trajs[order1][:, -1], np.sort(final)), (
+            "applying the order must sort trajectories by final value")
+        assert not np.array_equal(order1, np.arange(len(final))), (
+            "order must actually reorder an unsorted cohort")
 
 
 class TestLandscapeDeterminism:
@@ -128,16 +133,14 @@ class TestLandscapeDeterminism:
         assert isinstance(config.phenotype_units, str)
 
     def test_custom_units_label(self, tmp_path):
+        # config.phenotype_units must propagate to the landscape z-axis
+        # label (which the static path draws alongside its axes).
         model = make_model()
         config = trajectory_visualizer.PlotConfig(phenotype_units='mm')
         viz = trajectory_visualizer.TrajectoryVisualizer(config)
         fig = viz.plot_landscapes(model, interactive=False)
-        labels = [cbar.ax.get_ylabel() for cbar in
-                  getattr(fig, 'colorbars', [cbar for cbar in fig.axes if cbar != fig.axes[0]])]
-        # 3D projections make colorbar detection fiddly; just confirm one
-        # axis carries the units string if any colorbar exists.
-        all_ylabels = [a.get_ylabel() for a in fig.axes]
-        assert any('mm' in (lbl or '') for lbl in all_ylabels) or True
+        zlabel = fig.axes[0].get_zlabel()
+        assert 'mm' in zlabel, f"units not propagated to z-axis label: {zlabel!r}"
         _save_and_check(fig, tmp_path / "landscape_units.png")
 
     def test_deterministic_camera_angles(self, tmp_path):

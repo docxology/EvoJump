@@ -6,73 +6,58 @@ This guide covers advanced features and sophisticated analysis techniques in Evo
 High-Performance Computing
 --------------------------
 
+.. note::
+   EvoJump has no configuration API: there is no ``evojump.config``
+   module and no global knobs for thread counts, caching, GPU toggles, or
+   memory limits (v0.2.0). Parallelism and memory efficiency come from
+   standard Python tooling, as shown below.
+
 Parallel Processing
 ~~~~~~~~~~~~~~~~~~~
 
-Enable parallel processing for large datasets:
+Fan out independent fits across worker processes for large datasets:
 
 .. code-block:: python
 
    import evojump as ej
+   from concurrent.futures import ProcessPoolExecutor
 
-   # Enable parallel processing
-   ej.config.set_num_threads(8)
-
-   # Use with dask for distributed computing
-   import dask.dataframe as dd
-
-   # Load large dataset with dask
-   large_data = dd.read_csv("large_dataset.csv")
-
-   # Process in parallel
-   def process_chunk(chunk):
-       data_core = ej.DataCore.load_from_csv(
-           pd.io.common.StringIO(chunk.to_csv()),
-           time_column='time'
-       )
+   def analyze_file(path):
+       data_core = ej.DataCore.load_from_csv(path, time_column='time')
        model = ej.JumpRope.fit(data_core)
        return model.fitted_parameters
 
-   # Process chunks in parallel
-   results = large_data.map_partitions(process_chunk).compute()
+   paths = ["chunk_001.csv", "chunk_002.csv", "chunk_003.csv"]
+   with ProcessPoolExecutor(max_workers=8) as pool:
+       results = list(pool.map(analyze_file, paths))
+
+For exploratory work on very large CSV files, ``dask`` (a declared
+dependency) can partition the raw data before it reaches ``DataCore``.
 
 GPU Acceleration
 ~~~~~~~~~~~~~~~~
 
-Enable GPU acceleration for intensive computations:
+Not available in v0.2.0: the optional ``evojump[gpu]`` extra installs
+``cupy``, but no code path in the package uses it. Trajectory generation
+runs on the CPU and scales with ``n_samples``:
 
 .. code-block:: python
 
-   import evojump as ej
-
-   # Enable GPU acceleration (requires cupy)
-   try:
-       import cupy as cp
-       ej.config.enable_gpu()
-       print("GPU acceleration enabled")
-   except ImportError:
-       print("GPU acceleration not available")
-
-   # GPU-accelerated trajectory simulation
    model = ej.JumpRope.fit(data_core)
-   trajectories = model.generate_trajectories(n_samples=10000)  # Large number
+   trajectories = model.generate_trajectories(n_samples=10000)
 
 Memory Optimization
 ~~~~~~~~~~~~~~~~~~~
 
-Optimize memory usage for large datasets:
+Chunk large datasets yourself before constructing analyzers:
 
 .. code-block:: python
 
    import evojump as ej
 
-   # Set memory limits
-   ej.config.set_memory_limit('8GB')
-
-   # Use memory-efficient algorithms
    analytics = ej.AnalyticsEngine(data_core)
 
-   # Process in chunks
+   # Process in chunks (AnalyticsEngine also accepts a DataFrame)
    chunk_size = 10000
    for i in range(0, len(data_core.data), chunk_size):
        chunk = data_core.data.iloc[i:i+chunk_size]
@@ -827,26 +812,27 @@ Benchmark EvoJump against other tools:
 Logging and Debugging
 ~~~~~~~~~~~~~~~~~~~~~
 
-Configure detailed logging:
+There is no ``evojump.logging`` module; all EvoJump modules log through the
+standard :mod:`logging` framework under the ``evojump`` logger hierarchy:
 
 .. code-block:: python
 
    import evojump as ej
    import logging
 
-   # Configure logging
+   # Configure logging for the whole package
    logging.basicConfig(
        level=logging.DEBUG,
        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
    )
 
-   # Enable EvoJump debug logging
-   ej.logging.setup_logging(level='DEBUG')
+   # Enable debug logging for EvoJump modules only
+   logging.getLogger('evojump').setLevel(logging.DEBUG)
 
-   # Log to file
+   # Log analysis output to a file
    file_handler = logging.FileHandler('evojump_analysis.log')
    file_handler.setLevel(logging.INFO)
-   ej.logging.get_logger().addHandler(file_handler)
+   logging.getLogger('evojump').addHandler(file_handler)
 
    # Run analysis with detailed logging
    data_core = ej.DataCore.load_from_csv('data.csv')
@@ -857,12 +843,12 @@ Configure detailed logging:
 Error Handling and Recovery
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Implement robust error handling:
+There is no ``evojump.exceptions`` module; EvoJump raises standard built-in
+exceptions (``ValueError``, ``FileNotFoundError``, ...). Use them directly:
 
 .. code-block:: python
 
    import evojump as ej
-   from evojump.exceptions import EvoJumpError
 
    def robust_analysis(data_file):
        """Robust analysis with error handling."""
@@ -873,7 +859,7 @@ Implement robust error handling:
            # Validate data quality
            quality = data_core.validate_data_quality()
            if quality['missing_data_percentage']['dataset_0'] > 50:
-               raise EvoJumpError("Too much missing data")
+               raise ValueError("Too much missing data")
 
            # Preprocess
            data_core.preprocess_data()
@@ -896,8 +882,8 @@ Implement robust error handling:
                'status': 'success'
            }
 
-       except EvoJumpError as e:
-           print(f"EvoJump error: {e}")
+       except ValueError as e:
+           print(f"Data error: {e}")
            return {'status': 'failed', 'error': str(e)}
 
        except Exception as e:
@@ -1000,7 +986,9 @@ Implement a plugin system for EvoJump:
 Configuration Management
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-Advanced configuration management:
+EvoJump has no global configuration store; pass settings explicitly through
+function and method parameters. To manage your own analysis settings,
+keep them in a user-level structure such as:
 
 .. code-block:: python
 
@@ -1017,22 +1005,16 @@ Advanced configuration management:
                self.load_config(config_file)
 
        def _load_default_config(self):
-           """Load default configuration."""
+           """Load default configuration (keys map to real API parameters)."""
            return {
                'analysis': {
-                   'default_model': 'jump-diffusion',
-                   'n_bootstrap': 1000,
-                   'confidence_level': 0.95
+                   'default_model': 'jump-diffusion',   # JumpRope.fit(model_type=...)
+                   'n_bootstrap': 1000,                 # analyze_cross_section(n_bootstrap=...)
                },
                'visualization': {
-                   'default_style': 'ggplot',
-                   'dpi': 150,
-                   'figsize': [12, 8]
-               },
-               'computation': {
-                   'num_threads': 4,
-                   'memory_limit': '4GB',
-                   'cache_enabled': True
+                   'style': 'ggplot',                   # PlotConfig(style=...)
+                   'dpi': 150,                          # PlotConfig(dpi=...)
+                   'figsize': [12, 8],                  # PlotConfig(figsize=...)
                }
            }
 
@@ -1081,7 +1063,7 @@ Advanced configuration management:
 
    # Get configuration values
    default_model = config_manager.get_config('analysis', 'default_model')
-   num_threads = config_manager.get_config('computation', 'num_threads')
+   dpi = config_manager.get_config('visualization', 'dpi')
 
    # Override settings
    config_manager.set_config('analysis', 'n_bootstrap', 2000)

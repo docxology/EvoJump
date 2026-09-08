@@ -134,3 +134,62 @@ class TestMomentAnalyzerNormality:
         r = laserplane.MomentAnalyzer().assess_normality(data)
         assert not r['sufficient_data']
         assert r['verdict'] == 'insufficient_data'
+
+
+class TestVuongDefensiveBranches:
+    def test_vuong_degenerate_variance_on_single_observation(self):
+        # With one comparable observation the pointwise variance is undefined;
+        # the check must report the degenerate branch instead of a p-value.
+        fitter = laserplane.DistributionFitter()
+        results = {
+            'normal': {'distribution': 'normal', 'parameters': (0.0, 1.0),
+                       'log_likelihood': -12.5, 'n_params': 2, 'aicc': 29.0},
+            'uniform': {'distribution': 'uniform', 'parameters': (4.0, 2.0),
+                        'log_likelihood': -0.69, 'n_params': 2, 'aicc': 5.38},
+        }
+        vuong = fitter._vuong_check(np.array([5.0]), results, 'uniform')
+        assert vuong['verdict'] == 'degenerate_variance'
+        assert np.isnan(vuong['p_value'])
+
+    def test_vuong_near_equal_likelihoods_not_significant(self):
+        # Two well-fitting candidates on the same data: no significant
+        # likelihood-ratio verdict.
+        data = np.random.default_rng(5).normal(3.0, 1.0, 250)
+        fitter = laserplane.DistributionFitter()
+        results = {name: fitter.fit_distribution(data, name)
+                   for name in fitter.supported_distributions}
+        vuong = fitter._vuong_check(data, results, 'normal')
+        assert vuong['verdict'] in ('no_significant_difference', 'degenerate_variance')
+
+    def test_vuong_logpdf_evaluation_failed(self):
+        # Parameters that cannot evaluate a logpdf must hit the guard branch.
+        fitter = laserplane.DistributionFitter()
+        data = np.random.default_rng(6).normal(0.0, 1.0, 30)
+        results = {
+            'normal': {'distribution': 'normal', 'parameters': (0.0, 1.0),
+                       'log_likelihood': -42.0, 'n_params': 2, 'aicc': 88.0},
+            'uniform': {'distribution': 'uniform', 'parameters': ('bad',),
+                        'log_likelihood': -42.0, 'n_params': 1, 'aicc': 87.0},
+        }
+        vuong = fitter._vuong_check(data, results, 'normal')
+        assert vuong['verdict'] == 'logpdf_evaluation_failed'
+
+
+class TestComparerAllTests:
+    @pytest.mark.parametrize('test', ['ks', 'anderson', 'cramer', 'mann_whitney', 't_test'])
+    def test_all_supported_tests_routed(self, test):
+        a = np.random.default_rng(31).normal(0.0, 1.0, 60)
+        b = np.random.default_rng(32).normal(0.5, 1.0, 60)
+        result = laserplane.DistributionComparer().compare_distributions(a, b, test)
+        assert result['test'] is not None
+        assert np.isfinite(float(result['statistic']))
+        assert 0.0 <= float(result['p_value']) <= 1.0
+
+    @pytest.mark.parametrize('test', ['ks', 'anderson', 'cramer', 'mann_whitney', 't_test'])
+    def test_insufficient_data_sentinel_for_all_tests(self, test):
+        a = np.array([1.0, 2.0, 3.0])
+        b = np.array([4.0, 5.0, 6.0])
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = laserplane.DistributionComparer().compare_distributions(a, b, test)
+        assert result == {'test': None, 'statistic': None, 'p_value': None}

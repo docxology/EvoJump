@@ -30,7 +30,7 @@ This file contains development rules, best practices, and guidelines for the Evo
 
 ### Test-Driven Development (TDD)
 - Write tests before implementing new functionality
-- Maintain test coverage above 95% for core modules
+- Keep test coverage above the enforced 68% floor (`--cov-fail-under=68` in pyproject.toml); 95% is a stretch goal, not a gate
 - Use descriptive test method names (test_*)
 - Test both positive and negative cases
 - Include edge cases and error conditions

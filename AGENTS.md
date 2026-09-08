@@ -9,7 +9,7 @@ This document outlines the comprehensive testing framework for the EvoJump proje
 EvoJump follows a strict test-driven development approach with the following core principles:
 
 - **Real Data Testing**: All tests use real biological and synthetic data, never mocks
-- **Comprehensive Coverage**: coverage floor of 68% enforced via `--cov-fail-under=68` in `pyproject.toml` `[tool.pytest.ini_options]` (measured over `src/evojump`; last measurement 65.9% per `coverage.xml`, 2026-08-31 — reconcile after a fresh full-suite run)
+- **Comprehensive Coverage**: coverage floor of 68% enforced via `--cov-fail-under=68` in `pyproject.toml` `[tool.pytest.ini_options]` (measured over `src/evojump`; verified full-suite result 412 passed / 86.96% on 2026-09-08 — re-check with `tail -5 coverage.xml` after a fresh full run)
 - **Integration Testing**: Tests validate interactions between all major components
 - **Edge Case Validation**: Extensive testing of error conditions and boundary cases
 - **Performance Validation**: Tests ensure computational efficiency for large datasets
@@ -102,7 +102,7 @@ EvoJump follows a strict test-driven development approach with the following cor
 
 ### Running Tests
 
-`run_all_tests.py` is a thin wrapper that forwards extra args to pytest verbatim
+`run_tests.py` is a thin wrapper that forwards extra args to pytest verbatim
 (see its usage line); the canonical invocation is pytest itself. Invoke the venv
 python directly — `uv run` can stall under heavy load.
 
@@ -125,25 +125,10 @@ python directly — `uv run` can stall under heavy load.
 
 ### Test Configuration
 
-All test configuration is managed through `pyproject.toml`:
-
-```toml
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py", "*_test.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-addopts = [
-    "--strict-markers",
-    "--strict-config",
-    "--verbose",
-    "--cov=evojump",
-    "--cov-report=term-missing",
-    "--cov-report=xml",
-    "--cov-report=html:htmlcov",
-    "--cov-fail-under=95",
-]
-```
+All test configuration lives in `pyproject.toml` under
+`[tool.pytest.ini_options]` (testpaths, naming patterns, coverage reports,
+and the `--cov-fail-under=68` floor). Do not duplicate the block here —
+read `pyproject.toml` as the single source of truth.
 
 ## Coverage Requirements
 

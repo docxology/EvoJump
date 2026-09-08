@@ -250,7 +250,7 @@ Analyzes dependence structure between variables using copulas, capturing non-lin
     result = analytics.copula_analysis(
         'phenotype1',
         'phenotype2',
-        copula_type='gaussian'  # Options: 'gaussian', 'clayton', 'frank'
+        copula_type='gaussian'  # Options: 'gaussian', 'clayton', 'frank', 'student'
     )
     
     print(f"Kendall's tau: {result['kendall_tau']}")

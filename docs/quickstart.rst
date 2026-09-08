@@ -233,7 +233,9 @@ Here's how EvoJump was used to analyze plant developmental data:
    # Evolutionary analysis
    sampler = ej.EvolutionSampler(data_core)
    evolution_results = sampler.analyze_evolutionary_patterns()
-   print(f"Heritability estimates: {evolution_results['genetic_parameters']}")
+   genetics = evolution_results['genetic_parameters']
+   if genetics.get('available'):
+       print(f"Narrow-sense heritability: {genetics['narrow_sense_heritability']:.3f}")
 
 Common Patterns
 ---------------

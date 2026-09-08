@@ -435,97 +435,8 @@ NetworkResult
       network_result = analytics.network_analysis()
       print(f"Network nodes: {network_result.network_metrics['num_nodes']}")
 
-Utility Functions
------------------
-
-Global Configuration
-~~~~~~~~~~~~~~~~~~~~
-
-.. autofunction:: evojump.config.set_num_threads
-.. autofunction:: evojump.config.enable_cache
-.. autofunction:: evojump.config.set_memory_limit
-
-Logging Configuration
-~~~~~~~~~~~~~~~~~~~~~
-
-.. autofunction:: evojump.logging.setup_logging
-.. autofunction:: evojump.logging.get_logger
-
-Error Handling
-~~~~~~~~~~~~~~
-
-.. autoexception:: evojump.exceptions.EvoJumpError
-.. autoexception:: evojump.exceptions.DataError
-.. autoexception:: evojump.exceptions.ModelError
-.. autoexception:: evojump.exceptions.AnalysisError
-
 Type Hints
 ----------
-
-All functions and methods include comprehensive type hints:
-
-.. code-block:: python
-
-   from typing import Dict, List, Optional, Union, Tuple
-   import numpy as np
-   import pandas as pd
-
-   def analyze_cross_section(
-       self,
-       time_point: float,
-       n_bootstrap: int = 1000
-   ) -> 'CrossSectionResult':
-       """Analyze cross-sectional distribution at specific time point.
-
-       Args:
-           time_point: Time point for analysis
-           n_bootstrap: Number of bootstrap samples for confidence intervals
-
-       Returns:
-           CrossSectionResult with analysis results
-       """
-       pass
-
-Constants and Enums
--------------------
-
-Model Types
-~~~~~~~~~~~
-
-.. autodata:: evojump.jumprope.MODEL_TYPES
-.. autodata:: evojump.jumprope.JUMP_DIFFUSION
-.. autodata:: evojump.jumprope.ORNSTEIN_UHLENBECK
-.. autodata:: evojump.jumprope.GEOMETRIC_JUMP_DIFFUSION
-.. autodata:: evojump.jumprope.COMPOUND_POISSON
-
-Distribution Types
-~~~~~~~~~~~~~~~~~~
-
-.. autodata:: evojump.laserplane.SUPPORTED_DISTRIBUTIONS
-.. autodata:: evojump.laserplane.NORMAL
-.. autodata:: evojump.laserplane.LOGNORMAL
-.. autodata:: evojump.laserplane.GAMMA
-.. autodata:: evojump.laserplane.BETA
-.. autodata:: evojump.laserplane.UNIFORM
-
-Analysis Methods
-~~~~~~~~~~~~~~~~
-
-.. autodata:: evojump.analytics_engine.ANALYSIS_METHODS
-.. autodata:: evojump.analytics_engine.TIME_SERIES
-.. autodata:: evojump.analytics_engine.MULTIVARIATE
-.. autodata:: evojump.analytics_engine.BAYESIAN
-.. autodata:: evojump.analytics_engine.NETWORK
-.. autodata:: evojump.analytics_engine.CAUSAL
-
-Plot Types
-~~~~~~~~~~
-
-.. autodata:: evojump.trajectory_visualizer.PLOT_TYPES
-.. autodata:: evojump.trajectory_visualizer.TRAJECTORIES
-.. autodata:: evojump.trajectory_visualizer.CROSS_SECTIONS
-.. autodata:: evojump.trajectory_visualizer.LANDSCAPES
-.. autodata:: evojump.trajectory_visualizer.ANIMATION
 
 Performance Notes
 -----------------
@@ -533,7 +444,8 @@ Performance Notes
 **Memory Usage**
   * Large datasets (>100k samples) may require chunked processing
   * Use ``dask`` for parallel processing of large datasets
-  * Enable caching with ``ej.config.enable_cache()`` for repeated analyses
+  * There is no built-in caching layer; reuse fitted models and pass the
+    same ``DataCore`` between analyzers instead of re-loading data
 
 **Computational Complexity**
   * Time series analysis: O(n) for basic operations, O(n²) for some advanced methods
@@ -591,25 +503,30 @@ Examples Index
 --------------
 
 **Basic Usage**
-  * :doc:`examples/working_demo`
+  * `examples/working_demo.py
+    <https://github.com/docxology/EvoJump/blob/main/examples/working_demo.py>`_
   * Legacy: ``examples/archive/basic_usage_fixed.py`` (basic_usage example
     was archived; see ``examples/archive/README.md``)
 
 **Advanced Usage**
-  * :doc:`examples/comprehensive_demo`
+  * `examples/comprehensive_demo.py
+    <https://github.com/docxology/EvoJump/blob/main/examples/comprehensive_demo.py>`_
   * Legacy: ``examples/archive/thin_orchestrator_examples.py`` and
     ``examples/archive/thin_orchestrator_working.py``
-  * :doc:`examples/comprehensive_advanced_analytics_demo`
+  * `examples/comprehensive_advanced_analytics_demo.py
+    <https://github.com/docxology/EvoJump/blob/main/examples/comprehensive_advanced_analytics_demo.py>`_
 
 **Visualization**
-  * :doc:`examples/animation_demo`
-  * :doc:`examples/enhanced_animation_demo`
-  * :doc:`examples/comprehensive_animation_demo`
+  * `examples/animation_demo.py
+    <https://github.com/docxology/EvoJump/blob/main/examples/animation_demo.py>`_
+  * `examples/enhanced_animation_demo.py
+    <https://github.com/docxology/EvoJump/blob/main/examples/enhanced_animation_demo.py>`_
+  * `examples/comprehensive_animation_demo.py
+    <https://github.com/docxology/EvoJump/blob/main/examples/comprehensive_animation_demo.py>`_
 
 **Orchestration**
-  * :doc:`examples/simple_orchestrator`
-
-**Command Line**
+  * `examples/simple_orchestrator.py
+    <https://github.com/docxology/EvoJump/blob/main/examples/simple_orchestrator.py>`_
 
 API Stability
 -------------

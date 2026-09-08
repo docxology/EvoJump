@@ -12,6 +12,8 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from evojump import datacore, jumprope, laserplane
+from scipy import stats
+from scipy.stats import beta, uniform, kstest
 
 
 class TestDistributionFitter:
@@ -83,6 +85,61 @@ class TestDistributionFitter:
         with pytest.raises(ValueError, match="Unsupported distribution"):
             fitter.fit_distribution(data, distribution='invalid_distribution')
 
+    def test_fit_distribution_uniform(self):
+        """Test fitting uniform distribution: fitted params round-trip through KS."""
+        fitter = laserplane.DistributionFitter()
+
+        rng = np.random.default_rng(42)
+        data = rng.uniform(0.0, 10.0, 300)
+
+        result = fitter.fit_distribution(data, distribution='uniform')
+
+        assert result['distribution'] == 'uniform'
+        assert result['parameters'][0] == pytest.approx(data.min(), abs=1e-12)
+        assert result['parameters'][1] == pytest.approx(data.max() - data.min(), abs=1e-12)
+        assert np.isfinite(result['aic'])
+
+        # The fitted uniform must not be rejected on the data it was fitted to
+        ks_stat, ks_p = kstest(data, uniform(*result['parameters']).cdf)
+        assert ks_p > 0.05
+
+    def test_fit_distribution_beta(self):
+        """Test fitting beta distribution on data in (0, 1)."""
+        fitter = laserplane.DistributionFitter()
+
+        rng = np.random.default_rng(43)
+        data = rng.beta(2.0, 5.0, 200)
+
+        result = fitter.fit_distribution(data, distribution='beta')
+
+        assert result['distribution'] == 'beta'
+        assert result['parameters'] is not None
+        assert np.isfinite(result['aicc'])
+
+        # Log-likelihood must be computed on the scaled data the parameters
+        # were estimated on, with the change-of-variables Jacobian so the
+        # value is comparable with models fitted on the original scale.
+        lo, hi = result['scale']
+        fit_data = result['fit_data']
+        expected_ll = beta.logpdf(fit_data, *result['parameters']).sum() \
+            - len(fit_data) * np.log(hi - lo)
+        assert result['log_likelihood'] == pytest.approx(expected_ll, rel=1e-9)
+
+    def test_fit_distribution_lognormal_with_nonpositive_values(self):
+        """Lognormal fit on data containing non-positive values must have finite ICs."""
+        fitter = laserplane.DistributionFitter()
+
+        rng = np.random.default_rng(44)
+        data = np.concatenate([rng.lognormal(0.0, 0.5, 100), [0.0, -1.0]])
+
+        result = fitter.fit_distribution(data, distribution='lognormal')
+
+        assert result['distribution'] == 'lognormal'
+        assert np.isfinite(result['aic'])
+        assert np.isfinite(result['bic'])
+        assert np.isfinite(result['aicc'])
+        assert result['n_fit'] == len(data) - 2  # fitted on the positive subset
+
 
 class TestDistributionComparer:
     """Test DistributionComparer class."""
@@ -142,6 +199,22 @@ class TestDistributionComparer:
 
         assert result['p_value'] > 0.05  # Should not be significant
         assert not result['significant']
+
+    def test_compare_distributions_rng_reproducible(self):
+        """Permutation-based tests must be reproducible for a fixed rng."""
+        comparer = laserplane.DistributionComparer()
+
+        rng = np.random.default_rng(42)
+        data1 = rng.normal(10.0, 2.0, 60)
+        data2 = rng.normal(10.5, 2.0, 60)
+
+        result1 = comparer.compare_distributions(
+            data1, data2, test='cramer', rng=np.random.default_rng(123))
+        result2 = comparer.compare_distributions(
+            data1, data2, test='cramer', rng=np.random.default_rng(123))
+
+        assert result1['p_value'] == result2['p_value']
+        assert 0.0 <= result1['p_value'] <= 1.0
 
 
 class TestMomentAnalyzer:
@@ -203,6 +276,17 @@ class TestMomentAnalyzer:
         assert len(mean_ci) == 2
         assert mean_ci[0] < mean_ci[1]  # Lower < upper
         assert mean_ci[0] <= 10.0 <= mean_ci[1]  # Mean should be within CI
+
+        # median_ci must be a real confidence interval for the median (the
+        # exact order-statistic interval: ranks 40 and 61 for n=100), not the
+        # central 95% range of the data.
+        median_ci = ci['median_ci']
+        assert median_ci[0] < median_ci[1]
+        assert median_ci[0] <= np.median(data) <= median_ci[1]
+        sorted_data = np.sort(data)
+        assert median_ci[0] == sorted_data[39]
+        assert median_ci[1] == sorted_data[60]
+        assert median_ci[0] > np.quantile(data, 0.025)  # narrower than data range
 
     def test_estimate_mode(self):
         """Test mode estimation."""
@@ -300,16 +384,17 @@ class TestLaserPlaneAnalyzer:
             assert np.isfinite(result.moments['mean'])
 
     def test_compare_distributions(self):
-        """Test distribution comparison."""
+        """Test distribution comparison populates statistics, p-values and effect sizes."""
         model = self.create_test_jump_rope()
 
         analyzer = laserplane.LaserPlaneAnalyzer(model)
 
-        # Create condition data for comparison
+        # Create condition data for comparison: condition2 sits ~3 sd above
+        # the reference cross-section at t=3, so it must come out significant.
         np.random.seed(42)
         condition_data = {
             'condition1': np.random.normal(15.0, 2.0, 50),
-            'condition2': np.random.normal(16.0, 2.5, 50)
+            'condition2': np.random.normal(21.0, 2.0, 50)
         }
 
         comparison = analyzer.compare_distributions(
@@ -323,6 +408,19 @@ class TestLaserPlaneAnalyzer:
         assert comparison.distribution1_name == 'reference'
         assert comparison.distribution2_name == ['condition1', 'condition2']
         assert isinstance(comparison.significant_differences, list)
+
+        # The comparison must report per-condition statistics, not empty dicts
+        assert set(comparison.p_values) == {'condition1', 'condition2'}
+        assert set(comparison.test_statistics) == {'condition1', 'condition2'}
+        assert all(np.isfinite(v) for v in comparison.test_statistics.values())
+        assert all(np.isfinite(v) for v in comparison.p_values.values())
+        assert set(comparison.effect_sizes) == {'condition1', 'condition2'}
+        assert all(np.isfinite(v) for v in comparison.effect_sizes.values())
+
+        # The clearly shifted condition must be flagged significant
+        assert comparison.p_values['condition2'] < 0.05
+        assert 'condition2' in comparison.significant_differences
+        assert comparison.effect_sizes['condition2'] > 0  # shifted upward
 
     def test_bootstrap_confidence_intervals(self):
         """Test bootstrap confidence interval computation."""
@@ -370,6 +468,21 @@ class TestLaserPlaneAnalyzer:
         assert 'ks_statistic' in gof
         assert 'ks_p_value' in gof
         assert np.isfinite(gof['ks_statistic'])
+
+    def test_assess_goodness_of_fit_no_distribution(self):
+        """GOF sentinel values are returned when no distribution was fitted."""
+        model = self.create_test_jump_rope()
+
+        analyzer = laserplane.LaserPlaneAnalyzer(model)
+
+        np.random.seed(42)
+        data = np.random.normal(10.0, 2.0, 100)
+
+        gof = analyzer._assess_goodness_of_fit(
+            data, {'distribution': None, 'parameters': None, 'aic': np.inf})
+
+        assert gof == {'aic': np.inf, 'bic': np.inf,
+                       'ks_statistic': np.nan, 'ks_p_value': np.nan}
 
     def test_generate_summary_report(self):
         """Test summary report generation."""

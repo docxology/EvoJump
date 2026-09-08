@@ -36,21 +36,34 @@ from math import lgamma
 import numpy as np
 import pandas as pd
 from scipy import stats, optimize, integrate
-from scipy.stats import norm, lognorm
+from scipy.stats import norm
 import warnings
 from typing import Dict, List, Optional, Union, Tuple, Any, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import logging
 from abc import ABC, abstractmethod
 import pickle
+import copy
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-
+from dataclasses import dataclass, field, replace
 @dataclass
 class ModelParameters:
-    """Container for model parameters."""
+    """Container for model parameters.
+
+    Units/conventions:
+
+    drift
+        per-unit-time drift of the state (or log-state for geometric models).
+    diffusion
+        innovation scale in STANDARD-DEVIATION units, consistently across all
+        process classes. For OU/GJD/CIR/Levy the per-step innovation standard
+        deviation is ``diffusion * sqrt(dt)`` (Levy: ``diffusion * dt**(1/alpha)``);
+        for fractional Brownian motion the increment standard deviation is
+        ``diffusion * dt**hurst``.
+    """
     drift: float = 0.0
     diffusion: float = 1.0
     jump_intensity: float = 0.0
@@ -60,7 +73,6 @@ class ModelParameters:
     reversion_speed: float = 1.0
     bounds: Optional[Tuple[float, float]] = None
     correlation_matrix: Optional[np.ndarray] = None
-
 
 class StochasticProcess(ABC):
     """Base class for stochastic process models."""
@@ -123,51 +135,66 @@ class OrnsteinUhlenbeckJump(StochasticProcess):
     def log_likelihood(self, data: np.ndarray, dt: float) -> float:
         """Compute exact one-step log-likelihood for OU + compound Poisson jumps.
 
-        The one-step transition density is a Poisson mixture: with probability
-        exp(-lambda*dt) no jump occurs (Gaussian increment around the OU mean),
-        otherwise a compound Poisson jump of Gaussian size is added. All mixture
-        components are summed in log space for numerical stability.
+        The one-step transition density is the full Poisson mixture over jump
+        counts k = 0..k_max: the continuous part contributes a Gaussian
+        increment around the OU mean, and k Gaussian jumps are added on top
+        (N(k*jump_mean, k*jump_std^2)). All mixture components are summed in
+        log space for numerical stability. The mixture is truncated at k_max
+        jumps per step, which is negligible whenever jump_intensity*dt << k_max.
         """
         if len(data) < 2:
             return 0.0
 
         lam = max(self.parameters.jump_intensity, 0.0)
-        p0 = np.exp(-lam * dt)  # probability of zero jumps in [t, t+dt]
+        k_max = 20
+        ks = np.arange(k_max + 1)
+        if lam > 0:
+            # math.lgamma(k+1) == log(k!) and stays valid on numpy>=2.0
+            log_pmf = ks * np.log(lam) - lam - np.array([lgamma(k + 1.0) for k in ks])
+        else:
+            log_pmf = np.where(ks == 0, 0.0, -np.inf)
+        log_pmf = np.asarray(log_pmf, dtype=float)
+
         mu0 = data[:-1] + (self.parameters.equilibrium - data[:-1]) * self.parameters.reversion_speed * dt
         sigma = self.parameters.diffusion * np.sqrt(dt)
-        log_likelihood = 0.0
+        jump_mean = self.parameters.jump_mean
+        jump_var = self.parameters.jump_std ** 2
 
-        for i in range(1, len(data)):
-            x_prev, x = data[i-1], data[i]
-            comps = []
-            if sigma > 0:
-                # zero-jump component
-                comps.append(np.log(max(p0, 1e-300)) + norm.logpdf(x, mu0[i-1], sigma))
-                # one-jump component: jump size N(jump_mean, jump_std)
-                jump_mu = mu0[i-1] + self.parameters.jump_mean
-                comps.append(np.log(max(1.0 - p0, 1e-300)) + norm.logpdf(x, jump_mu,
-                              np.sqrt(sigma**2 + self.parameters.jump_std**2)))
-                log_likelihood += np.logaddexp.reduce(comps)
-            else:
-                comps.append(np.log(max(p0, 1e-300)))
-                log_likelihood += np.logaddexp.reduce(comps)
+        # Mixture component for k jumps: increment ~ N(OU mean + k*jump_mean,
+        # sigma^2 + k*jump_std^2); components are evaluated for every step at
+        # once (rows = steps, columns = jump counts).
+        x = np.asarray(data[1:], dtype=float)
+        mu_k = mu0[:, None] + ks[None, :] * jump_mean
+        var_k = sigma ** 2 + ks[None, :] * jump_var
+        with np.errstate(divide='ignore', over='ignore', invalid='ignore'):
+            comp_ll = np.where(
+                var_k > 0,
+                norm.logpdf(x[:, None], mu_k, np.sqrt(np.maximum(var_k, 1e-300))),
+                np.where(x[:, None] == mu_k, 0.0, -np.inf),
+            )
+            step_ll = np.logaddexp.reduce(log_pmf + comp_ll, axis=1)
 
-        return float(log_likelihood)
+        return float(np.sum(step_ll))
 
     def estimate_parameters(self, data: np.ndarray, dt: float) -> ModelParameters:
         """Estimate parameters using maximum likelihood."""
         def objective(params):
-            # Unpack parameters
+            # Evaluate on a throwaway copy so the optimizer never mutates
+            # self.parameters mid-search (fit() may reuse this process across
+            # several time series, and a failed fit must return pre-fit values).
             equilibrium, reversion_speed, diffusion, jump_intensity, jump_mean, jump_std = params
-
-            self.parameters.equilibrium = equilibrium
-            self.parameters.reversion_speed = reversion_speed
-            self.parameters.diffusion = diffusion
-            self.parameters.jump_intensity = jump_intensity
-            self.parameters.jump_mean = jump_mean
-            self.parameters.jump_std = jump_std
-
-            return -self.log_likelihood(data, dt)
+            candidate = replace(
+                self.parameters,
+                equilibrium=equilibrium,
+                reversion_speed=reversion_speed,
+                diffusion=diffusion,
+                jump_intensity=jump_intensity,
+                jump_mean=jump_mean,
+                jump_std=jump_std,
+            )
+            probe = copy.copy(self)
+            probe.parameters = candidate
+            return -probe.log_likelihood(data, dt)
 
         # Initial parameter guess
         initial_guess = [
@@ -203,10 +230,10 @@ class OrnsteinUhlenbeckJump(StochasticProcess):
                 )
             else:
                 warnings.warn("Parameter estimation failed, using initial values")
-                return self.parameters
+                return replace(self.parameters)
         except Exception as e:
             warnings.warn(f"Parameter estimation error: {e}")
-            return self.parameters
+            return replace(self.parameters)
 
 
 class GeometricJumpDiffusion(StochasticProcess):
@@ -252,27 +279,28 @@ class GeometricJumpDiffusion(StochasticProcess):
             return 0.0
 
         log_likelihood = 0.0
+        p0 = np.exp(-self.parameters.jump_intensity * dt)
+        mu = self.parameters.drift * dt
+        sigma = self.parameters.diffusion * np.sqrt(dt)
 
         for i in range(1, len(data)):
             if data[i-1] <= 0 or data[i] <= 0:
                 continue
 
-            # Log-returns with Poisson jump mixture in log space.
-            # The jump component is a density over the PRICE, so transforming
-            # to log-return space requires the Jacobian |d price / d log_return|
-            # = exp(log_return) (= the observed price data[i]).
+            # Log-return lr = log(data[i]/data[i-1]). Under simulate(), the
+            # multiplicative jump factor f (log f ~ N(jump_mean, jump_std^2))
+            # is applied BEFORE the Gaussian step, so under exactly one jump
+            # lr ~ N(mu + jump_mean, sigma^2 + jump_std^2). Both mixture
+            # components are densities over the log-return, so no Jacobian
+            # term is needed.
             log_return = np.log(data[i] / data[i-1])
-            jacobian = np.log(data[i])
-            p0 = np.exp(-self.parameters.jump_intensity * dt)
-            mu = self.parameters.drift * dt
-            sigma = self.parameters.diffusion * np.sqrt(dt)
 
             if sigma > 0:
                 comps = [
                     np.log(max(p0, 1e-300)) + norm.logpdf(log_return, mu, sigma),
-                    np.log(max(1.0 - p0, 1e-300)) + lognorm.logpdf(
-                        np.exp(log_return), s=self.parameters.jump_std,
-                        scale=np.exp(self.parameters.jump_mean)) + jacobian,
+                    np.log(max(1.0 - p0, 1e-300)) + norm.logpdf(
+                        log_return, mu + self.parameters.jump_mean,
+                        np.sqrt(sigma ** 2 + self.parameters.jump_std ** 2)),
                 ]
                 log_likelihood += np.logaddexp.reduce(comps)
 
@@ -281,15 +309,21 @@ class GeometricJumpDiffusion(StochasticProcess):
     def estimate_parameters(self, data: np.ndarray, dt: float) -> ModelParameters:
         """Estimate parameters for geometric jump-diffusion."""
         def objective(params):
+            # Evaluate on a throwaway copy so the optimizer never mutates
+            # self.parameters mid-search (fit() may reuse this process across
+            # several time series, and a failed fit must return pre-fit values).
             drift, diffusion, jump_intensity, jump_mean, jump_std = params
-
-            self.parameters.drift = drift
-            self.parameters.diffusion = diffusion
-            self.parameters.jump_intensity = jump_intensity
-            self.parameters.jump_mean = jump_mean
-            self.parameters.jump_std = jump_std
-
-            return -self.log_likelihood(data, dt)
+            candidate = replace(
+                self.parameters,
+                drift=drift,
+                diffusion=diffusion,
+                jump_intensity=jump_intensity,
+                jump_mean=jump_mean,
+                jump_std=jump_std,
+            )
+            probe = copy.copy(self)
+            probe.parameters = candidate
+            return -probe.log_likelihood(data, dt)
 
         # Calculate log-returns
         log_returns = []
@@ -333,10 +367,10 @@ class GeometricJumpDiffusion(StochasticProcess):
                 )
             else:
                 warnings.warn("Parameter estimation failed, using initial values")
-                return self.parameters
+                return replace(self.parameters)
         except Exception as e:
             warnings.warn(f"Parameter estimation error: {e}")
-            return self.parameters
+            return replace(self.parameters)
 
 
 class CompoundPoisson(StochasticProcess):
@@ -462,14 +496,15 @@ class FractionalBrownianMotion(StochasticProcess):
         for i in range(n_steps):
             # Covariance structure for fBM
             if i == 0:
-                cov = self.parameters.diffusion * (dt[i] ** self.hurst)
+                # Var[increment] = diffusion^2 * dt^(2H) (std-scale diffusion)
+                cov = self.parameters.diffusion ** 2 * (dt[i] ** (2 * self.hurst))
             else:
                 # Handle negative or zero differences
                 dt_diff = dt[i] - dt[i-1]
                 if abs(dt_diff) < 1e-10:
                     dt_diff = 0.0
                 
-                cov = 0.5 * self.parameters.diffusion * (
+                cov = 0.5 * self.parameters.diffusion ** 2 * (
                     (dt[i] ** (2 * self.hurst)) + 
                     (dt[i-1] ** (2 * self.hurst)) - 
                     (abs(dt_diff) ** (2 * self.hurst))
@@ -492,7 +527,7 @@ class FractionalBrownianMotion(StochasticProcess):
             for j in range(n):
                 t_i = (i + 1) * dt
                 t_j = (j + 1) * dt
-                cov_matrix[i, j] = 0.5 * self.parameters.diffusion * (
+                cov_matrix[i, j] = 0.5 * self.parameters.diffusion ** 2 * (
                     t_i ** (2 * self.hurst) + t_j ** (2 * self.hurst) - 
                     abs(t_i - t_j) ** (2 * self.hurst)
                 )
@@ -520,28 +555,29 @@ class FractionalBrownianMotion(StochasticProcess):
         # Var[X(t)] = sigma^2 * t^(2H)
         if len(data) > 10:
             lags = np.arange(1, min(len(data) // 2, 20))
-            variances = []
-            for lag in lags:
-                diffs = data[lag:] - data[:-lag]
-                var = np.var(diffs)
-                if var > 0:
-                    variances.append(var)
-            
-            if len(variances) > 2:
+            variances = np.array([np.var(data[lag:] - data[:-lag]) for lag in lags])
+            # Keep (lag, var) pairs aligned: only drop lags whose variance is
+            # zero, never rebuild the lag axis from the surviving count.
+            positive = variances > 0
+            lags_kept = lags[positive]
+            vars_kept = variances[positive]
+
+            if len(vars_kept) > 2:
                 # Fit log-log relationship
-                log_lags = np.log(np.arange(1, len(variances) + 1) * dt)
-                log_vars = np.log(variances)
-                
+                log_lags = np.log(lags_kept * dt)
+                log_vars = np.log(vars_kept)
+
                 # Remove inf/nan values
                 valid = np.isfinite(log_lags) & np.isfinite(log_vars)
                 if np.sum(valid) > 2:
                     hurst_est = np.polyfit(log_lags[valid], log_vars[valid], 1)[0] / 2
                     self.hurst = np.clip(hurst_est, 0.1, 0.9)
-        
-        # Estimate diffusion coefficient
+
+        # Estimate diffusion coefficient (std-scale: Var[increment]
+        # = diffusion^2 * dt^(2H))
         var_increments = np.var(increments) if len(increments) > 0 else 1.0
-        diffusion = max(var_increments / (dt ** (2 * self.hurst)), 1e-6)
-        
+        diffusion = max(np.sqrt(var_increments) / (dt ** self.hurst), 1e-6)
+
         return ModelParameters(drift=drift, diffusion=diffusion)
 
 
@@ -694,14 +730,28 @@ class LevyProcess(StochasticProcess):
         mad = np.median(np.abs(increments - np.median(increments)))
         diffusion = mad / (np.sqrt(dt) * 0.6745)  # Robust scale estimator
         
-        # Estimate stability parameter using log-log variance
-        if len(data) > 10:
-            lags = np.arange(1, min(len(data) // 2, 20))
-            variances = [np.var(data[lag:] - data[:-lag]) for lag in lags]
-            log_lags = np.log(lags * dt)
-            log_vars = np.log(variances)
-            alpha_est = np.polyfit(log_lags, log_vars, 1)[0]
-            self.levy_alpha = np.clip(alpha_est, 0.5, 2.0)
+        # Estimate stability parameter via the empirical characteristic
+        # function: for alpha-stable increments |phi(t)| = exp(-c * t^alpha),
+        # so alpha is the slope of log(-log|phi(t)|) against log(t). Unlike a
+        # log-log variance regression — which diverges for alpha < 2 because
+        # stable increments have infinite theoretical variance — this remains
+        # valid across the full stability range.
+        if len(increments) > 10:
+            centered = increments - np.median(increments)
+            robust_scale = max(mad / 0.6745, 1e-12)
+            # Probe frequencies where the empirical CF is informative
+            # (|phi| safely inside (0, 1)).
+            t_grid = np.linspace(0.2, 4.0, 24) / robust_scale
+            phi = np.array([np.mean(np.exp(1j * t * centered)) for t in t_grid])
+            abs_phi = np.abs(phi)
+            usable = (abs_phi > 1e-3) & (abs_phi < 0.999)
+            if np.sum(usable) > 2:
+                log_t = np.log(t_grid[usable])
+                log_tail = np.log(-np.log(abs_phi[usable]))
+                finite = np.isfinite(log_t) & np.isfinite(log_tail)
+                if np.sum(finite) > 2:
+                    alpha_est = np.polyfit(log_t[finite], log_tail[finite], 1)[0]
+                    self.levy_alpha = float(np.clip(alpha_est, 0.5, 2.0))
         
         return ModelParameters(drift=drift, diffusion=diffusion)
 
@@ -870,20 +920,38 @@ class JumpRope:
 
         return self.trajectories[:, time_point_idx]
 
-    def estimate_jump_times(self) -> List[float]:
-        """Estimate times of developmental jumps."""
+    def estimate_jump_times(self, threshold_multiplier: float = 5.0) -> List[float]:
+        """Estimate times of developmental jumps.
+
+        A step is flagged as a potential jump when its absolute increment
+        exceeds ``median + threshold_multiplier * 1.4826 * MAD`` of all
+        increments pooled across trajectories — an absolute robust-scale
+        threshold, so pure-diffusion paths produce (almost) no false
+        positives instead of the ~5% guaranteed by a per-path percentile.
+        """
         if self.trajectories is None:
             raise ValueError("No trajectories available. Call generate_trajectories() first.")
 
-        # Simple jump detection based on large changes
-        jump_times = []
+        # Robust absolute threshold from all increments across paths
+        all_differences = np.abs(np.diff(self.trajectories, axis=1)).ravel()
+        med = np.median(all_differences)
+        mad = np.median(np.abs(all_differences - med))
+        scale = 1.4826 * mad
+        if scale <= 0:
+            scale = np.std(all_differences)
+        if scale <= 0:
+            # Degenerate (all increments identical): nothing can exceed the
+            # center, so there is no evidence of any jump.
+            logger.info("Estimated 0 potential jump times")
+            return []
+        threshold = med + threshold_multiplier * scale
 
+        jump_times = []
         for i in range(self.trajectories.shape[0]):
             trajectory = self.trajectories[i, :]
             differences = np.abs(np.diff(trajectory))
 
             # Find large differences (potential jumps)
-            threshold = np.percentile(differences, 95)
             jump_indices = np.where(differences > threshold)[0]
 
             if len(jump_indices) > 0:
@@ -897,16 +965,34 @@ class JumpRope:
         return jump_times
 
     def save(self, file_path: Path) -> None:
-        """Save model to file."""
+        """Save model to file (pickle format).
+
+        Caveats:
+            - Pickle is a Python-specific, version-sensitive format: models
+              saved with one version of this code may fail to load, or load
+              with silently broken internals, after ModelParameters or
+              StochasticProcess layouts change. Re-fit and re-save models
+              after upgrading.
+            - NEVER load pickle files from untrusted sources: unpickling
+              executes arbitrary code embedded in the file.
+        """
         with open(file_path, 'wb') as f:
             pickle.dump(self, f)
         logger.info(f"Model saved to {file_path}")
 
     @classmethod
     def load(cls, file_path: Path) -> 'JumpRope':
-        """Load model from file."""
+        """Load model from a pickle file written by :meth:`save`.
+
+        Caveats:
+            - Pickle files are not portable across code versions: see the
+              caveats in :meth:`save`.
+            - NEVER unpickle untrusted files: unpickling executes arbitrary
+              code embedded in the file.
+        """
         with open(file_path, 'rb') as f:
             model = pickle.load(f)
         logger.info(f"Model loaded from {file_path}")
         return model
+
 

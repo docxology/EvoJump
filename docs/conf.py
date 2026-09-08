@@ -16,12 +16,12 @@ sys.path.insert(0, os.path.abspath('../src'))
 # -- Project information -----------------------------------------------------
 
 project = 'EvoJump'
-copyright = '2024, EvoJump Development Team'
+copyright = '2026, EvoJump Development Team'
 author = 'EvoJump Development Team'
 
 # The full version, including alpha/beta/rc tags
-release = '0.2.0'
-version = '0.2.0'
+release = '0.3.0'
+version = '0.3.0'
 
 
 # -- General configuration ---------------------------------------------------
@@ -51,7 +51,9 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
 # The suffix(es) of source filenames.
 # You can specify multiple suffix as a list of string:
-source_suffix = ['.rst', '.md']
+# Only reStructuredText is parsed; Markdown sources (docs/*.md notes) are not
+# Sphinx-parsed (myst-parser is not installed).
+source_suffix = '.rst'
 
 # The master toctree document.
 master_doc = 'index'
@@ -66,7 +68,7 @@ html_theme = 'sphinx_rtd_theme'
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ['_static']
+html_static_path = []
 
 # Theme options
 html_theme_options = {
@@ -100,8 +102,13 @@ autoclass_content = 'both'
 # or by source order (value 'bysource').
 autodoc_member_order = 'bysource'
 
-# Default flags for autodoc directives
-autodoc_default_flags = ['members', 'undoc-members', 'show-inheritance']
+# Default options for autodoc directives (autodoc_default_flags was removed
+# in Sphinx 3.0)
+autodoc_default_options = {
+    'members': None,
+    'undoc-members': None,
+    'show-inheritance': None,
+}
 
 # -- Options for autosummary ------------------------------------------------
 
@@ -189,7 +196,7 @@ texinfo_documents = [
 # Bibliographic Dublin Core info.
 epub_title = project
 epub_author = author
-epub_uid = 'evojump-0.1.0'
+epub_uid = 'evojump-' + release
 epub_cover = ('_static/cover.png', '')
 
 # A list of files that should not be packed into the epub file.

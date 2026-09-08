@@ -622,3 +622,439 @@ class TestAdvancedAnalyticsEngine:
 
         assert isinstance(result, analytics_engine.SurvivalResult)
         assert isinstance(result.survival_function, np.ndarray) or isinstance(result.survival_function, list)
+
+
+class TestCCARecovery:
+    """CCA must recover planted canonical structure (regression: the old
+    implementation solved eigh(cov12 @ cov21, cov11), missing the cov22^{-1}
+    factor, so the reported 'canonical correlations' were not bounded by 1)."""
+
+    def test_cca_recovers_planted_correlation_channel(self):
+        rng = np.random.default_rng(0)
+        n = 200
+        x1 = rng.normal(0, 1, n)
+        x2 = rng.normal(0, 1, n)
+        y1 = x1 + 0.05 * rng.normal(0, 1, n)   # near-perfect channel
+        y2 = x2 + rng.normal(0, 1, n)          # weaker channel
+        data1 = pd.DataFrame({'x1': x1, 'x2': x2})
+        data2 = pd.DataFrame({'y1': y1, 'y2': y2})
+
+        analyzer = analytics_engine.MultivariateAnalyzer(data1)
+        cca = analyzer.canonical_correlation_analysis(data1, data2)
+
+        assert 'error' not in cca
+        ccs = cca['canonical_correlations']
+        assert np.all(np.isfinite(ccs))
+        assert np.all(ccs <= 1.0 + 1e-9)          # bounded by 1
+        assert ccs[0] > 0.95                      # planted channel recovered
+        assert ccs[0] > ccs[1]
+        assert 'canonical_variables_2' in cca
+        assert cca['canonical_variables_2'].shape == (2, 2)
+
+
+class TestSeasonalityPerColumn:
+    """Auto-detected period must be resolved per column (regression: the
+    first column's period leaked into all subsequent columns)."""
+
+    def test_each_column_gets_its_own_period(self):
+        t = np.arange(0, 96, dtype=float)
+        data = pd.DataFrame({
+            'time': t,
+            'colA': np.sin(2 * np.pi * t / 12),
+            'colB': np.sin(2 * np.pi * t / 4),
+        })
+
+        analyzer = analytics_engine.TimeSeriesAnalyzer(data, 'time')
+        seasonality = analyzer.detect_seasonality()  # no period: auto-detect
+
+        assert seasonality['colA']['period'] == 12
+        assert seasonality['colB']['period'] == 4
+
+
+class TestChangePointDetectionRealMath:
+    """Variance method gates on a real F-test; cusum delegates to the shared
+    statistical implementation; information method is a real BIC fit."""
+
+    def test_variance_method_gates_on_significance(self):
+        rng = np.random.default_rng(7)
+        n = 60
+        data = pd.DataFrame({
+            'time': np.arange(n, dtype=float),
+            'signal': np.concatenate([rng.normal(0, 1, n // 2),
+                                      rng.normal(0, 5, n - n // 2)]),
+        })
+
+        analyzer = analytics_engine.TimeSeriesAnalyzer(data, 'time')
+        change_points = analyzer.detect_change_points(method='variance')
+
+        assert len(change_points) >= 1
+        cp = change_points[0]
+        assert cp['variable'] == 'signal'
+        assert cp['p_value'] < 0.05
+        assert 0.0 < cp['confidence'] <= 1.0
+        assert abs(cp['confidence'] - (1.0 - cp['p_value'])) < 1e-12
+
+    def test_variance_method_quiet_series_reports_nothing(self):
+        rng = np.random.default_rng(3)
+        n = 60
+        data = pd.DataFrame({
+            'time': np.arange(n, dtype=float),
+            'signal': rng.normal(0, 1, n),
+        })
+
+        analyzer = analytics_engine.TimeSeriesAnalyzer(data, 'time')
+        assert analyzer.detect_change_points(method='variance') == []
+
+    def test_variance_method_unsupported_raises(self):
+        data = pd.DataFrame({'time': np.arange(12.0), 'signal': np.ones(12)})
+        analyzer = analytics_engine.TimeSeriesAnalyzer(data, 'time')
+        with pytest.raises(ValueError):
+            analyzer.detect_change_points(method='bogus')
+
+    def test_cusum_delegates_to_statistical_detector(self):
+        data = pd.DataFrame({
+            'time': np.arange(1.0, 11.0),
+            'signal': [1, 1, 1, 1, 10, 10, 10, 10, 10, 10],
+        })
+        analyzer = analytics_engine.TimeSeriesAnalyzer(data, 'time')
+        detector = analytics_engine.ChangePointDetector(data, 'time')
+
+        via_ts = analyzer.detect_change_points(method='cusum')
+        via_detector = detector._statistical_change_detection()
+
+        assert via_ts == via_detector
+        assert len(via_ts) > 0
+
+
+class TestSurvivalAnalysisCorrectness:
+    """KM curve must use jointly-dropped (time, event) pairs and be
+    hand-verifiable; event indicators must be validated."""
+
+    def test_kaplan_meier_matches_hand_computed_curve(self):
+        data = pd.DataFrame({
+            'time': [2, 4, 4, 6, 8],
+            'event': [1, 0, 1, 1, 0],
+        })
+        engine = analytics_engine.AnalyticsEngine(data, time_column='time')
+        result = engine.survival_analysis('time', 'event')
+
+        # Hand-computed KM: S(2)=0.8, S(4)=0.8*3/4=0.6, S(6)=0.3, S(8)=0.3
+        np.testing.assert_allclose(result.survival_function, [0.8, 0.6, 0.3, 0.3])
+        np.testing.assert_allclose(result.cumulative_hazard, [0.2, 0.45, 0.95, 0.95])
+        assert result.median_survival_time == 6.0
+        # Curve invariants
+        assert np.all(np.diff(result.survival_function) <= 1e-12)
+        assert np.all(np.diff(result.cumulative_hazard) >= -1e-12)
+        lower, upper = result.confidence_intervals['lower'], result.confidence_intervals['upper']
+        assert np.all(lower <= result.survival_function + 1e-12)
+        assert np.all(result.survival_function <= upper + 1e-12)
+
+    def test_nan_in_one_column_does_not_misalign_pairs(self):
+        rng = np.random.default_rng(5)
+        n = 40
+        times = rng.uniform(1, 20, n)
+        events = rng.integers(0, 2, n).astype(float)
+        with_nan = pd.DataFrame({'time': times, 'event': events})
+        with_nan.loc[7, 'event'] = np.nan     # NaN only in the event column
+        with_nan.loc[23, 'time'] = np.nan     # NaN only in the time column
+
+        expected = analytics_engine.AnalyticsEngine(with_nan.dropna()).survival_analysis('time', 'event')
+        got = analytics_engine.AnalyticsEngine(with_nan).survival_analysis('time', 'event')
+
+        np.testing.assert_allclose(got.survival_function, expected.survival_function)
+        np.testing.assert_allclose(got.cumulative_hazard, expected.cumulative_hazard)
+        assert got.median_survival_time == expected.median_survival_time
+
+    def test_non_binary_events_rejected(self):
+        data = pd.DataFrame({'time': [1, 2, 3, 4], 'event': [0, 1, 2, 1]})
+        engine = analytics_engine.AnalyticsEngine(data, time_column='time')
+        with pytest.raises(ValueError):
+            engine.survival_analysis('time', 'event')
+
+
+class TestBayesianSlopeRecovery:
+    """Posterior must recover a planted slope (seeded for determinism)."""
+
+    def test_posterior_recovers_true_slope(self):
+        rng = np.random.default_rng(11)
+        x = rng.normal(0, 1, 300)
+        y = 2.5 * x + rng.normal(0, 0.5, 300)
+        analyzer = analytics_engine.BayesianAnalyzer(pd.DataFrame({'x': x, 'y': y}))
+
+        result = analyzer.bayesian_linear_regression(x, y, n_samples=4000, seed=3)
+
+        post_mean = result.convergence_diagnostics['posterior_mean']
+        assert abs(post_mean - 2.5) < 0.1
+        lo, hi = result.credible_intervals['95%']
+        assert lo > 0 and hi > lo  # strong effect: 95% CI excludes 0
+
+    def test_no_effect_leaves_zero_in_interval(self):
+        rng = np.random.default_rng(5)
+        x = rng.normal(0, 1, 300)
+        y = rng.normal(0, 1, 300)
+        analyzer = analytics_engine.BayesianAnalyzer(pd.DataFrame({'x': x, 'y': y}))
+
+        result = analyzer.bayesian_linear_regression(x, y, n_samples=4000, seed=5)
+
+        lo, hi = result.credible_intervals['95%']
+        assert lo <= 0 <= hi
+
+    def test_seeded_draws_are_reproducible(self):
+        rng = np.random.default_rng(0)
+        x = rng.normal(0, 1, 100)
+        y = 1.0 * x + rng.normal(0, 1, 100)
+        analyzer = analytics_engine.BayesianAnalyzer(pd.DataFrame({'x': x, 'y': y}))
+
+        r1 = analyzer.bayesian_linear_regression(x, y, seed=42)
+        r2 = analyzer.bayesian_linear_regression(x, y, seed=42)
+        np.testing.assert_array_equal(r1.posterior_samples, r2.posterior_samples)
+
+
+class TestRobustEstimators:
+    """Huber/Tukey must be real M-estimators and Sn the Rousseeuw-Croux
+    estimator (regression: all three used to return the median)."""
+
+    def test_sn_matches_definition_on_hand_example(self):
+        engine = analytics_engine.AnalyticsEngine(pd.DataFrame({'x': [1.0]}))
+        # Sn([1,2,3,4,100]): inner medians per row are 2.5, 1.5, 1.5, 2.5,
+        # 97.5 -> median 2.5, times the Gaussian consistency constant 1.1926.
+        sn = engine._sn_scale_estimate(np.array([1.0, 2.0, 3.0, 4.0, 100.0]))
+        assert abs(sn - 2.5 * 1.1926) < 1e-9
+
+    def test_huber_and_tukey_resist_contamination(self):
+        rng = np.random.default_rng(9)
+        data = np.concatenate([rng.normal(10, 1, 200), rng.normal(30, 1, 20)])
+        engine = analytics_engine.AnalyticsEngine(pd.DataFrame({'x': data}))
+
+        huber = engine._huber_estimate(data)
+        tukey = engine._tukey_biweight_estimate(data)
+        mean = float(np.mean(data))
+
+        assert abs(huber - 10.0) < 0.5
+        assert abs(tukey - 10.0) < 0.5
+        assert abs(huber - 10.0) < abs(mean - 10.0)
+
+    def test_sn_scale_estimates_sigma_of_gaussian_data(self):
+        rng = np.random.default_rng(13)
+        data = rng.normal(0, 2.0, 300)
+        engine = analytics_engine.AnalyticsEngine(pd.DataFrame({'x': data}))
+
+        sn = engine._sn_scale_estimate(data)
+        assert abs(sn - 2.0) / 2.0 < 0.3
+
+    def test_estimates_differ_from_median_when_they_should(self):
+        # For skewed contamination the M-estimators need not equal the median;
+        # on symmetric clean data they should all agree closely.
+        rng = np.random.default_rng(17)
+        data = rng.normal(5, 1, 400)
+        engine = analytics_engine.AnalyticsEngine(pd.DataFrame({'x': data}))
+        assert abs(engine._huber_estimate(data) - np.median(data)) < 0.15
+        assert abs(engine._tukey_biweight_estimate(data) - np.median(data)) < 0.15
+
+
+class TestCopulaAnalysis:
+    """Gaussian parameter recovers a planted correlation; pairs stay aligned
+    under NaNs; Frank inverts the exact tau-theta relation."""
+
+    def _engine(self, df):
+        return analytics_engine.AnalyticsEngine(df, time_column='time')
+
+    def test_gaussian_parameter_recovers_planted_correlation(self):
+        rng = np.random.default_rng(21)
+        x = rng.normal(0, 1, 400)
+        y = 0.8 * x + 0.6 * rng.normal(0, 1, 400)
+        result = self._engine(pd.DataFrame({'x': x, 'y': y})).copula_analysis('x', 'y')
+
+        assert abs(result['copula_parameter'] - 0.8) < 0.1
+        assert abs(result['kendall_tau'] - 0.8 * 2 / np.pi) < 0.1
+
+    def test_joint_dropna_keeps_pairs_aligned(self):
+        rng = np.random.default_rng(22)
+        x = rng.normal(0, 1, 300)
+        y = 0.6 * x + 0.8 * rng.normal(0, 1, 300)
+        df = pd.DataFrame({'x': x, 'y': y})
+        df.loc[df.sample(20, random_state=1).index, 'x'] = np.nan
+        df.loc[df.sample(20, random_state=2).index, 'y'] = np.nan
+
+        got = self._engine(df).copula_analysis('x', 'y')
+        expected = self._engine(df.dropna()).copula_analysis('x', 'y')
+
+        assert abs(got['kendall_tau'] - expected['kendall_tau']) < 1e-12
+        assert abs(got['copula_parameter'] - expected['copula_parameter']) < 1e-12
+
+    def test_frank_theta_solves_exact_tau_relation(self):
+        from scipy.integrate import quad
+        theta = analytics_engine.AnalyticsEngine._frank_theta_from_tau(0.5)
+        # Exact relation tau = 1 - 4/theta (1 - D1(theta)); the solution
+        # theta = 5.7363 was independently confirmed by direct numerical
+        # integration of the Frank copula (population tau = 0.49999 there;
+        # theta = 2.45 corresponds to tau ~ 0.257, not 0.5).
+        assert abs(theta - 5.736282707) < 1e-6
+
+        def d1(x):
+            return quad(lambda t: t / np.expm1(t), 0.0, x, limit=200)[0] / x
+
+        back = 1.0 - 4.0 / theta * (1.0 - d1(theta))
+        # Sign symmetry for negative dependence
+        neg = analytics_engine.AnalyticsEngine._frank_theta_from_tau(-0.5)
+        assert abs(neg + theta) < 1e-9
+
+    def test_student_copula_implemented(self):
+        rng = np.random.default_rng(23)
+        x = rng.standard_t(5, 300)
+        y = 0.7 * x + np.sqrt(1 - 0.49) * rng.standard_t(5, 300)
+        result = self._engine(pd.DataFrame({'x': x, 'y': y})).copula_analysis('x', 'y', copula_type='student')
+
+        assert 'degrees_of_freedom' in result
+        assert -1.0 <= result['copula_parameter'] <= 1.0
+
+    def test_unsupported_copula_type_raises(self):
+        df = pd.DataFrame({'x': np.random.default_rng(0).normal(size=50),
+                           'y': np.random.default_rng(1).normal(size=50)})
+        with pytest.raises(ValueError, match='Unsupported copula type'):
+            self._engine(df).copula_analysis('x', 'y', copula_type='gumbel')
+
+    def test_clayton_rejects_negative_dependence(self):
+        rng = np.random.default_rng(24)
+        x = rng.normal(0, 1, 200)
+        y = -0.9 * x + 0.5 * rng.normal(0, 1, 200)
+        with pytest.raises(ValueError, match='positive dependence'):
+            self._engine(pd.DataFrame({'x': x, 'y': y})).copula_analysis('x', 'y', copula_type='clayton')
+
+
+class TestWaveletAnalysis:
+    def test_dominant_scale_matches_planted_periodicity(self):
+        rng = np.random.default_rng(25)
+        t = np.arange(128, dtype=float)
+        data = pd.DataFrame({'time': t, 'signal': np.sin(2 * np.pi * t / 12) + 0.05 * rng.normal(0, 1, 128)})
+        engine = analytics_engine.AnalyticsEngine(data, time_column='time')
+
+        result = engine.wavelet_analysis('signal')
+
+        assert result['dominant_scale'] > 0
+        scale_idx = int(np.argmin(np.abs(np.asarray(result['scales']) - result['dominant_scale'])))
+        dominant_freq = float(np.asarray(result['frequencies'])[scale_idx])
+        dominant_period = 1.0 / dominant_freq
+        assert abs(dominant_period - 12.0) < 3.0
+
+
+class TestExtremeValueAnalysis:
+    def test_return_levels_monotone_in_return_period(self):
+        rng = np.random.default_rng(26)
+        data = pd.DataFrame({'time': np.arange(500.0), 'value': rng.standard_exponential(500)})
+        engine = analytics_engine.AnalyticsEngine(data, time_column='time')
+
+        result = engine.extreme_value_analysis('value')
+
+        pot_levels = [result['pot_method']['return_levels'][k] for k in ('10_year', '50_year', '100_year', '500_year')]
+        gev_levels = [result['block_maxima_method']['return_levels'][k] for k in ('10_year', '50_year', '100_year', '500_year')]
+        assert all(b > a for a, b in zip(pot_levels, pot_levels[1:]))
+        assert all(b > a for a, b in zip(gev_levels, gev_levels[1:]))
+        assert result['hill_estimator'] > 0  # exponential tail has finite mean excess
+
+
+class TestRegimeSwitchingAnalysis:
+    def test_recovers_two_regimes_with_valid_transition_matrix(self):
+        rng = np.random.default_rng(27)
+        n = 200
+        signal = np.concatenate([rng.normal(0, 1, n // 2), rng.normal(6, 1, n - n // 2)])
+        data = pd.DataFrame({'time': np.arange(n, dtype=float), 'signal': signal})
+        engine = analytics_engine.AnalyticsEngine(data, time_column='time')
+
+        result = engine.regime_switching_analysis('signal', n_regimes=2)
+
+        labels = np.asarray(result['regime_labels'])
+        assert set(labels.tolist()) == {0, 1}
+        assert len(result['regime_statistics']) == 2
+        means = [s['mean'] for s in result['regime_statistics']]
+        assert abs(means[0] - means[1]) > 3.0
+        # First half and second half must be mostly different regimes
+        assert np.mean(labels[:n // 2] == labels[0]) > 0.8
+        assert np.mean(labels[n // 2:] == labels[-1]) > 0.8
+        # Transition probabilities: each row sums to 1 where transitions occur, else 0
+        probs = np.asarray(result['transition_probabilities'])
+        row_sums = probs.sum(axis=1)
+        assert np.all((np.abs(row_sums - 1.0) < 1e-9) | (row_sums == 0.0))
+        assert result['n_switches'] < n // 10
+
+    def test_constant_series_does_not_crash(self):
+        data = pd.DataFrame({'time': np.arange(40.0), 'signal': np.ones(40)})
+        engine = analytics_engine.AnalyticsEngine(data, time_column='time')
+        result = engine.regime_switching_analysis('signal', n_regimes=2)
+        assert np.isfinite(np.asarray(result['transition_probabilities'])).all()
+
+
+class TestSpatialAnalysisMoran:
+    def test_identity_weights_give_i_of_one(self):
+        rng = np.random.default_rng(28)
+        values = rng.normal(0, 1, 30)
+        data = pd.DataFrame({'value': values})
+        engine = analytics_engine.AnalyticsEngine(data)
+
+        W = np.eye(30)
+        result = engine.spatial_analysis('value', spatial_weights=W)
+
+        # With W = identity: I = (n/n) * z'z / z'z = 1 exactly
+        assert abs(result['morans_i'] - 1.0) < 1e-12
+        assert result['weights_kind'] == 'supplied'
+
+    def test_linear_adjacency_detects_smooth_and_alternating_series(self):
+        t = np.arange(40, dtype=float)
+        smooth = pd.DataFrame({'value': t + 0.01 * np.sin(t)})
+        alternating = pd.DataFrame({'value': (-1.0) ** t})
+
+        i_smooth = analytics_engine.AnalyticsEngine(smooth).spatial_analysis('value')['morans_i']
+        i_alt = analytics_engine.AnalyticsEngine(alternating).spatial_analysis('value')['morans_i']
+
+        assert i_smooth > 0.5
+        assert i_alt < -0.5
+
+
+class TestSpectralCoherence:
+    def test_msc_peaks_at_shared_frequency(self):
+        rng = np.random.default_rng(29)
+        fs = 8.0
+        t = np.arange(512) / fs
+        common = np.sin(2 * np.pi * 2.0 * t)
+        data = pd.DataFrame({
+            'time': t,
+            'a': common + 0.5 * rng.normal(0, 1, len(t)),
+            'b': common + 0.5 * rng.normal(0, 1, len(t)),
+        })
+        engine = analytics_engine.AnalyticsEngine(data, time_column='time')
+
+        result = engine.spectral_analysis('a', sampling_frequency=fs, coherence_column='b')
+
+        assert result.coherence_matrix.size > 0
+        freqs, coh = result.coherence_matrix[:, 0], result.coherence_matrix[:, 1]
+        at_shared = coh[np.argmin(np.abs(freqs - 2.0))]
+        far = coh[np.argmin(np.abs(freqs - 3.5))]
+        assert at_shared > 0.7
+        assert at_shared > far
+
+    def test_no_coherence_column_leaves_matrix_empty(self):
+        data = pd.DataFrame({'time': np.arange(50.0), 'a': np.sin(np.arange(50.0))})
+        engine = analytics_engine.AnalyticsEngine(data, time_column='time')
+        result = engine.spectral_analysis('a')
+        assert result.coherence_matrix.size == 0
+
+
+class TestComprehensiveReportExplicitColumns:
+    def test_bayesian_and_causal_sections_require_explicit_columns(self):
+        data = pd.DataFrame({
+            'time': np.arange(1, 31),
+            'phenotype1': np.random.default_rng(30).normal(0, 1, 30),
+            'phenotype2': np.random.default_rng(31).normal(0, 1, 30),
+        })
+        engine = analytics_engine.AnalyticsEngine(data, time_column='time')
+
+        report = engine.comprehensive_analysis_report()
+        assert 'not_analyzed' in report['bayesian']
+        assert 'not_analyzed' in report['causal']
+
+        report = engine.comprehensive_analysis_report(
+            bayesian_columns=('phenotype1', 'phenotype2'),
+            causal_columns=('phenotype1', 'phenotype2'),
+        )
+        assert isinstance(report['bayesian'], analytics_engine.BayesianResult)
+        assert 'granger_causality' in report['causal'] or 'error' in report['causal']

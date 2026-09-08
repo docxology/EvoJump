@@ -137,8 +137,10 @@ class TestMCMDetailedBalance:
 
 
 class TestGeometricJacobian:
-    def test_jump_component_includes_price_jacobian(self):
-        """LL of a pure-jump geometric series must include log(price) terms."""
+    def test_jump_component_is_log_return_gaussian(self):
+        """One-jump component is a Gaussian over log-returns: N(mu*dt+jump_mean,
+        sigma^2+jump_std^2). The old price-jacobian form dropped the drift shift
+        and diffusion variance and was replaced 2026-09-08 (recovery-tested)."""
         params = jumprope.ModelParameters(
             jump_intensity=10.0, jump_mean=0.0, jump_std=0.5,
             drift=0.0, diffusion=0.05)
@@ -146,19 +148,16 @@ class TestGeometricJacobian:
         data = np.array([1.0, 1.5, 2.0])
         ll = g.log_likelihood(data, dt=1.0)
         assert np.isfinite(ll)
-        # The Jacobian adds log(price) per step; against a no-Jacobian
-        # variant recomputed here, the difference must be exactly
-        # log(1.5) + log(2.0).
         import numpy.testing as npt
-        from scipy.stats import norm, lognorm
+        from scipy.stats import norm
         manual = 0.0
         p0 = np.exp(-10.0 * 1.0)
+        combined_std = np.sqrt(0.05**2 + 0.5**2)
         for prev, cur in ((1.0, 1.5), (1.5, 2.0)):
             lr = np.log(cur / prev)
             comps = [
                 np.log(max(p0, 1e-300)) + norm.logpdf(lr, 0.0, 0.05),
-                np.log(max(1 - p0, 1e-300)) + lognorm.logpdf(
-                    np.exp(lr), s=0.5, scale=1.0) + np.log(cur),
+                np.log(max(1 - p0, 1e-300)) + norm.logpdf(lr, 0.0, combined_std),
             ]
             manual += np.logaddexp.reduce(comps)
         npt.assert_allclose(ll, manual, rtol=1e-12)

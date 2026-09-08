@@ -18,19 +18,18 @@ Examples:
     >>> # Analyze distribution at specific time
     >>> results = analyzer.analyze_cross_section(time_point=10.0)
     >>> # Compare distributions
-    >>> comparison = analyzer.compare_distributions(time_point=10.0, condition='treatment')
+    >>> comparison = analyzer.compare_distributions(time_point=10.0, condition_data={'treatment': data})
 """
 
 import numpy as np
 import pandas as pd
 from scipy import stats
-from scipy.stats import norm, lognorm, gamma, beta, uniform, kstest, anderson
+from scipy.stats import norm, lognorm, gamma, beta, uniform, kstest
 import warnings
-from typing import Dict, List, Optional, Union, Tuple, Any
-from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple, Any
+from dataclasses import dataclass
 import logging
-from abc import ABC, abstractmethod
-import matplotlib.pyplot as plt
+import inspect
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -50,10 +49,16 @@ class CrossSectionResult:
 
 @dataclass
 class DistributionComparison:
-    """Container for distribution comparison results."""
+    """Container for distribution comparison results.
+
+    ``distribution2_name`` lists every condition compared against the
+    reference. ``test_statistics``, ``p_values`` and ``effect_sizes`` are
+    keyed by condition name; conditions with insufficient data are omitted
+    from the statistics dictionaries.
+    """
     time_point: float
     distribution1_name: str
-    distribution2_name: str
+    distribution2_name: List[str]
     test_statistics: Dict[str, float]
     p_values: Dict[str, float]
     effect_sizes: Dict[str, float]
@@ -101,29 +106,47 @@ class DistributionFitter:
         dist_class = self.supported_distributions[distribution]
 
         try:
-            # Fit distribution
+            # The information criteria are always computed on the exact data
+            # the parameters were estimated on (``fit_data``); evaluating the
+            # likelihood on a different array (e.g. the raw data for a fit
+            # made on a positive subset or a rescaled copy) yields invalid,
+            # often non-finite, log-likelihoods.
+            fit_data = data
+            fit_meta = {}
             if distribution == 'normal':
                 params = dist_class.fit(data)
             elif distribution == 'lognormal':
-                # Ensure positive values for lognormal
+                # Positive support: fit and evaluate on the positive subset
                 data_pos = data[data > 0]
                 if len(data_pos) < 4:
                     return {'distribution': None, 'parameters': None, 'aic': np.inf}
                 params = dist_class.fit(data_pos, floc=0)
+                fit_data = data_pos
             elif distribution == 'gamma':
-                # Ensure positive values for gamma
+                # Positive support: fit and evaluate on the positive subset
                 data_pos = data[data > 0]
                 if len(data_pos) < 4:
                     return {'distribution': None, 'parameters': None, 'aic': np.inf}
                 params = dist_class.fit(data_pos, floc=0)
+                fit_data = data_pos
             elif distribution == 'beta':
-                # Scale data to [0,1] for beta distribution
+                # The beta density is defined on the open interval (0, 1), so
+                # the data is min-max scaled; the change-of-variables Jacobian
+                # (-n log(range)) keeps the likelihood comparable to models
+                # fitted on the original scale.
                 if np.min(data) == np.max(data):
                     return {'distribution': None, 'parameters': None, 'aic': np.inf}
-                data_scaled = (data - np.min(data)) / (np.max(data) - np.min(data))
-                if np.any((data_scaled <= 0) | (data_scaled >= 1)):
-                    return {'distribution': None, 'parameters': None, 'aic': np.inf}
+                scale_min = float(np.min(data))
+                scale_max = float(np.max(data))
+                data_scaled = (data - scale_min) / (scale_max - scale_min)
+                # Min-max scaling puts the sample endpoints exactly at 0 and
+                # 1, where the beta density is undefined; nudge them just
+                # inside the open interval.
+                eps = 32 * np.finfo(float).eps
+                data_scaled = np.clip(data_scaled, eps, 1.0 - eps)
                 params = dist_class.fit(data_scaled, floc=0, fscale=1)
+                fit_data = data_scaled
+                fit_meta = {'scale': (scale_min, scale_max)}
             elif distribution == 'uniform':
                 if np.min(data) == np.max(data):
                     return {'distribution': None, 'parameters': None, 'aic': np.inf}
@@ -132,21 +155,31 @@ class DistributionFitter:
                 params = (np.min(data), np.max(data) - np.min(data))
 
             # Calculate information criteria for model comparison
-            log_likelihood = self._compute_log_likelihood(data, dist_class, params)
+            n_fit = len(fit_data)
+            log_likelihood = self._compute_log_likelihood(fit_data, dist_class, params)
+            if distribution == 'beta':
+                # Change-of-variables Jacobian: the likelihood stored here is
+                # the density of the transformed-beta model on the ORIGINAL
+                # data, so it is comparable with the other candidates' AICc.
+                log_likelihood = log_likelihood - n_fit * np.log(scale_max - scale_min)
             n_params = len(params)
             aic = 2 * n_params - 2 * log_likelihood
-            bic = n_params * np.log(len(data)) - 2 * log_likelihood
-            aicc = np.inf if len(data) - n_params - 1 <= 0 else aic + 2 * n_params * (n_params + 1) / (len(data) - n_params - 1)
+            bic = n_params * np.log(n_fit) - 2 * log_likelihood
+            aicc = np.inf if n_fit - n_params - 1 <= 0 else aic + 2 * n_params * (n_params + 1) / (n_fit - n_params - 1)
 
-            return {
+            result = {
                 'distribution': distribution,
                 'parameters': params,
                 'aic': aic,
                 'bic': bic,
                 'aicc': aicc,
                 'n_params': n_params,
-                'log_likelihood': log_likelihood
+                'log_likelihood': log_likelihood,
+                'n_fit': n_fit,
+                'fit_data': fit_data,
             }
+            result.update(fit_meta)
+            return result
 
         except Exception as e:
             logger.warning(f"Distribution fitting failed for {distribution}: {e}")
@@ -191,16 +224,24 @@ class DistributionFitter:
             return {'comparison': None, 'lr_statistic': np.nan,
                     'p_value': np.nan, 'verdict': 'non_finite_likelihood'}
 
-        dist1 = self.supported_distributions[name1]
-        dist2 = self.supported_distributions[name2]
         try:
-            ll1 = dist1.logpdf(data, *fit1['parameters'])
-            ll2 = dist2.logpdf(data, *fit2['parameters'])
+            ll1 = self._pointwise_loglik(data, name1, fit1)
+            ll2 = self._pointwise_loglik(data, name2, fit2)
         except Exception:
             return {'comparison': None, 'lr_statistic': np.nan,
                     'p_value': np.nan, 'verdict': 'logpdf_evaluation_failed'}
 
-        n = len(data)
+        # Models with restricted support (lognormal, gamma, beta on its
+        # min-max transform) assign -inf to observations outside that support;
+        # compare the candidates on the observations where both are finite.
+        common = np.isfinite(ll1) & np.isfinite(ll2)
+        if not np.any(common):
+            return {'comparison': None, 'lr_statistic': np.nan,
+                    'p_value': np.nan, 'verdict': 'non_finite_likelihood'}
+        ll1 = ll1[common]
+        ll2 = ll2[common]
+        n = len(ll1)
+
         lr_raw = float(np.sum(ll1 - ll2))
         # Akaike-style small-sample adjustment for non-nested comparison
         lr = lr_raw - (fit1['n_params'] - fit2['n_params'])
@@ -222,6 +263,34 @@ class DistributionFitter:
             'p_value': p_value,
             'verdict': verdict
         }
+
+    def _pointwise_loglik(self, data: np.ndarray, name: str, fit: Dict[str, Any]) -> np.ndarray:
+        """Pointwise log-likelihood of a fitted model on the original data.
+
+        Models fitted on a restricted or rescaled copy of the data are mapped
+        back to the original observations: positive-support models
+        (lognormal, gamma) assign -inf to non-positive points, and the beta
+        model fitted on min-max-scaled data includes the change-of-variables
+        Jacobian so its density is comparable on the original scale.
+        """
+        dist = self.supported_distributions[name]
+        params = fit['parameters']
+        data = np.asarray(data, dtype=float)
+        if name == 'beta':
+            scale = fit.get('scale')
+            if scale is None:
+                raise ValueError("beta fit is missing its min-max scaling record")
+            lo, hi = scale
+            scaled = (data - lo) / (hi - lo)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                ll = dist.logpdf(scaled, *params) - np.log(hi - lo)
+            return np.where((scaled > 0.0) & (scaled < 1.0), ll, -np.inf)
+        if name in ('lognormal', 'gamma'):
+            with np.errstate(divide='ignore', invalid='ignore'):
+                ll = dist.logpdf(np.where(data > 0, data, 1.0), *params)
+            return np.where(data > 0, ll, -np.inf)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            return np.asarray(dist.logpdf(data, *params), dtype=float)
 
     def _compute_log_likelihood(self,
                               data: np.ndarray,
@@ -251,7 +320,8 @@ class DistributionComparer:
     def compare_distributions(self,
                             data1: np.ndarray,
                             data2: np.ndarray,
-                            test: str = 'auto') -> Dict[str, Any]:
+                            test: str = 'auto',
+                            rng: Optional[np.random.Generator] = None) -> Dict[str, Any]:
         """
         Compare two distributions using statistical tests.
 
@@ -259,6 +329,7 @@ class DistributionComparer:
             data1: First dataset
             data2: Second dataset
             test: Statistical test to use
+            rng: Optional NumPy generator seeding permutation p-values
 
         Returns:
             Dictionary with test results
@@ -277,13 +348,19 @@ class DistributionComparer:
             raise ValueError(f"Unsupported test: {test}")
 
         test_func = self.supported_tests[test]
-        result = test_func(data1, data2)
+        if 'rng' in inspect.signature(test_func).parameters:
+            result = test_func(data1, data2, rng=rng)
+        else:
+            result = test_func(data1, data2)
 
         return result
 
     def _select_comparison_test(self, data1: np.ndarray, data2: np.ndarray) -> str:
-        """Select appropriate test based on data characteristics."""
-        # For now, default to Kolmogorov-Smirnov test
+        """Return the comparison test used for ``test='auto'``.
+
+        Auto-selection currently always uses the two-sample
+        Kolmogorov-Smirnov test.
+        """
         return 'ks'
 
     def _kolmogorov_smirnov_test(self, data1: np.ndarray, data2: np.ndarray) -> Dict[str, Any]:
@@ -513,7 +590,12 @@ class MomentAnalyzer:
     def compute_confidence_intervals(self,
                                    data: np.ndarray,
                                    confidence_level: float = 0.95) -> Dict[str, Tuple[float, float]]:
-        """Compute confidence intervals for distribution parameters."""
+        """Compute confidence intervals for distribution parameters.
+
+        ``median_ci`` is the exact distribution-free order-statistic
+        confidence interval for the median (binomial coverage over the
+        order statistics), not a central range of the data itself.
+        """
         data = data[~np.isnan(data)]
 
         if len(data) < 2:
@@ -530,9 +612,15 @@ class MomentAnalyzer:
         t_value = stats.t.ppf((1 + confidence_level) / 2, n - 1)
         mean_ci = (mean - t_value * std / np.sqrt(n), mean + t_value * std / np.sqrt(n))
 
-        # Confidence interval for median (approximate)
-        median = np.median(data)
-        median_ci = (np.quantile(data, 0.025), np.quantile(data, 0.975))
+        # Exact distribution-free confidence interval for the median: the
+        # number of observations at or below the median is Binomial(n, 0.5),
+        # so choose order-statistic ranks whose binomial coverage reaches the
+        # requested confidence level.
+        sorted_data = np.sort(data)
+        alpha = 1.0 - confidence_level
+        lower_rank = max(int(stats.binom.ppf(alpha / 2.0, n, 0.5)), 1)
+        upper_rank = min(int(stats.binom.ppf(1.0 - alpha / 2.0, n, 0.5)) + 1, n)
+        median_ci = (sorted_data[lower_rank - 1], sorted_data[upper_rank - 1])
 
         # Confidence interval for standard deviation
         chi2_lower = stats.chi2.ppf((1 - confidence_level) / 2, n - 1)
@@ -574,13 +662,15 @@ class LaserPlaneAnalyzer:
 
     def analyze_cross_section(self,
                             time_point: float,
-                            n_bootstrap: int = 1000) -> CrossSectionResult:
+                            n_bootstrap: int = 1000,
+                            rng: Optional[np.random.Generator] = None) -> CrossSectionResult:
         """
         Analyze cross-sectional distribution at specific time point.
 
         Parameters:
             time_point: Time point for analysis
             n_bootstrap: Number of bootstrap samples for confidence intervals
+            rng: Optional NumPy generator for reproducible bootstrap intervals
 
         Returns:
             CrossSectionResult with analysis results
@@ -604,7 +694,7 @@ class LaserPlaneAnalyzer:
 
         # Compute confidence intervals using bootstrap
         confidence_intervals = self._bootstrap_confidence_intervals(
-            cross_section_data, n_bootstrap
+            cross_section_data, n_bootstrap, rng=rng
         )
 
         # Assess goodness of fit
@@ -628,7 +718,8 @@ class LaserPlaneAnalyzer:
     def compare_distributions(self,
                            time_point: float,
                            condition_data: Dict[str, np.ndarray],
-                           test: str = 'auto') -> DistributionComparison:
+                           test: str = 'auto',
+                           rng: Optional[np.random.Generator] = None) -> DistributionComparison:
         """
         Compare distributions across different conditions at a time point.
 
@@ -636,6 +727,7 @@ class LaserPlaneAnalyzer:
             time_point: Time point for comparison
             condition_data: Dictionary of condition names to data arrays
             test: Statistical test to use
+            rng: Optional NumPy generator seeding permutation p-values
 
         Returns:
             DistributionComparison with comparison results
@@ -644,23 +736,34 @@ class LaserPlaneAnalyzer:
 
         # Get reference cross-section
         time_idx = np.argmin(np.abs(self.jump_rope.time_points - time_point))
-        reference_data = self.jump_rope.compute_cross_sections(time_idx)
+        reference_data = np.asarray(self.jump_rope.compute_cross_sections(time_idx), dtype=float)
+        reference_data = reference_data[~np.isnan(reference_data)]
 
         comparison_results = {}
 
         for condition_name, data in condition_data.items():
-            comparison = self.comparer.compare_distributions(reference_data, data, test)
+            comparison = self.comparer.compare_distributions(reference_data, data, test, rng=rng)
             comparison_results[condition_name] = comparison
 
-        # Aggregate results
-        all_tests = list(comparison_results.values())[0]['test'] if comparison_results else None
+        # Aggregate per-condition results into the comparison record
         test_statistics = {}
         p_values = {}
+        effect_sizes = {}
         significant_differences = []
 
-        for condition_name, result in comparison_results.items():
-            if result['p_value'] is not None and result['p_value'] < 0.05:
-                significant_differences.append(condition_name)
+        for condition_name, comparison in comparison_results.items():
+            if comparison.get('statistic') is not None:
+                test_statistics[condition_name] = float(comparison['statistic'])
+            p_value = comparison.get('p_value')
+            if p_value is not None:
+                p_values[condition_name] = float(p_value)
+                if p_value < 0.05:
+                    significant_differences.append(condition_name)
+            condition_arr = np.asarray(condition_data[condition_name], dtype=float)
+            condition_arr = condition_arr[~np.isnan(condition_arr)]
+            d = self._cohens_d(reference_data, condition_arr)
+            if d is not None:
+                effect_sizes[condition_name] = d
 
         result = DistributionComparison(
             time_point=time_point,
@@ -668,12 +771,24 @@ class LaserPlaneAnalyzer:
             distribution2_name=list(condition_data.keys()),
             test_statistics=test_statistics,
             p_values=p_values,
-            effect_sizes={},
+            effect_sizes=effect_sizes,
             significant_differences=significant_differences
         )
 
         logger.info(f"Distribution comparison completed for time point {time_point}")
         return result
+
+    @staticmethod
+    def _cohens_d(group1: np.ndarray, group2: np.ndarray) -> Optional[float]:
+        """Pooled-standard-deviation Cohen's d between two samples."""
+        n1, n2 = len(group1), len(group2)
+        if n1 < 2 or n2 < 2:
+            return None
+        var1, var2 = np.var(group1, ddof=1), np.var(group2, ddof=1)
+        pooled = np.sqrt(((n1 - 1) * var1 + (n2 - 1) * var2) / (n1 + n2 - 2))
+        if pooled == 0:
+            return None
+        return float((np.mean(group2) - np.mean(group1)) / pooled)
 
     def _bootstrap_confidence_intervals(self,
                                       data: np.ndarray,
@@ -720,17 +835,19 @@ class LaserPlaneAnalyzer:
         dist_name = distribution_fit['distribution']
         params = distribution_fit['parameters']
         dist_class = self.fitter.supported_distributions[dist_name]
-
-        # Kolmogorov-Smirnov test (frozen CDF; the name+args form is broken
-        # on scipy >= 1.15 for some distributions)
+        # The KS test is evaluated on the same data the parameters were
+        # estimated on (the positive subset for lognormal/gamma, the min-max
+        # scaled data for beta); the frozen-CDF form is used because the
+        # name+args form is broken on scipy >= 1.15 for some distributions.
+        ks_data = np.asarray(distribution_fit.get('fit_data', data), dtype=float)
         try:
-            ks_statistic, ks_p_value = kstest(data, dist_class(*params).cdf)
+            ks_statistic, ks_p_value = kstest(ks_data, dist_class(*params).cdf)
         except Exception:
             ks_statistic, ks_p_value = np.nan, np.nan
 
         # BIC calculation
         n_params = len(params)
-        n_samples = len(data)
+        n_samples = len(ks_data)
         log_likelihood = distribution_fit.get('log_likelihood', 0)
         bic = n_params * np.log(n_samples) - 2 * log_likelihood
 
@@ -765,6 +882,13 @@ class LaserPlaneAnalyzer:
             except Exception as e:
                 logger.warning(f"Failed to analyze time point {time_point}: {e}")
                 continue
+
+        if time_points and not results:
+            raise RuntimeError(
+                f"Cross-section analysis failed for all {len(time_points)} "
+                "time points; no summary report can be generated "
+                "(see logged warnings for the underlying errors)."
+            )
 
         # Create summary DataFrame
         summary_df = pd.DataFrame(results)

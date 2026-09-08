@@ -1,4 +1,4 @@
-# Drosophila Case Study Improvements - September 30, 2025
+# Drosophila Case Study Improvements - September 8, 2026
 
 ## Overview
 The Drosophila melanogaster case study has been significantly improved and expanded to provide clearer biological insights and more comprehensive evolutionary dynamics.
@@ -16,8 +16,8 @@ We now explicitly model two distinct but correlated traits:
 #### Eye Color (Genetic Trait)
 - **Type**: Discrete genetic marker (red vs. white)
 - **Role**: Target of natural selection
-- **Fitness**: Red-eyed flies have 20% fitness advantage (w = 1.2)
-- **Selection coefficient**: s = 0.15
+- **Fitness**: Red-eyed flies have a 15% fitness advantage (w = 1 + s = 1.15)
+- **Selection coefficient**: s = 0.15 (drives the sweep directly in the simulation)
 
 #### Eye Size (Phenotypic Trait)
 - **Type**: Continuous morphological phenotype
@@ -54,14 +54,14 @@ We now explicitly model two distinct but correlated traits:
 - **Selection coefficient**: 0.15
 - **Heritability (eye size)**: 0.5
 - **Genetic hitchhiking detected**: ✅ Yes
-- **Average linkage disequilibrium**: 0.697
+- **Average linkage disequilibrium**: 0.454
 
 ### 5. Enhanced Visualizations
 All three figures now show 100-generation dynamics:
 
-- **Figure 7** (Selective Sweep): Shows complete S-shaped logistic increase from 10% to 97%
-- **Figure 8** (Network Analysis**: Neutral markers sampled every 5 generations across 100-generation timeline
-- **Figure 9** (Cross-sections): Distributions at generations 10, 50, and 90 (early, mid, and late sweep)
+- **Selective sweep** (`drosophila_selective_sweep.png`): complete S-shaped logistic increase from 10% to 97%
+- **Network analysis** (`drosophila_network_analysis.png`): 20 neutral markers as network nodes across the 100-generation timeline
+- **Cross-sections** (`drosophila_population_dynamics.png`): distributions across the sweep timeline
 
 ### 6. Scientific Insights
 
@@ -122,9 +122,8 @@ cd paper && bash build_paper.sh
 - **Data**: `drosophila_case_study_outputs/drosophila_population_data.csv`
 - **Report**: `drosophila_case_study_outputs/drosophila_analysis_report.json`
 - **Figures**: `drosophila_case_study_outputs/drosophila_*.png`
-- **Paper**: `paper/output/evojump_paper.pdf` (7.0 MB)
+- **Paper**: `paper/output/evojump_paper.pdf` (rebuilt by `paper/build_paper.sh`)
 
----
 
-*Generated: September 30, 2025*
-*EvoJump Version: 0.1.0*
+*Generated: September 8, 2026*
+*EvoJump Version: 0.3.0*

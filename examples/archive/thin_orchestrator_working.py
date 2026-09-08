@@ -284,13 +284,17 @@ def main():
     print("")
     print("   • evolutionary_analysis_outputs/")
 
-    print("
-🔬 Key Scientific Results:"    print("   • Stochastic model fitting with proper parameter estimation"    print(f"   • Cross-sectional analysis at {len([5.0, 10.0, 15.0, 20.0])} developmental stages"    print("   • Population genetic analysis with heritability estimation"    print("   • Multivariate analysis with dimensionality reduction"    print("   • Time series analysis with change point detection"
+    print("\n🔬 Key Scientific Results:")
+    print("   • Stochastic model fitting with proper parameter estimation")
+    print(f"   • Cross-sectional analysis at {len([5.0, 10.0, 15.0, 20.0])} developmental stages")
+    print("   • Population genetic analysis with heritability estimation")
+    print("   • Multivariate analysis with dimensionality reduction")
+    print("   • Time series analysis with change point detection")
 
     # Clean up
     data_file.unlink()
-    print("
-🧹 Cleaned up temporary files"    print("\n" + "="*70)
+    print("\n🧹 Cleaned up temporary files")
+    print("\n" + "="*70)
 
     return {
         'trajectory_analysis': trajectory_results,

@@ -7,6 +7,7 @@ of the DataCore module using real data and methods.
 
 import pytest
 import pandas as pd
+import h5py
 import numpy as np
 from pathlib import Path
 import tempfile
@@ -124,6 +125,99 @@ class TestTimeSeriesData:
         assert ts_data.data['phenotype1'].iloc[3] == 16  # Interpolated value
 
 
+    def test_interpolate_missing_data_duplicate_index(self):
+        """Test that duplicate index labels do not expand the DataFrame."""
+        data = pd.DataFrame(
+            {'time': [1.0, 1.0, 2.0], 'phenotype1': [10.0, np.nan, 20.0]},
+            index=[0, 0, 1]  # duplicate label 0, as produced by pd.concat
+        )
+
+        ts_data = datacore.TimeSeriesData(
+            data=data,
+            time_column='time',
+            phenotype_columns=['phenotype1']
+        )
+
+        ts_data.interpolate_missing_data(method='linear')
+
+        # Row count must be preserved (label-based restore would cross-join)
+        assert len(ts_data.data) == 3
+        assert ts_data.data['phenotype1'].tolist() == [10.0, 15.0, 20.0]
+
+    def test_interpolate_missing_data_restores_row_order(self):
+        """Test that interpolation over time-sorted rows restores original order."""
+        data = pd.DataFrame({
+            'time': [3.0, 1.0, 2.0, 5.0, 4.0],
+            'phenotype1': [np.nan, 10.0, np.nan, 30.0, np.nan]
+        })
+
+        ts_data = datacore.TimeSeriesData(
+            data=data,
+            time_column='time',
+            phenotype_columns=['phenotype1']
+        )
+
+        ts_data.interpolate_missing_data(method='linear')
+
+        # Original row order restored
+        assert ts_data.data['time'].tolist() == [3.0, 1.0, 2.0, 5.0, 4.0]
+        # Values interpolated temporally: t=2,3,4 fall between 10 (t=1) and 30 (t=5)
+        assert ts_data.data['phenotype1'].tolist() == [20.0, 10.0, 15.0, 30.0, 25.0]
+
+    def test_interpolate_missing_data_boundary_fill(self):
+        """Test leading/trailing NaN handling (ffill/bfill boundary path)."""
+        data = pd.DataFrame({
+            'time': [1.0, 2.0, 3.0, 4.0],
+            'lead': [np.nan, 12.0, 14.0, 16.0],
+            'trail': [10.0, 12.0, 14.0, np.nan]
+        })
+
+        ts_data = datacore.TimeSeriesData(
+            data=data,
+            time_column='time',
+            phenotype_columns=['lead', 'trail']
+        )
+
+        ts_data.interpolate_missing_data(method='linear')
+
+        assert ts_data.data['lead'].iloc[0] == 12.0   # backfilled at leading edge
+        assert ts_data.data['trail'].iloc[3] == 14.0  # forward-filled at trailing edge
+        assert not ts_data.data[['lead', 'trail']].isna().any().any()
+
+    def test_interpolate_missing_data_nan_time_raises(self):
+        """Test that a missing time value raises instead of being backfilled."""
+        data = pd.DataFrame({
+            'time': [1.0, np.nan, 3.0],
+            'phenotype1': [10.0, 20.0, 30.0]
+        })
+
+        ts_data = datacore.TimeSeriesData(
+            data=data,
+            time_column='time',
+            phenotype_columns=['phenotype1']
+        )
+
+        with pytest.raises(ValueError, match="contains missing values"):
+            ts_data.interpolate_missing_data(method='linear')
+
+    def test_interpolate_missing_data_method_propagation(self):
+        """Test that a non-default method argument is propagated to pandas."""
+        data = pd.DataFrame({
+            'time': [1.0, 2.0, 3.0, 4.0],
+            'phenotype1': [10.0, np.nan, np.nan, 31.0]
+        })
+
+        ts_data = datacore.TimeSeriesData(
+            data=data,
+            time_column='time',
+            phenotype_columns=['phenotype1']
+        )
+
+        ts_data.interpolate_missing_data(method='nearest')
+
+        # 'nearest' snaps to the closest observation instead of interpolating
+        # (linear would give 17.0 and 24.0)
+        assert ts_data.data['phenotype1'].tolist() == [10.0, 10.0, 31.0, 31.0]
 class TestMetadataManager:
     """Test MetadataManager class."""
 
@@ -185,6 +279,31 @@ class TestMetadataManager:
         finally:
             temp_file.unlink()
 
+
+    def test_load_metadata_empty_file_raises(self):
+        """Test that an empty metadata file raises a clear error."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            temp_file = Path(f.name)
+
+        try:
+            metadata_mgr = datacore.MetadataManager()
+            with pytest.raises(ValueError, match="[Ee]mpty"):
+                metadata_mgr.load_metadata(temp_file)
+        finally:
+            temp_file.unlink()
+
+    def test_load_metadata_unsupported_suffix_raises(self):
+        """Test that an unsupported metadata format raises ValueError."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+            f.write('not metadata')
+            temp_file = Path(f.name)
+
+        try:
+            metadata_mgr = datacore.MetadataManager()
+            with pytest.raises(ValueError, match="Unsupported metadata format"):
+                metadata_mgr.load_metadata(temp_file)
+        finally:
+            temp_file.unlink()
 
 class TestDataCore:
     """Test DataCore class."""
@@ -532,3 +651,232 @@ class TestDataCore:
         median_val = data_core.time_series_data[0].data['phenotype1'].median()
 
         assert abs(median_val) < 1e-10  # Median should be approximately 0
+
+    def test_data_core_accepts_single_time_series(self):
+        """Test that DataCore accepts a single TimeSeriesData object."""
+        data = self.create_test_data()
+        ts_data = datacore.TimeSeriesData(
+            data=data,
+            time_column='time',
+            phenotype_columns=['phenotype1', 'phenotype2']
+        )
+
+        data_core = datacore.DataCore(ts_data)
+
+        assert len(data_core.time_series_data) == 1
+
+    def test_append_time_series(self):
+        """Test appending a dataset to an existing DataCore."""
+        data = self.create_test_data()
+        ts_data1 = datacore.TimeSeriesData(
+            data=data.iloc[:5],
+            time_column='time',
+            phenotype_columns=['phenotype1', 'phenotype2']
+        )
+        ts_data2 = datacore.TimeSeriesData(
+            data=data.iloc[5:],
+            time_column='time',
+            phenotype_columns=['phenotype1', 'phenotype2']
+        )
+
+        data_core = datacore.DataCore(ts_data1)
+        data_core.append(ts_data2)
+
+        assert len(data_core.time_series_data) == 2
+
+    def test_load_from_hdf5_flat_layout(self):
+        """Test loading a flat HDF5 file written directly with h5py."""
+        temp_file = Path(tempfile.mktemp(suffix='.h5'))
+        try:
+            with h5py.File(temp_file, 'w') as f:
+                f.create_dataset('time', data=np.array([1.0, 2.0, 3.0]))
+                f.create_dataset('phenotype1', data=np.array([10.0, 20.0, 30.0]))
+
+            data_core = datacore.DataCore.load_from_hdf5(temp_file, time_column='time')
+
+            ts = data_core.time_series_data[0]
+            assert len(ts.data) == 3
+            np.testing.assert_array_equal(ts.data['time'].to_numpy(), [1.0, 2.0, 3.0])
+            np.testing.assert_array_equal(ts.data['phenotype1'].to_numpy(), [10.0, 20.0, 30.0])
+        finally:
+            temp_file.unlink()
+
+    def test_load_from_hdf5_flattens_groups(self):
+        """Test that group members are flattened into sanitized column names."""
+        temp_file = Path(tempfile.mktemp(suffix='.h5'))
+        try:
+            with h5py.File(temp_file, 'w') as f:
+                f.create_dataset('time', data=np.array([1.0, 2.0]))
+                group = f.create_group('conditions')
+                group.create_dataset('dose', data=np.array([5.0, 10.0]))
+
+            data_core = datacore.DataCore.load_from_hdf5(temp_file, time_column='time')
+
+            ts = data_core.time_series_data[0]
+            # '/' is not usable as a positional column name; it is replaced
+            assert 'conditions_dose' in ts.data.columns
+            np.testing.assert_array_equal(ts.data['conditions_dose'].to_numpy(), [5.0, 10.0])
+        finally:
+            temp_file.unlink()
+
+    def test_load_from_hdf5_unequal_lengths_raises(self):
+        """Test that unequal-length datasets produce a descriptive error."""
+        temp_file = Path(tempfile.mktemp(suffix='.h5'))
+        try:
+            with h5py.File(temp_file, 'w') as f:
+                f.create_dataset('time', data=np.array([1.0, 2.0, 3.0]))
+                f.create_dataset('phenotype1', data=np.array([10.0, 20.0]))
+
+            with pytest.raises(ValueError, match="unequal lengths"):
+                datacore.DataCore.load_from_hdf5(temp_file, time_column='time')
+        finally:
+            temp_file.unlink()
+
+    def test_save_and_load_hdf5_roundtrip(self):
+        """Test the save_processed_data/load_from_hdf5 round-trip, including strings."""
+        data1 = pd.DataFrame({
+            'time': [1.0, 2.0, 3.0],
+            'phenotype1': [10.0, 12.0, 14.0],
+            'strain': ['WT', 'WT', 'WT']
+        })
+        data2 = pd.DataFrame({
+            'time': [1.0, 2.0, 3.0],
+            'phenotype1': [11.0, 13.0, 15.0],
+            'strain': ['MUT', 'MUT', 'MUT']
+        })
+        ts_data1 = datacore.TimeSeriesData(
+            data=data1, time_column='time', phenotype_columns=['phenotype1'])
+        ts_data2 = datacore.TimeSeriesData(
+            data=data2, time_column='time', phenotype_columns=['phenotype1'])
+        data_core = datacore.DataCore([ts_data1, ts_data2])
+
+        temp_file = Path(tempfile.mktemp(suffix='.h5'))
+        try:
+            data_core.save_processed_data(temp_file, format='hdf5')
+            loaded = datacore.DataCore.load_from_hdf5(temp_file, time_column='time')
+
+            assert len(loaded.time_series_data) == 2
+            np.testing.assert_array_equal(
+                loaded.time_series_data[0].data['time'].to_numpy(), [1.0, 2.0, 3.0])
+            np.testing.assert_array_equal(
+                loaded.time_series_data[0].data['phenotype1'].to_numpy(), [10.0, 12.0, 14.0])
+            np.testing.assert_array_equal(
+                loaded.time_series_data[1].data['phenotype1'].to_numpy(), [11.0, 13.0, 15.0])
+            # Non-numeric column encoded as strings survives the round-trip
+            assert loaded.time_series_data[0].data['strain'].tolist() == ['WT', 'WT', 'WT']
+            assert loaded.time_series_data[1].data['strain'].tolist() == ['MUT', 'MUT', 'MUT']
+        finally:
+            temp_file.unlink()
+
+    def test_save_processed_data_unsupported_format_raises(self):
+        """Test that an unsupported save format raises ValueError."""
+        data = self.create_test_data()
+        ts_data = datacore.TimeSeriesData(
+            data=data, time_column='time',
+            phenotype_columns=['phenotype1', 'phenotype2'])
+        data_core = datacore.DataCore(ts_data)
+
+        temp_file = Path(tempfile.mktemp(suffix='.xml'))
+        try:
+            with pytest.raises(ValueError, match="Unsupported format"):
+                data_core.save_processed_data(temp_file, format='xml')
+        finally:
+            if temp_file.exists():
+                temp_file.unlink()
+
+    def test_get_aggregated_data_unsupported_method_raises(self):
+        """Test that an unsupported aggregation method raises ValueError."""
+        data = self.create_test_data()
+        ts_data = datacore.TimeSeriesData(
+            data=data, time_column='time', phenotype_columns=['phenotype1'])
+        data_core = datacore.DataCore(ts_data)
+
+        with pytest.raises(ValueError, match="Unsupported aggregation method"):
+            data_core.get_aggregated_data(aggregation_method='median')
+
+    def test_get_aggregated_data_union_of_phenotype_columns(self):
+        """Test aggregation with heterogeneous phenotype column sets."""
+        data1 = pd.DataFrame({
+            'time': [1, 2, 3],
+            'phenotype1': [10, 12, 14]
+        })
+        data2 = pd.DataFrame({
+            'time': [1, 2, 3],
+            'phenotype1': [11, 13, 15],
+            'phenotype2': [100, 200, 300]
+        })
+        ts_data1 = datacore.TimeSeriesData(
+            data=data1, time_column='time', phenotype_columns=['phenotype1'])
+        ts_data2 = datacore.TimeSeriesData(
+            data=data2, time_column='time', phenotype_columns=['phenotype1', 'phenotype2'])
+        data_core = datacore.DataCore([ts_data1, ts_data2])
+
+        aggregated = data_core.get_aggregated_data(aggregation_method='mean')
+
+        # phenotype2 exists only in dataset 2 but must not be silently dropped
+        assert 'phenotype2' in aggregated.columns
+        assert aggregated['phenotype2'].tolist() == [100.0, 200.0, 300.0]
+        assert aggregated['phenotype1'].tolist() == [10.5, 12.5, 14.5]
+
+    def test_filter_by_phenotype_range_unknown_column_raises(self):
+        """Test that an unknown phenotype column raises instead of filtering nothing."""
+        data = self.create_test_data()
+        ts_data = datacore.TimeSeriesData(
+            data=data, time_column='time', phenotype_columns=['phenotype1'])
+        data_core = datacore.DataCore(ts_data)
+
+        with pytest.raises(ValueError, match="not found"):
+            data_core.filter_by_phenotype_range('nonexistent', 0.0, 1.0)
+
+    def test_remove_outliers_combined_across_columns(self):
+        """Test that the outlier mask is combined across columns and applied once."""
+        data = pd.DataFrame({
+            'time': list(range(1, 10)),
+            'a': [1000.0, np.nan, 10.0, 10.0, 10.0, 11.0, 12.0, 13.0, 14.0],
+            'b': [10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 5000.0]
+        })
+        ts_data = datacore.TimeSeriesData(
+            data=data, time_column='time', phenotype_columns=['a', 'b'])
+        data_core = datacore.DataCore(ts_data)
+
+        data_core._remove_outliers(ts_data, method='iqr', threshold=1.5)
+
+        kept = ts_data.data
+        # Exactly the two outlier rows removed, regardless of column order
+        assert kept['time'].tolist() == [2, 3, 4, 5, 6, 7, 8]
+        assert 1000.0 not in kept['a'].to_numpy()
+        assert 5000.0 not in kept['b'].to_numpy()
+        # A NaN value is not an outlier: its row must not be silently dropped
+        assert kept['a'].isna().any()
+
+    def test_remove_outliers_would_remove_all_rows_raises(self):
+        """Test that outlier removal refuses to empty the dataset."""
+        data = pd.DataFrame({
+            'time': [1, 2],
+            'phenotype1': [0.0, 10.0]  # both points are >0.5 std from the mean
+        })
+        ts_data = datacore.TimeSeriesData(
+            data=data, time_column='time', phenotype_columns=['phenotype1'])
+        data_core = datacore.DataCore(ts_data)
+
+        with pytest.raises(ValueError, match="remove every row"):
+            data_core._remove_outliers(ts_data, method='zscore', threshold=0.5)
+
+    def test_validate_data_quality_single_time_point_and_breakdown(self):
+        """Test temporal_consistency for a single time point and per-column outliers."""
+        data = pd.DataFrame({
+            'time': [1.0, 1.0],
+            'phenotype1': [10.0, 12.0]
+        })
+        ts_data = datacore.TimeSeriesData(
+            data=data, time_column='time', phenotype_columns=['phenotype1'])
+        data_core = datacore.DataCore(ts_data)
+
+        quality_metrics = data_core.validate_data_quality()
+
+        # Key must always exist per dataset, even without measurable intervals
+        assert 'dataset_0' in quality_metrics['temporal_consistency']
+        assert quality_metrics['temporal_consistency']['dataset_0']['regularity_score'] is None
+        # Per-column outlier breakdown available
+        assert 'outliers_by_column' in quality_metrics
+        assert 'phenotype1' in quality_metrics['outliers_by_column']['dataset_0']

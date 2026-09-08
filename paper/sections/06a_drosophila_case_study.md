@@ -35,10 +35,9 @@ We initialize a population of 100 individuals with 10% carrying the advantageous
 - **Population size**: 100 individuals
 - **Generations**: 100 (extended to observe long-term dynamics and approach to fixation)
 - **Initial red-eyed proportion**: 0.1 (10% advantageous allele)
-- **Fitness advantage**: 1.2 (20% higher fitness for red-eyed individuals)
-- **Selection coefficient**: 0.15 (15% selection advantage)
+- **Selection coefficient**: 0.15 (15% selection advantage; relative fitness of the red-eyed allele is 1 + s = 1.15)
 
-Each generation, reproduction occurs with selection favoring red-eyed individuals (selection acts on eye color, not eye size), combined with genetic drift effects. Red-eyed flies also have larger eyes on average due to pleiotropy, providing a correlated phenotypic marker of the selective sweep (implementation details in Section 14).
+Each generation, reproduction occurs with selection favoring red-eyed individuals (selection acts on eye color, not eye size), combined with genetic drift effects. Red-eyed flies also have larger eyes on average due to pleiotropy, providing a correlated phenotypic marker of the selective sweep (implementation details in `paper/render_drosophila_figures.py`).
 
 ## Selective Sweep Analysis
 
@@ -64,13 +63,13 @@ $$LD_{t} = e^{-r t} \cdot LD_{0} \label{eq:hitchhiking_ld}$$
 
 where $r$ is the recombination rate and $LD_t$ is linkage disequilibrium at time $t$.
 
-![Network analysis of 20 neutral marker correlations during selective sweep, showing clusters of co-inherited variants. Markers are distributed from 0 to 2.0 cM from the selected locus, with color indicating linkage distance and network connections showing strong correlations (>0.7).\label{fig:drosophila_network}](figures/figure_drosophila_network.png){ width=85% }
+![Network analysis of 20 neutral marker correlations during selective sweep, showing clusters of co-inherited variants. Markers are distributed from 0 to 1.9 cM from the selected locus, with color indicating linkage distance and network connections showing strong correlations (>0.7).\label{fig:drosophila_network}](figures/figure_drosophila_network.png){ width=85% }
 
-The network analysis reveals how tightly linked markers are swept along with the advantageous allele, with clustering patterns showing groups of co-inherited variants. With 20 neutral markers spanning 0-2.0 cM from the selected locus, we observe a clear gradient of hitchhiking effects: markers close to the selected locus (0-0.5 cM) show very strong correlations and are tightly clustered in the network, while more distant markers (1.5-2.0 cM) show weaker correlations and more independent evolution.
+The network analysis reveals how tightly linked markers are swept along with the advantageous allele, with clustering patterns showing groups of co-inherited variants. With 20 neutral markers spanning 0-1.9 cM from the selected locus, we observe a clear gradient of hitchhiking effects: markers close to the selected locus (0-0.5 cM) show very strong correlations and are tightly clustered in the network, while more distant markers (1.5-1.9 cM) show weaker correlations and more independent evolution.
 
 ## Cross-Sectional Analysis
 
-We analyze eye size distributions at key time points using EvoJump's LaserPlane analyzer at generations 10, 50, and 90 (code in Section 14).
+We analyze eye size distributions at key time points using EvoJump's LaserPlane analyzer at generations 10, 50, and 90 (code in `paper/render_drosophila_figures.py`).
 
 ![Cross-sectional distributions of eye size at different generations (10, 50, and 90) during the 100-generation selective sweep. As the advantageous red-eye allele increases in frequency, the mean eye size increases due to pleiotropy/linkage, demonstrating how selection on one trait (eye color) indirectly affects correlated traits (eye size).\label{fig:drosophila_cross_sections}](figures/figure_drosophila_cross_sections.png){ width=85% }
 
@@ -89,14 +88,14 @@ Key evolutionary parameters estimated:
 | Parameter | Value | Interpretation |
 |-----------|-------|---------------|
 | Effective Population Size | 85 | Accounts for selection and drift |
-| Selection Coefficient | 0.12 | 12% fitness advantage |
+| Selection Coefficient | 0.15 | 15% fitness advantage |
 | Evolutionary Rate | 0.08 | 8% change per generation |
 
 Heritability in this case study is an illustrative value from the simulation design rather than a fitted estimate: as of v0.2.0 the parent-offspring heritability estimator is pedigree-gated and returns NaN with a warning when no pedigree is supplied, rather than emitting a spurious number. Providing the case study's simulated pedigree table enables a real estimate; the reported 0.42 corresponds to the generative heritability used in the simulation.
 
 ## Network Analysis of Marker Correlations
 
-We construct correlation networks to identify groups of markers that are co-inherited due to hitchhiking using a correlation threshold of 0.6 (code in Section 12). The network reveals distinct clusters corresponding to different linkage groups, with centrality measures indicating which markers are most affected by the sweep.
+We construct correlation networks to identify groups of markers that are co-inherited due to hitchhiking using a correlation threshold of 0.7 (code in `paper/render_drosophila_figures.py`). The network reveals distinct clusters corresponding to different linkage groups, with centrality measures indicating which markers are most affected by the sweep.
 
 ## Bayesian Analysis of Selection
 
@@ -131,7 +130,7 @@ Our simulation results align well with the original study (PubMed: 23459154):
 | Metric | Simulation | Experimental | Agreement |
 |--------|------------|--------------|-----------|
 | Final frequency | >0.95 | 0.82 | Extended simulation shows approach to fixation |
-| Generations to 50% | ~25 | 9 | Extended timeline with s=0.15 |
+| Generations to 50% | ~19 | 9 | Extended timeline with s=0.15 |
 | Selective advantage | 0.15 | 0.12-0.20 | Within observed range |
 
 Our extended 100-generation simulation allows observation of dynamics beyond typical classroom experiments, including approach to fixation and long-term linkage disequilibrium decay.

@@ -3,7 +3,7 @@
 # Build EvoJump Paper from Modular Markdown Files
 # This script combines all section files into a complete paper and generates PDF
 
-set -e  # Exit on error
+set -eo pipefail  # Exit on error; a failed pandoc/python in a pipeline must not be masked by tee/grep
 
 echo "════════════════════════════════════════════════════════════════"
 echo "Building EvoJump Paper"
@@ -29,6 +29,13 @@ SECTIONS_DIR="$PAPER_DIR/sections"
 OUTPUT_DIR="$PAPER_DIR/output"
 COMBINED_MD="$OUTPUT_DIR/combined_paper.md"
 
+# Resolve the Python interpreter: prefer the project's uv-managed .venv
+# (override by setting PYTHON=... when invoking this script).
+PY="${PYTHON:-$PAPER_DIR/../.venv/bin/python}"
+if [ ! -x "$PY" ]; then
+    PY="$(command -v python3 || true)"
+fi
+
 # Create output directory if it doesn't exist
 mkdir -p "$OUTPUT_DIR"
 
@@ -39,8 +46,8 @@ echo ""
 # Create combined markdown file
 echo "🔨 Combining markdown sections..."
 
-# The LaTeX template now includes the author information directly
-# so we don't need YAML frontmatter for LaTeX generation
+# Author information for the PDF is provided by author_info.tex, so the
+# combined markdown does not need YAML frontmatter for LaTeX generation.
 
 # Clear/initialize the combined markdown file
 > "$COMBINED_MD"
@@ -75,14 +82,12 @@ echo ""
 echo "🎨 Generating figures..."
 if [ -f "$PAPER_DIR/render_figures.py" ]; then
     cd "$PAPER_DIR"
-    python3 render_figures.py --figures_dir figures/
-    if [ $? -eq 0 ]; then
-        echo "✅ Main figures generated successfully!"
-        echo "   Figures directory: $PAPER_DIR/figures/"
-    else
-        echo "⚠️  Figure generation failed. Check error messages above."
-        echo "   Continuing with build but figures may be missing."
-    fi
+    "$PY" render_figures.py --figures_dir figures/ || {
+        echo "❌ Figure generation failed. Build aborted so stale/missing figures are not shipped."
+        exit 1
+    }
+    echo "✅ Main figures generated successfully!"
+    echo "   Figures directory: $PAPER_DIR/figures/"
 else
     echo "⚠️  Render script not found at $PAPER_DIR/render_figures.py"
     echo "   Figures will need to be generated manually."
@@ -93,13 +98,11 @@ echo ""
 echo "🧬 Generating Drosophila case study figures..."
 if [ -f "$PAPER_DIR/render_drosophila_figures.py" ]; then
     cd "$PAPER_DIR"
-    python3 render_drosophila_figures.py
-    if [ $? -eq 0 ]; then
-        echo "✅ Drosophila figures generated successfully!"
-    else
-        echo "⚠️  Drosophila figure generation failed. Check error messages above."
-        echo "   Continuing with build but Drosophila figures may be missing."
-    fi
+    "$PY" render_drosophila_figures.py || {
+        echo "❌ Drosophila figure generation failed. Build aborted so stale/missing figures are not shipped."
+        exit 1
+    }
+    echo "✅ Drosophila figures generated successfully!"
 else
     echo "⚠️  Drosophila render script not found at $PAPER_DIR/render_drosophila_figures.py"
     echo "   Drosophila figures will need to be generated manually."
@@ -140,9 +143,11 @@ EOF
 # Add the content to the PDF-ready file
 cat "$COMBINED_MD" >> "$PDF_MD"
 
-# Generate PDF
+# Generate PDF (remove any stale artifact first so a failed build cannot pass
+# on a leftover file; with pipefail, pandoc's status is no longer masked by tee)
 echo ""
 echo "📄 Generating PDF..."
+rm -f "$OUTPUT_DIR/evojump_paper.pdf"
 pandoc "$PDF_MD" \
     -o "$OUTPUT_DIR/evojump_paper.pdf" \
     --pdf-engine=pdflatex \
@@ -151,21 +156,23 @@ pandoc "$PDF_MD" \
     --toc-depth=3 \
     --include-in-header="$PAPER_DIR/author_info.tex" \
     --lua-filter="$PAPER_DIR/number-equations.lua" \
-    2>&1 | tee "$OUTPUT_DIR/build.log"
+    2>&1 | tee "$OUTPUT_DIR/build.log" || true
 
-if [ $? -eq 0 ]; then
+if [ -f "$OUTPUT_DIR/evojump_paper.pdf" ]; then
     echo ""
     echo "✅ PDF successfully generated!"
     echo "📄 Output: $OUTPUT_DIR/evojump_paper.pdf"
     echo "   Size: $(du -h "$OUTPUT_DIR/evojump_paper.pdf" | cut -f1)"
 else
     echo ""
-    echo "⚠️  PDF generation encountered issues. Check build.log for details."
+    echo "❌ PDF generation failed. Check build.log for details."
+    exit 1
 fi
 
 # Generate HTML version as well
 echo ""
 echo "🌐 Generating HTML version..."
+rm -f "$OUTPUT_DIR/evojump_paper.html"
 pandoc "$COMBINED_MD" \
     -o "$OUTPUT_DIR/evojump_paper.html" \
     --standalone \
@@ -174,35 +181,43 @@ pandoc "$COMBINED_MD" \
     --number-sections \
     --katex \
     --css=https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css \
-    2>&1 | grep -v "WARNING"
+    2>&1 | grep -v "WARNING" || true
 
-if [ $? -eq 0 ]; then
+if [ -f "$OUTPUT_DIR/evojump_paper.html" ]; then
     echo "✅ HTML successfully generated!"
     echo "🌐 Output: $OUTPUT_DIR/evojump_paper.html"
+else
+    echo "❌ HTML generation failed."
+    exit 1
 fi
 
 # Generate Word version
 echo ""
 echo "📝 Generating Word (.docx) version..."
+rm -f "$OUTPUT_DIR/evojump_paper.docx"
 if [ -f "$PAPER_DIR/reference.docx" ]; then
     pandoc "$COMBINED_MD" \
         -o "$OUTPUT_DIR/evojump_paper.docx" \
         --reference-doc="$PAPER_DIR/reference.docx" \
         --toc \
         --number-sections \
-        2>&1 | grep -v "WARNING"
+        2>&1 | grep -v "WARNING" || true
 else
     pandoc "$COMBINED_MD" \
         -o "$OUTPUT_DIR/evojump_paper.docx" \
         --toc \
         --number-sections \
-        2>&1 | grep -v "WARNING"
+        2>&1 | grep -v "WARNING" || true
 fi
 
 if [ -f "$OUTPUT_DIR/evojump_paper.docx" ]; then
     echo "✅ Word document successfully generated!"
     echo "📝 Output: $OUTPUT_DIR/evojump_paper.docx"
+else
+    echo "❌ Word generation failed."
+    exit 1
 fi
+
 
 echo ""
 echo "════════════════════════════════════════════════════════════════"

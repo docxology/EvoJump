@@ -289,7 +289,8 @@ class TestFeatureName:
    - Use fixed random seeds for reproducibility
 
 3. **Test Coverage**:
-   - Aim for 95%+ coverage on new code
+   - Keep coverage above the enforced 68% floor (`--cov-fail-under=68` in
+     pyproject.toml; 95%+ on new code is a stretch goal, not a gate)
    - Test both success and failure paths
    - Include integration tests
    - Test performance with large datasets
@@ -297,23 +298,20 @@ class TestFeatureName:
 ### Running Tests
 
 ```bash
-# Quick test run (no coverage)
-python run_all_tests.py --quick
+# Quick test run (no coverage, fast feedback)
+.venv/bin/python -m pytest tests/ -q --no-cov
 
-# Full test with coverage
-python run_all_tests.py --coverage --verbose
+# Full test with coverage (enforced floor from pyproject.toml)
+.venv/bin/python -m pytest tests/
 
-# All checks (tests + linting + docs)
-python run_all_tests.py --all
-
-# Performance benchmarks
-python run_all_tests.py --benchmark
+# Or via the thin wrapper (forwards extra args to pytest verbatim)
+python run_tests.py --quick
 
 # Specific test file
-pytest tests/test_datacore.py -v
+.venv/bin/python -m pytest tests/test_datacore.py -v
 
 # Specific test method
-pytest tests/test_jumprope.py::TestJumpRope::test_fit_model -v
+.venv/bin/python -m pytest tests/test_jumprope.py::TestJumpRope::test_fit_model -v
 ```
 
 ## Release Process

@@ -18,10 +18,17 @@ Examples:
     >>> TrajectoryVisualizer.plot_landscapes(model, interactive=True)
     >>> # Generate animation
     >>> TrajectoryVisualizer.create_animation(model, output_dir="animations/")
+Figure ownership: plotting methods return an open matplotlib (or Plotly)
+figure. Pass ``close=True`` to have the visualizer close the figure right
+``plt.close(fig)`` so long plotting sessions do not accumulate figures.
+
 """
 
+import os
 import numpy as np
 import pandas as pd
+import networkx as nx
+import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.figure import Figure
@@ -46,12 +53,31 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# Set matplotlib backend for non-interactive plotting
-try:
-    import matplotlib
-    matplotlib.use('Agg')  # Use non-interactive backend to avoid GUI issues
-except:
-    pass
+# Default to a non-interactive backend for headless rendering, but never
+# override a backend that the host application already configured.
+if os.environ.get('MPLBACKEND') is None and matplotlib.get_backend().lower() != 'agg':
+    matplotlib.use('Agg')
+
+
+def _mean_ci_band(trajectories: np.ndarray,
+                  n_std: float = 1.96,
+                  kind: str = 'ci') -> Tuple[np.ndarray, np.ndarray, np.ndarray, str]:
+    """Compute the mean trajectory with a cross-trajectory band.
+
+    Single convention for every mean-band overlay in this module:
+        kind='ci': mean +/- n_std * SEM -- a confidence interval on the
+            mean (n_std=1.96 gives the 95% CI). Label: '95% CI'.
+        kind='sd': mean +/- 1 standard deviation -- a spread band, not a
+            confidence interval. Label: '±1 SD'.
+
+    Returns (mean, band_lower, band_upper, label).
+    """
+    mean = np.mean(trajectories, axis=0)
+    std = np.std(trajectories, axis=0)
+    if kind == 'sd':
+        return mean, mean - std, mean + std, '±1 SD'
+    sem = std / np.sqrt(trajectories.shape[0])
+    return mean, mean - n_std * sem, mean + n_std * sem, '95% CI'
 
 
 @dataclass
@@ -68,7 +94,7 @@ class PlotConfig:
     show_legend: bool = True
     show_confidence_intervals: bool = True
     n_std: float = 1.96  # 95% confidence interval
-    animation_fps: int = 30
+    # GIF playback rate is derived at save time as 1000 / animation_interval.
     animation_interval: int = 50
     # Deterministic 3D landscape camera angles (degrees) and colour-axis units.
     landscape_elevation: float = 30.0
@@ -82,7 +108,13 @@ class PlotConfig:
 
 @dataclass
 class AnimationFrame:
-    """Container for animation frame data."""
+    """Container for animation frame data.
+
+    ``confidence_interval`` is the mean +/- n_std*SEM of the cross-section
+    (a CI on the mean). ``metadata['distribution_quantiles']`` holds the
+    2.5/97.5 percentiles of the cross-sectional distribution -- that is the
+    band create_animation draws over the histogram.
+    """
     time_point: float
     trajectories: np.ndarray
     cross_section: np.ndarray
@@ -135,9 +167,11 @@ class AnimationController:
                 # Get cross-section at this time point
                 cross_section = self.model.compute_cross_sections(time_idx)
 
-                # Compute confidence interval: percentile band of the
-                # cross-sectional distribution (mean +/- n_std SEM for the
-                # mean, plus distribution quantiles available to consumers).
+                # confidence_interval is the mean +/- n_std*SEM of the
+                # cross-section (a CI on the mean). The distribution's own
+                # 2.5/97.5 percentiles go into metadata; create_animation
+                # draws those over the histogram because SEM lines hug the
+                # mean and read as a bug against the full distribution.
                 mean_val = np.mean(cross_section)
                 std_val = np.std(cross_section)
                 sem = std_val / np.sqrt(len(cross_section)) if len(cross_section) > 0 else 0.0
@@ -145,12 +179,18 @@ class AnimationController:
                     mean_val - self.config.n_std * sem,
                     mean_val + self.config.n_std * sem
                 )
+                if len(cross_section) > 0:
+                    lo_q, hi_q = np.percentile(cross_section, [2.5, 97.5])
+                    quantiles = (float(lo_q), float(hi_q))
+                else:
+                    quantiles = ci
 
                 frame = AnimationFrame(
                     time_point=time_point,
                     trajectories=trajectories,
                     cross_section=cross_section,
-                    confidence_interval=ci
+                    confidence_interval=ci,
+                    metadata={'distribution_quantiles': quantiles}
                 )
 
                 self.frames.append(frame)
@@ -176,12 +216,35 @@ class TrajectoryVisualizer:
 
         logger.info("Initialized Trajectory Visualizer")
 
+    def _save(self, fig, output_dir: Optional[Path], filename: str,
+              close: bool = False) -> None:
+        """Save a figure under output_dir and optionally close it.
+
+        Interactive (Plotly) figures are written as HTML and never closed.
+        Matplotlib figures are saved with the configured DPI and closed only
+        when ``close`` is True, so long plotting sessions do not accumulate
+        pyplot figures. A closed Figure object can still be re-saved by the
+        caller (``fig.savefig`` keeps working).
+        """
+        if output_dir is None:
+            return
+        output_dir.mkdir(parents=True, exist_ok=True)
+        out_path = output_dir / filename
+        if hasattr(fig, 'write_html'):
+            fig.write_html(out_path)
+        else:
+            fig.savefig(out_path, dpi=self.config.dpi, bbox_inches='tight')
+        logger.info(f"Saved plot to {out_path}")
+        if close and hasattr(fig, 'savefig'):
+            plt.close(fig)
+
     def plot_trajectories(self,
                          jump_rope_model,
                          n_trajectories: Optional[int] = None,
                          output_dir: Optional[Path] = None,
                          interactive: bool = False,
-                         show_ci: bool = True) -> Union[Figure, go.Figure]:
+                         show_ci: bool = True,
+                         close: bool = False) -> Union[Figure, go.Figure]:
         """
         Plot developmental trajectories.
 
@@ -191,6 +254,8 @@ class TrajectoryVisualizer:
             output_dir: Directory to save plots
             interactive: Create interactive plot
             show_ci: Show confidence intervals
+            close: If True, close the matplotlib figure right after saving
+                it (static plots only); see module docstring.
 
         Returns:
             Matplotlib or Plotly figure
@@ -214,13 +279,14 @@ class TrajectoryVisualizer:
         if interactive:
             return self._plot_trajectories_interactive(selected_trajectories, time_points)
         else:
-            return self._plot_trajectories_static(selected_trajectories, time_points, output_dir, show_ci)
+            return self._plot_trajectories_static(selected_trajectories, time_points, output_dir, show_ci, close)
 
     def _plot_trajectories_static(self,
                                  trajectories: np.ndarray,
                                  time_points: np.ndarray,
                                  output_dir: Optional[Path] = None,
-                                 show_ci: bool = True) -> Figure:
+                                 show_ci: bool = True,
+                                 close: bool = False) -> Figure:
         """Create static matplotlib plot of trajectories."""
         fig, ax = plt.subplots(figsize=self.config.figsize, dpi=self.config.dpi)
 
@@ -231,8 +297,10 @@ class TrajectoryVisualizer:
                    linewidth=self.config.linewidth * 0.5,
                    color=self.config.colors[i % len(self.config.colors)])
 
-        # Plot mean trajectory
-        mean_trajectory = np.mean(trajectories, axis=0)
+        # Plot mean trajectory plus the 95% CI band on the mean (single
+        # convention shared with the other band overlays in this module).
+        mean_trajectory, ci_lower, ci_upper, ci_label = _mean_ci_band(
+            trajectories, n_std=self.config.n_std)
         ax.plot(time_points, mean_trajectory,
                linewidth=self.config.linewidth * 2,
                color='black',
@@ -240,12 +308,8 @@ class TrajectoryVisualizer:
 
         # Plot confidence intervals
         if show_ci and trajectories.shape[0] > 1:
-            std_trajectory = np.std(trajectories, axis=0)
-            ci_lower = mean_trajectory - self.config.n_std * std_trajectory / np.sqrt(trajectories.shape[0])
-            ci_upper = mean_trajectory + self.config.n_std * std_trajectory / np.sqrt(trajectories.shape[0])
-
             ax.fill_between(time_points, ci_lower, ci_upper,
-                           alpha=0.3, color='gray', label='95% CI')
+                           alpha=0.3, color='gray', label=ci_label)
 
         # Formatting
         ax.set_xlabel('Developmental Time')
@@ -256,10 +320,7 @@ class TrajectoryVisualizer:
 
         plt.tight_layout()
 
-        if output_dir:
-            output_dir.mkdir(parents=True, exist_ok=True)
-            plt.savefig(output_dir / 'trajectories.png', dpi=self.config.dpi, bbox_inches='tight')
-            logger.info(f"Saved trajectory plot to {output_dir / 'trajectories.png'}")
+        self._save(fig, output_dir, 'trajectories.png', close=close)
 
         return fig
 
@@ -292,9 +353,8 @@ class TrajectoryVisualizer:
 
         # Add confidence intervals
         if trajectories.shape[0] > 1:
-            std_trajectory = np.std(trajectories, axis=0)
-            ci_lower = mean_trajectory - self.config.n_std * std_trajectory / np.sqrt(trajectories.shape[0])
-            ci_upper = mean_trajectory + self.config.n_std * std_trajectory / np.sqrt(trajectories.shape[0])
+            _, ci_lower, ci_upper, _ = _mean_ci_band(
+                trajectories, n_std=self.config.n_std)
 
             fig.add_trace(go.Scatter(
                 x=np.concatenate([time_points, time_points[::-1]]),
@@ -322,7 +382,8 @@ class TrajectoryVisualizer:
                            time_points: Optional[List[float]] = None,
                            output_dir: Optional[Path] = None,
                            interactive: bool = False,
-                           show_kde: bool = False) -> Union[Figure, go.Figure]:
+                           show_kde: bool = False,
+                           close: bool = False) -> Union[Figure, go.Figure]:
         """
         Plot cross-sectional distributions at specific time points.
 
@@ -336,6 +397,8 @@ class TrajectoryVisualizer:
                 via scipy.stats.gaussian_kde, which adapts to sample size
                 and spread; the curve is labelled 'KDE (Scott's rule)' so a
                 reader can distinguish it from the fitted-Normal overlay.
+            close: If True, close the matplotlib figure right after saving
+                it (static plots only); see module docstring.
 
         Returns:
             Matplotlib or Plotly figure
@@ -348,13 +411,14 @@ class TrajectoryVisualizer:
         if interactive:
             return self._plot_cross_sections_interactive(jump_rope_model, time_points)
         else:
-            return self._plot_cross_sections_static(jump_rope_model, time_points, output_dir, show_kde=show_kde)
+            return self._plot_cross_sections_static(jump_rope_model, time_points, output_dir, show_kde=show_kde, close=close)
 
     def _plot_cross_sections_static(self,
                                    jump_rope_model,
                                    time_points: List[float],
                                    output_dir: Optional[Path] = None,
-                                   show_kde: bool = False) -> Figure:
+                                   show_kde: bool = False,
+                                   close: bool = False) -> Figure:
         """Create static matplotlib plot of cross-sections."""
         n_plots = len(time_points)
         n_cols = min(3, n_plots)
@@ -403,10 +467,7 @@ class TrajectoryVisualizer:
 
         plt.tight_layout()
 
-        if output_dir:
-            output_dir.mkdir(parents=True, exist_ok=True)
-            plt.savefig(output_dir / 'cross_sections.png', dpi=self.config.dpi, bbox_inches='tight')
-            logger.info(f"Saved cross-section plot to {output_dir / 'cross_sections.png'}")
+        self._save(fig, output_dir, 'cross_sections.png', close=close)
 
         return fig
 
@@ -465,7 +526,8 @@ class TrajectoryVisualizer:
     def plot_landscapes(self,
                        jump_rope_model,
                        output_dir: Optional[Path] = None,
-                       interactive: bool = False) -> Union[Figure, go.Figure]:
+                       interactive: bool = False,
+                       close: bool = False) -> Union[Figure, go.Figure]:
         """
         Plot 3D phenotypic landscapes showing distribution evolution.
 
@@ -473,6 +535,10 @@ class TrajectoryVisualizer:
             jump_rope_model: JumpRope model
             output_dir: Directory to save plots
             interactive: Create interactive plot
+            close: If True, close the matplotlib figure right after saving
+                it (static plots only); see module docstring. The z-axis
+                label carries ``config.phenotype_units`` when set to
+                anything other than the default 'units'.
 
         Returns:
             Matplotlib or Plotly figure
@@ -485,11 +551,12 @@ class TrajectoryVisualizer:
         if interactive:
             return self._plot_landscapes_interactive(jump_rope_model)
         else:
-            return self._plot_landscapes_static(jump_rope_model, output_dir)
+            return self._plot_landscapes_static(jump_rope_model, output_dir, close=close)
 
     def _plot_landscapes_static(self,
                                jump_rope_model,
-                               output_dir: Optional[Path] = None) -> Figure:
+                               output_dir: Optional[Path] = None,
+                               close: bool = False) -> Figure:
         """Create static matplotlib 3D landscape plot."""
         try:
             from mpl_toolkits.mplot3d import Axes3D
@@ -511,15 +578,15 @@ class TrajectoryVisualizer:
 
         ax.set_xlabel('Developmental Time')
         ax.set_ylabel('Individual')
-        ax.set_zlabel('Phenotype Value')
+        z_label = 'Phenotype Value'
+        if self.config.phenotype_units and self.config.phenotype_units != 'units':
+            z_label = f'Phenotype Value ({self.config.phenotype_units})'
+        ax.set_zlabel(z_label)
         ax.set_title('Phenotypic Landscape')
 
         plt.tight_layout()
 
-        if output_dir:
-            output_dir.mkdir(parents=True, exist_ok=True)
-            plt.savefig(output_dir / 'landscape.png', dpi=self.config.dpi, bbox_inches='tight')
-            logger.info(f"Saved landscape plot to {output_dir / 'landscape.png'}")
+        self._save(fig, output_dir, 'landscape.png', close=close)
 
         return fig
 
@@ -548,12 +615,15 @@ class TrajectoryVisualizer:
                 name=f'Trajectory {i}'
             ))
 
+        z_label = 'Phenotype Value'
+        if self.config.phenotype_units and self.config.phenotype_units != 'units':
+            z_label = f'Phenotype Value ({self.config.phenotype_units})'
         fig.update_layout(
             title='Phenotypic Landscape',
             scene=dict(
                 xaxis_title='Developmental Time',
                 yaxis_title='Individual',
-                zaxis_title='Phenotype Value',
+                zaxis_title=z_label,
                 camera=dict(
                     eye=dict(
                         x=1.6 * np.cos(np.deg2rad(30)) * np.cos(np.deg2rad(-60)),
@@ -572,7 +642,8 @@ class TrajectoryVisualizer:
                         n_frames: Optional[int] = None,
                         time_range: Optional[Tuple[float, float]] = None,
                         output_dir: Optional[Path] = None,
-                        trailing_window: Optional[int] = None) -> animation.FuncAnimation:
+                        trailing_window: Optional[int] = None,
+                        close: bool = False) -> animation.FuncAnimation:
         """
         Create animation of developmental process.
 
@@ -587,6 +658,11 @@ class TrajectoryVisualizer:
                 out of view. Axis limits stay fixed on the full time range
                 (v0.2.0 behaviour), so the moving window is visible against
                 the stationary frame.
+            close: If True, close the animation figure after saving it;
+                see module docstring. The cross-section panel draws the
+                2.5/97.5 percentiles of the distribution (stored in each
+                AnimationFrame's metadata) rather than the much narrower
+                CI-on-the-mean lines.
 
         Returns:
             Matplotlib animation object
@@ -651,8 +727,12 @@ class TrajectoryVisualizer:
 
             # Plot cross-section
             ax2.hist(frame.cross_section, bins=30, alpha=self.config.alpha, density=True)
-            ax2.axvline(frame.confidence_interval[0], color='red', linestyle='--', alpha=0.7)
-            ax2.axvline(frame.confidence_interval[1], color='red', linestyle='--', alpha=0.7)
+            q_lo, q_hi = frame.metadata.get(
+                'distribution_quantiles', frame.confidence_interval)
+            ax2.axvline(q_lo, color='red', linestyle='--', alpha=0.7,
+                        label='95% distribution quantiles')
+            ax2.axvline(q_hi, color='red', linestyle='--', alpha=0.7)
+            ax2.legend(loc='best')
             ax2.set_xlabel('Phenotype Value')
             ax2.set_ylabel('Density')
             ax2.set_title(f'Cross-Section Distribution (Mean: {np.mean(frame.cross_section):.3f})')
@@ -670,15 +750,21 @@ class TrajectoryVisualizer:
 
         if output_dir:
             output_dir.mkdir(parents=True, exist_ok=True)
-            anim.save(output_dir / 'animation.gif', writer='pillow', fps=self.config.animation_fps)
-            logger.info(f"Saved animation to {output_dir / 'animation.gif'}")
+            # Playback rate must match the frame interval (ms), otherwise
+            # the saved GIF runs at the wrong speed.
+            fps = int(round(1000.0 / self.config.animation_interval))
+            anim.save(output_dir / 'animation.gif', writer='pillow', fps=fps)
+            logger.info(f"Saved animation to {output_dir / 'animation.gif'} at {fps} fps")
+            if close:
+                plt.close(fig)
 
         return anim
 
     def plot_model_comparison(self,
                              models: List[Any],
                              model_names: List[str],
-                             output_dir: Optional[Path] = None) -> Figure:
+                             output_dir: Optional[Path] = None,
+                             close: bool = False) -> Figure:
         """
         Create comprehensive multi-panel model comparison visualization.
 
@@ -686,6 +772,8 @@ class TrajectoryVisualizer:
             models: List of JumpRope models
             model_names: Names for each model
             output_dir: Directory to save plots
+            close: If True, close the figure after saving it; see module
+                docstring.
 
         Returns:
             Matplotlib figure with multiple panels
@@ -711,16 +799,15 @@ class TrajectoryVisualizer:
             ax1.plot(model.time_points, mean_traj,
                     label=name, color=color, linewidth=self.config.linewidth)
 
-            # Add confidence intervals
-            std_traj = np.std(model.trajectories, axis=0)
-            ax1.fill_between(model.time_points,
-                           mean_traj - std_traj,
-                           mean_traj + std_traj,
+            # ±1 SD spread band (a spread band, not a confidence interval;
+            # single convention shared with the other band overlays).
+            _, lo_sd, hi_sd, _ = _mean_ci_band(model.trajectories, kind='sd')
+            ax1.fill_between(model.time_points, lo_sd, hi_sd,
                            alpha=0.2, color=color)
 
         ax1.set_xlabel('Developmental Time')
         ax1.set_ylabel('Phenotype Value')
-        ax1.set_title('Mean Trajectories\nwith Confidence Intervals')
+        ax1.set_title('Mean Trajectories\nwith ±1 SD Bands')
         ax1.legend()
         ax1.grid(True, alpha=0.3)
 
@@ -953,11 +1040,7 @@ class TrajectoryVisualizer:
 
         plt.tight_layout()
 
-        if output_dir:
-            output_dir.mkdir(parents=True, exist_ok=True)
-            plt.savefig(output_dir / 'model_comparison.png',
-                       dpi=self.config.dpi, bbox_inches='tight')
-            logger.info(f"Saved model comparison to {output_dir / 'model_comparison.png'}")
+        self._save(fig, output_dir, 'model_comparison.png', close=close)
 
         return fig
 
@@ -980,7 +1063,8 @@ class TrajectoryVisualizer:
     def plot_comparison(self,
                        models: List[Any],
                        model_names: List[str],
-                       output_dir: Optional[Path] = None) -> Figure:
+                       output_dir: Optional[Path] = None,
+                       close: bool = False) -> Figure:
         """
         Plot comparison of multiple models.
 
@@ -988,6 +1072,8 @@ class TrajectoryVisualizer:
             models: List of JumpRope models
             model_names: Names for each model
             output_dir: Directory to save plots
+            close: If True, close the figure after saving it; see module
+                docstring.
 
         Returns:
             Matplotlib figure
@@ -1055,22 +1141,22 @@ class TrajectoryVisualizer:
 
         plt.tight_layout()
 
-        if output_dir:
-            output_dir.mkdir(parents=True, exist_ok=True)
-            plt.savefig(output_dir / 'model_comparison.png', dpi=self.config.dpi, bbox_inches='tight')
-            logger.info(f"Saved comparison plot to {output_dir / 'model_comparison.png'}")
+        self._save(fig, output_dir, 'model_comparison.png', close=close)
 
         return fig
 
     def plot_bayesian_analysis(self,
                               bayesian_result,
-                              output_dir: Optional[Path] = None) -> Figure:
+                              output_dir: Optional[Path] = None,
+                              close: bool = False) -> Figure:
         """
         Plot Bayesian analysis results.
 
         Parameters:
             bayesian_result: BayesianResult from analytics engine
             output_dir: Directory to save plots
+            close: If True, close the figure after saving it; see module
+                docstring.
 
         Returns:
             Matplotlib figure
@@ -1094,7 +1180,13 @@ class TrajectoryVisualizer:
             intervals = list(bayesian_result.credible_intervals.values())
             if intervals:
                 ci_plot = axes[0, 1]
-                ci_plot.boxplot(intervals, labels=list(bayesian_result.credible_intervals.keys()))
+                # matplotlib >= 3.9 renamed boxplot's labels kwarg to
+                # tick_labels (and removed it in 3.11); support both.
+                interval_labels = list(bayesian_result.credible_intervals.keys())
+                if tuple(int(p) for p in matplotlib.__version__.split('.')[:2]) >= (3, 9):
+                    ci_plot.boxplot(intervals, tick_labels=interval_labels)
+                else:
+                    ci_plot.boxplot(intervals, labels=interval_labels)
                 ci_plot.set_title('Credible Intervals')
                 ci_plot.set_ylabel('Parameter Range')
                 ci_plot.grid(True, alpha=0.3)
@@ -1121,22 +1213,22 @@ class TrajectoryVisualizer:
 
         plt.tight_layout()
 
-        if output_dir:
-            output_dir.mkdir(parents=True, exist_ok=True)
-            plt.savefig(output_dir / 'bayesian_analysis.png', dpi=self.config.dpi, bbox_inches='tight')
-            logger.info(f"Saved Bayesian analysis plot to {output_dir / 'bayesian_analysis.png'}")
+        self._save(fig, output_dir, 'bayesian_analysis.png', close=close)
 
         return fig
 
     def plot_network_analysis(self,
                             network_result,
-                            output_dir: Optional[Path] = None) -> Figure:
+                            output_dir: Optional[Path] = None,
+                            close: bool = False) -> Figure:
         """
         Plot network analysis results.
 
         Parameters:
             network_result: NetworkResult from analytics engine
             output_dir: Directory to save plots
+            close: If True, close the figure after saving it; see module
+                docstring.
 
         Returns:
             Matplotlib figure
@@ -1156,7 +1248,7 @@ class TrajectoryVisualizer:
                        node_color='lightblue', with_labels=True, font_size=8)
                 axes[0, 0].set_title('Network Graph')
                 axes[0, 0].axis('off')
-            except:
+            except (ValueError, MemoryError):
                 axes[0, 0].text(0.5, 0.5, 'Network too complex to display',
                                ha='center', va='center', transform=axes[0, 0].transAxes)
                 axes[0, 0].set_title('Network Graph')
@@ -1209,22 +1301,22 @@ class TrajectoryVisualizer:
 
         plt.tight_layout()
 
-        if output_dir:
-            output_dir.mkdir(parents=True, exist_ok=True)
-            plt.savefig(output_dir / 'network_analysis.png', dpi=self.config.dpi, bbox_inches='tight')
-            logger.info(f"Saved network analysis plot to {output_dir / 'network_analysis.png'}")
+        self._save(fig, output_dir, 'network_analysis.png', close=close)
 
         return fig
 
     def plot_dimensionality_reduction(self,
                                     dimensionality_result,
-                                    output_dir: Optional[Path] = None) -> Figure:
+                                    output_dir: Optional[Path] = None,
+                                    close: bool = False) -> Figure:
         """
         Plot dimensionality reduction results.
 
         Parameters:
             dimensionality_result: DimensionalityResult from analytics engine
             output_dir: Directory to save plots
+            close: If True, close the figure after saving it; see module
+                docstring.
 
         Returns:
             Matplotlib figure
@@ -1267,22 +1359,22 @@ class TrajectoryVisualizer:
 
         plt.tight_layout()
 
-        if output_dir:
-            output_dir.mkdir(parents=True, exist_ok=True)
-            plt.savefig(output_dir / 'dimensionality_reduction.png', dpi=self.config.dpi, bbox_inches='tight')
-            logger.info(f"Saved dimensionality reduction plot to {output_dir / 'dimensionality_reduction.png'}")
+        self._save(fig, output_dir, 'dimensionality_reduction.png', close=close)
 
         return fig
 
     def plot_spectral_analysis(self,
                              spectral_result,
-                             output_dir: Optional[Path] = None) -> Figure:
+                             output_dir: Optional[Path] = None,
+                             close: bool = False) -> Figure:
         """
         Plot spectral analysis results.
 
         Parameters:
             spectral_result: SpectralResult from analytics engine
             output_dir: Directory to save plots
+            close: If True, close the figure after saving it; see module
+                docstring.
 
         Returns:
             Matplotlib figure
@@ -1333,22 +1425,22 @@ class TrajectoryVisualizer:
 
         plt.tight_layout()
 
-        if output_dir:
-            output_dir.mkdir(parents=True, exist_ok=True)
-            plt.savefig(output_dir / 'spectral_analysis.png', dpi=self.config.dpi, bbox_inches='tight')
-            logger.info(f"Saved spectral analysis plot to {output_dir / 'spectral_analysis.png'}")
+        self._save(fig, output_dir, 'spectral_analysis.png', close=close)
 
         return fig
 
     def plot_nonlinear_dynamics(self,
                               nonlinear_result,
-                              output_dir: Optional[Path] = None) -> Figure:
+                              output_dir: Optional[Path] = None,
+                              close: bool = False) -> Figure:
         """
         Plot nonlinear dynamics analysis results.
 
         Parameters:
             nonlinear_result: NonlinearResult from analytics engine
             output_dir: Directory to save plots
+            close: If True, close the figure after saving it; see module
+                docstring.
 
         Returns:
             Matplotlib figure
@@ -1402,22 +1494,22 @@ class TrajectoryVisualizer:
 
         plt.tight_layout()
 
-        if output_dir:
-            output_dir.mkdir(parents=True, exist_ok=True)
-            plt.savefig(output_dir / 'nonlinear_dynamics.png', dpi=self.config.dpi, bbox_inches='tight')
-            logger.info(f"Saved nonlinear dynamics plot to {output_dir / 'nonlinear_dynamics.png'}")
+        self._save(fig, output_dir, 'nonlinear_dynamics.png', close=close)
 
         return fig
 
     def plot_information_theory(self,
                               information_result,
-                              output_dir: Optional[Path] = None) -> Figure:
+                              output_dir: Optional[Path] = None,
+                              close: bool = False) -> Figure:
         """
         Plot information theory analysis results.
 
         Parameters:
             information_result: InformationResult from analytics engine
             output_dir: Directory to save plots
+            close: If True, close the figure after saving it; see module
+                docstring.
 
         Returns:
             Matplotlib figure
@@ -1474,22 +1566,22 @@ class TrajectoryVisualizer:
 
         plt.tight_layout()
 
-        if output_dir:
-            output_dir.mkdir(parents=True, exist_ok=True)
-            plt.savefig(output_dir / 'information_theory.png', dpi=self.config.dpi, bbox_inches='tight')
-            logger.info(f"Saved information theory plot to {output_dir / 'information_theory.png'}")
+        self._save(fig, output_dir, 'information_theory.png', close=close)
 
         return fig
 
     def plot_robust_statistics(self,
                               robust_result,
-                              output_dir: Optional[Path] = None) -> Figure:
+                              output_dir: Optional[Path] = None,
+                              close: bool = False) -> Figure:
         """
         Plot robust statistics analysis results.
 
         Parameters:
             robust_result: RobustResult from analytics engine
             output_dir: Directory to save plots
+            close: If True, close the figure after saving it; see module
+                docstring.
 
         Returns:
             Matplotlib figure
@@ -1549,17 +1641,15 @@ class TrajectoryVisualizer:
 
         plt.tight_layout()
 
-        if output_dir:
-            output_dir.mkdir(parents=True, exist_ok=True)
-            plt.savefig(output_dir / 'robust_statistics.png', dpi=self.config.dpi, bbox_inches='tight')
-            logger.info(f"Saved robust statistics plot to {output_dir / 'robust_statistics.png'}")
+        self._save(fig, output_dir, 'robust_statistics.png', close=close)
 
         return fig
     
     def plot_comprehensive_trajectories(self,
                                       jump_rope_model,
                                       time_points: Optional[List[float]] = None,
-                                      output_dir: Optional[Path] = None) -> Figure:
+                                      output_dir: Optional[Path] = None,
+                                      close: bool = False) -> Figure:
         """
         Create comprehensive multi-panel trajectory visualization.
 
@@ -1567,6 +1657,8 @@ class TrajectoryVisualizer:
             jump_rope_model: JumpRope model with trajectories
             time_points: Time points for cross-sectional analysis
             output_dir: Directory to save plots
+            close: If True, close the figure after saving it; see module
+                docstring.
 
         Returns:
             Matplotlib figure with multiple panels
@@ -1590,12 +1682,11 @@ class TrajectoryVisualizer:
                     alpha=0.3, linewidth=0.5,
                     color=self.config.colors[i % len(self.config.colors)])
 
-        mean_trajectory = np.mean(trajectories, axis=0)
+        mean_trajectory, lo_sd, hi_sd, sd_label = _mean_ci_band(
+            trajectories, kind='sd')
         ax1.plot(time_points_all, mean_trajectory, 'k-', linewidth=3, label='Mean')
-        ax1.fill_between(time_points_all,
-                        mean_trajectory - np.std(trajectories, axis=0),
-                        mean_trajectory + np.std(trajectories, axis=0),
-                        alpha=0.3, color='gray', label='±1 SD')
+        ax1.fill_between(time_points_all, lo_sd, hi_sd,
+                        alpha=0.3, color='gray', label=sd_label)
         ax1.set_xlabel('Developmental Time')
         ax1.set_ylabel('Phenotype Value')
         ax1.set_title('Individual Trajectories\nwith Mean ± SD')
@@ -1636,11 +1727,7 @@ class TrajectoryVisualizer:
 
         plt.tight_layout()
 
-        if output_dir:
-            output_dir.mkdir(parents=True, exist_ok=True)
-            plt.savefig(output_dir / 'comprehensive_trajectories.png',
-                       dpi=self.config.dpi, bbox_inches='tight')
-            logger.info(f"Saved comprehensive trajectories to {output_dir / 'comprehensive_trajectories.png'}")
+        self._save(fig, output_dir, 'comprehensive_trajectories.png', close=close)
 
         return fig
 
@@ -1761,7 +1848,10 @@ class TrajectoryVisualizer:
 
         # Sample for visualization
         n_samples = min(1000, phenotype_values.size)
-        indices = np.random.choice(phenotype_values.size, n_samples, replace=False)
+        # Seeded generator: the comprehensive figure stays reproducible
+        # run-to-run, consistent with the fixed landscape camera angles.
+        indices = np.random.default_rng(0).choice(
+            phenotype_values.size, n_samples, replace=False)
 
         scatter = ax.scatter(phenotype_values.flatten()[indices],
                            derivatives.flatten()[indices],
@@ -1858,6 +1948,26 @@ class TrajectoryVisualizer:
         ax.legend()
         ax.grid(True, alpha=0.3)
 
+    @staticmethod
+    def _trajectory_sort_order(trajectories: np.ndarray,
+                               statistic: str) -> np.ndarray:
+        """Return the permutation ordering trajectories by ``statistic``.
+
+        Supported statistics: 'final_value', 'mean_value', 'max_value',
+        'min_value' (NaNs are ignored for the mean/max/min statistics).
+        """
+        if statistic == 'final_value':
+            stat = trajectories[:, -1]
+        elif statistic == 'mean_value':
+            stat = np.nanmean(trajectories, axis=1)
+        elif statistic == 'max_value':
+            stat = np.nanmax(trajectories, axis=1)
+        elif statistic == 'min_value':
+            stat = np.nanmin(trajectories, axis=1)
+        else:
+            raise ValueError(f"Unknown row_sort_statistic: {statistic!r}")
+        return np.argsort(stat)
+
     def plot_heatmap(self,
                     jump_rope_model,
                     time_resolution: int = 50,
@@ -1867,7 +1977,8 @@ class TrajectoryVisualizer:
                     sort_rows: bool = True,
                     row_sort_statistic: str = 'final_value',
                     x_label: Optional[str] = None,
-                    y_label: Optional[str] = None) -> Union[Figure, go.Figure]:
+                    y_label: Optional[str] = None,
+                    close: bool = False) -> Union[Figure, go.Figure]:
         """
         Plot density heatmap of trajectory evolution.
 
@@ -1888,6 +1999,8 @@ class TrajectoryVisualizer:
                 when discoverable, else 'Developmental Time'.
             y_label: Y-axis label; defaults to the model's phenotype-column
                 name when discoverable, else 'Phenotype Value'.
+            close: If True, close the matplotlib figure right after saving
+                it (static plots only); see module docstring.
 
         Returns:
             Matplotlib or Plotly figure
@@ -1909,30 +2022,15 @@ class TrajectoryVisualizer:
         if sort_rows:
             # Reorder trajectories by the documented statistic so readers can
             # track cohort structure across the heatmap.
-            if row_sort_statistic == 'final_value':
-                stat = trajectories[:, -1]
-            elif row_sort_statistic == 'mean_value':
-                stat = np.nanmean(trajectories, axis=1)
-            elif row_sort_statistic == 'max_value':
-                stat = np.nanmax(trajectories, axis=1)
-            else:
-                stat = np.nanmin(trajectories, axis=1)
-            order = np.argsort(stat)
+            order = self._trajectory_sort_order(trajectories, row_sort_statistic)
             trajectories = trajectories[order]
-
-        def _label(default: str, explicit: Optional[str]) -> str:
-            if explicit:
-                return explicit
-            # Prefer a real column name from the source data when available.
-            for attr in ('time_column', 'phenotype_columns'):
-                if hasattr(jump_rope_model, attr):
-                    continue
-            return default
 
         time_label = x_label
         pheno_label = y_label
         if time_label is None:
-            ts_list = getattr(jump_rope_model, '_source_time_series', None) or                       getattr(jump_rope_model, 'time_series_data', None) or []
+            ts_list = (getattr(jump_rope_model, '_source_time_series', None)
+                       or getattr(jump_rope_model, 'time_series_data', None)
+                       or [])
             for ts in ts_list:
                 time_label = getattr(ts, 'time_column', None)
                 if time_label:
@@ -1941,13 +2039,17 @@ class TrajectoryVisualizer:
         if pheno_label is None:
             pheno_label = 'Phenotype Value'
 
-        # Remove NaN values
-        trajectories_clean = np.nan_to_num(trajectories, nan=0.0, posinf=0.0, neginf=0.0)
+        # Drop non-finite values instead of imputing them (e.g. to 0):
+        # imputation fabricates data mass at phenotype 0, drags the phenotype
+        # extent toward 0, and pollutes every histogram column.
+        finite_values = trajectories[np.isfinite(trajectories)]
+        if finite_values.size == 0:
+            raise ValueError("No finite phenotype values available for heatmap.")
 
         # Create time and phenotype grids
         time_edges = np.linspace(time_points.min(), time_points.max(), time_resolution + 1)
-        phenotype_min = np.nanmin(trajectories_clean)
-        phenotype_max = np.nanmax(trajectories_clean)
+        phenotype_min = float(finite_values.min())
+        phenotype_max = float(finite_values.max())
 
         # Handle case where all values are the same
         if np.isclose(phenotype_min, phenotype_max):
@@ -1964,8 +2066,11 @@ class TrajectoryVisualizer:
             t_center = (time_edges[t_idx] + time_edges[t_idx + 1]) / 2
             closest_time_idx = np.argmin(np.abs(time_points - t_center))
 
-            # Get trajectory values at this time
-            values_at_time = trajectories_clean[:, closest_time_idx]
+            # Keep only finite trajectory values at this time
+            values_at_time = trajectories[:, closest_time_idx]
+            values_at_time = values_at_time[np.isfinite(values_at_time)]
+            if values_at_time.size == 0:
+                continue
 
             # Compute histogram
             hist, _ = np.histogram(values_at_time, bins=phenotype_edges)
@@ -1988,10 +2093,7 @@ class TrajectoryVisualizer:
                 height=600
             )
 
-            if output_dir:
-                output_dir.mkdir(parents=True, exist_ok=True)
-                fig.write_html(output_dir / 'density_heatmap.html')
-                logger.info(f"Saved interactive heatmap to {output_dir / 'density_heatmap.html'}")
+            self._save(fig, output_dir, 'density_heatmap.html')
 
             return fig
         else:
@@ -2011,17 +2113,15 @@ class TrajectoryVisualizer:
             cbar = plt.colorbar(im, ax=ax)
             cbar.set_label('Trajectory Density', rotation=270, labelpad=20)
 
-            if output_dir:
-                output_dir.mkdir(parents=True, exist_ok=True)
-                plt.savefig(output_dir / 'density_heatmap.png', dpi=self.config.dpi, bbox_inches='tight')
-                logger.info(f"Saved heatmap to {output_dir / 'density_heatmap.png'}")
+            self._save(fig, output_dir, 'density_heatmap.png', close=close)
 
             return fig
     
     def plot_violin(self,
                    jump_rope_model,
                    time_points: Optional[List[float]] = None,
-                   output_dir: Optional[Path] = None) -> Figure:
+                   output_dir: Optional[Path] = None,
+                   close: bool = False) -> Figure:
         """
         Plot violin plots showing distribution at multiple time points.
         
@@ -2029,6 +2129,8 @@ class TrajectoryVisualizer:
             jump_rope_model: JumpRope model with trajectories
             time_points: Specific time points to plot (if None, use evenly spaced)
             output_dir: Directory to save plots
+            close: If True, close the figure after saving it; see module
+                docstring.
         
         Returns:
             Matplotlib figure
@@ -2078,17 +2180,15 @@ class TrajectoryVisualizer:
         
         plt.tight_layout()
         
-        if output_dir:
-            output_dir.mkdir(parents=True, exist_ok=True)
-            plt.savefig(output_dir / 'violin_plots.png', dpi=self.config.dpi, bbox_inches='tight')
-            logger.info(f"Saved violin plots to {output_dir / 'violin_plots.png'}")
+        self._save(fig, output_dir, 'violin_plots.png', close=close)
         
         return fig
     
     def plot_ridge(self,
                   jump_rope_model,
                   n_distributions: int = 10,
-                  output_dir: Optional[Path] = None) -> Figure:
+                  output_dir: Optional[Path] = None,
+                  close: bool = False) -> Figure:
         """
         Plot ridge plot (joyplot) showing distribution evolution over time.
         
@@ -2096,6 +2196,8 @@ class TrajectoryVisualizer:
             jump_rope_model: JumpRope model with trajectories
             n_distributions: Number of distributions to show
             output_dir: Directory to save plots
+            close: If True, close the figure after saving it; see module
+                docstring.
         
         Returns:
             Matplotlib figure
@@ -2167,10 +2269,7 @@ class TrajectoryVisualizer:
         fig.suptitle('Phenotype Distribution Evolution (Ridge Plot)', fontsize=16, y=0.995)
         plt.tight_layout()
         
-        if output_dir:
-            output_dir.mkdir(parents=True, exist_ok=True)
-            plt.savefig(output_dir / 'ridge_plot.png', dpi=self.config.dpi, bbox_inches='tight')
-            logger.info(f"Saved ridge plot to {output_dir / 'ridge_plot.png'}")
+        self._save(fig, output_dir, 'ridge_plot.png', close=close)
         
         return fig
     
@@ -2178,7 +2277,8 @@ class TrajectoryVisualizer:
                            jump_rope_model,
                            derivative_method: str = 'finite_difference',
                            output_dir: Optional[Path] = None,
-                           interactive: bool = False) -> Union[Figure, go.Figure]:
+                           interactive: bool = False,
+                           close: bool = False) -> Union[Figure, go.Figure]:
         """
         Plot phase portrait (phenotype vs. rate of change).
         
@@ -2187,6 +2287,8 @@ class TrajectoryVisualizer:
             derivative_method: Method to compute derivatives ('finite_difference', 'spline')
             output_dir: Directory to save plots
             interactive: Create interactive plot
+            close: If True, close the figure after saving it; see module
+                docstring.
         
         Returns:
             Matplotlib or Plotly figure
@@ -2247,10 +2349,7 @@ class TrajectoryVisualizer:
                 height=600
             )
             
-            if output_dir:
-                output_dir.mkdir(parents=True, exist_ok=True)
-                fig.write_html(output_dir / 'phase_portrait.html')
-                logger.info(f"Saved interactive phase portrait to {output_dir / 'phase_portrait.html'}")
+            self._save(fig, output_dir, 'phase_portrait.html')
             
             return fig
         else:
@@ -2271,9 +2370,6 @@ class TrajectoryVisualizer:
             ax.grid(True, alpha=0.3)
             ax.axhline(y=0, color='black', linestyle='--', alpha=0.5)
             
-            if output_dir:
-                output_dir.mkdir(parents=True, exist_ok=True)
-                plt.savefig(output_dir / 'phase_portrait.png', dpi=self.config.dpi, bbox_inches='tight')
-                logger.info(f"Saved phase portrait to {output_dir / 'phase_portrait.png'}")
+            self._save(fig, output_dir, 'phase_portrait.png', close=close)
             
             return fig

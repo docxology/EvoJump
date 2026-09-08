@@ -149,6 +149,7 @@ Examples:
     analyze_parser.add_argument(
         '--output', '-o',
         type=Path,
+        default=argparse.SUPPRESS,
         help='Output directory for results'
     )
 
@@ -170,6 +171,11 @@ Examples:
         help='Type of stochastic process model'
     )
     fit_parser.add_argument(
+        '--time-column',
+        default='time',
+        help='Name of time column in data'
+    )
+    fit_parser.add_argument(
         '--output-model',
         type=Path,
         help='Output file for fitted model'
@@ -177,6 +183,7 @@ Examples:
     fit_parser.add_argument(
         '--output', '-o',
         type=Path,
+        default=argparse.SUPPRESS,
         help='Output file (alias for --output-model) or directory for the fitted model'
     )
 
@@ -204,6 +211,7 @@ Examples:
     visualize_parser.add_argument(
         '--output', '-o',
         type=Path,
+        default=argparse.SUPPRESS,
         help='Output directory for plots'
     )
 
@@ -231,8 +239,14 @@ Examples:
         help='Sampling method'
     )
     sample_parser.add_argument(
+        '--time-column',
+        default='time',
+        help='Name of time column in data'
+    )
+    sample_parser.add_argument(
         '--output', '-o',
         type=Path,
+        default=argparse.SUPPRESS,
         help='Output file for samples'
     )
 
@@ -243,8 +257,6 @@ def setup_logging(verbosity: int) -> None:
     """Set up logging based on verbosity level."""
     if verbosity == 0:
         level = logging.INFO
-    elif verbosity == 1:
-        level = logging.INFO
     else:
         level = logging.DEBUG
 
@@ -252,8 +264,10 @@ def setup_logging(verbosity: int) -> None:
     # applications (and test harnesses) keep control of root logging.
     logging.getLogger('evojump').setLevel(level)
 
-    # Configure specific loggers
-    logging.getLogger('evojump').setLevel(level)
+    if verbosity >= 2:
+        # -vv: also surface DEBUG records from the libraries the CLI drives.
+        for name in ('matplotlib', 'pandas', 'plotly'):
+            logging.getLogger(name).setLevel(logging.DEBUG)
 
 
 def analyze_command(args: argparse.Namespace) -> int:
@@ -289,7 +303,7 @@ def analyze_command(args: argparse.Namespace) -> int:
             output_dir.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
             logger.error(f"Analysis failed: cannot create output directory {output_dir}: {exc}")
-            raise SystemExit(1) from exc
+            return 1
 
         # Save results
         data.save_processed_data(output_dir / "processed_data.csv")
@@ -316,7 +330,10 @@ def analyze_command(args: argparse.Namespace) -> int:
                 for k, v in vars(model.fitted_parameters).items()
                 if isinstance(v, (int, float, np.ndarray))
             } if model.fitted_parameters is not None else {},
-            'n_trajectories_generated': 0,
+            'n_trajectories_generated': (
+                0 if getattr(model, 'trajectories', None) is None
+                else len(model.trajectories)
+            ),
         }
         (output_dir / 'analysis_results.json').write_text(
             _json.dumps(analysis_results, indent=2, default=str))
@@ -327,7 +344,7 @@ def analyze_command(args: argparse.Namespace) -> int:
 
     except FileNotFoundError as e:
         logger.error(f"Analysis failed: {e}")
-        raise SystemExit(1) from e
+        return 1
     except Exception as e:
         logger.error(f"Analysis failed: {e}")
         return 1
@@ -341,7 +358,8 @@ def fit_command(args: argparse.Namespace) -> int:
         _validate_input_file(args.data_file, "csv")
 
         # Load data
-        data = datacore.DataCore.load_from_csv(args.data_file)
+        data = datacore.DataCore.load_from_csv(
+            args.data_file, time_column=args.time_column)
 
         # Fit model
         model = jumprope.JumpRope.fit(data, model_type=args.model_type, seed=0)
@@ -383,20 +401,21 @@ def visualize_command(args: argparse.Namespace) -> int:
 
         visualizer = trajectory_visualizer.TrajectoryVisualizer()
 
+        fig = None
         if args.plot_type == 'trajectories':
-            visualizer.plot_trajectories(
+            fig = visualizer.plot_trajectories(
                 model,
                 output_dir=output_dir,
                 interactive=args.interactive
             )
         elif args.plot_type == 'cross-sections':
-            visualizer.plot_cross_sections(
+            fig = visualizer.plot_cross_sections(
                 model,
                 output_dir=output_dir,
                 interactive=args.interactive
             )
         elif args.plot_type == 'landscapes':
-            visualizer.plot_landscapes(
+            fig = visualizer.plot_landscapes(
                 model,
                 output_dir=output_dir,
                 interactive=args.interactive
@@ -406,6 +425,13 @@ def visualize_command(args: argparse.Namespace) -> int:
                 model,
                 output_dir=output_dir
             )
+
+        # Interactive branches return a Plotly figure and never touch
+        # output_dir themselves; persist it as a self-contained HTML file.
+        if fig is not None and hasattr(fig, 'write_html'):
+            html_path = output_dir / f'{args.plot_type}.html'
+            fig.write_html(str(html_path))
+            logger.info(f"Saved interactive plot to {html_path}")
 
         logger.info(f"Visualization complete. Plots saved to {output_dir}")
         return 0
@@ -420,8 +446,11 @@ def sample_command(args: argparse.Namespace) -> int:
     try:
         logger.info(f"Sampling from {args.population_file}")
 
+        _validate_input_file(args.population_file, "csv")
+
         # Load population data
-        population = datacore.DataCore.load_from_csv(args.population_file)
+        population = datacore.DataCore.load_from_csv(
+            args.population_file, time_column=args.time_column)
 
         # Sample
         sampler = evolution_sampler.EvolutionSampler(population)

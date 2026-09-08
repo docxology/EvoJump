@@ -1,255 +1,334 @@
 Changelog
 =========
 
-This document tracks changes, improvements, and bug fixes across EvoJump versions.
+This document tracks changes, improvements, and bug fixes across EvoJump
+versions.
 
-Version 0.1.0 (2024-12-XX)
----------------------------
+.. note::
+   The authoritative changelog is ``CHANGELOG.md`` at the repository root;
+   this page is a synced snapshot for the Sphinx docs. Edit ``CHANGELOG.md``
+   and re-sync here at release time.
 
-**🎉 Initial Release**
+The format is based on `Keep a Changelog <https://keepachangelog.com/en/1.0.0/>`_,
+and the project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0.html>`_.
 
-**Core Features**
-  * Complete data management pipeline with DataCore module
-  * Jump-diffusion stochastic modeling with JumpRope engine
-  * Cross-sectional analysis with LaserPlane analyzer
-  * Advanced visualization system with TrajectoryVisualizer
-  * Population-level analysis with EvolutionSampler
-  * Comprehensive analytics engine with advanced statistical methods
+Unreleased
+----------
 
-**New Modules**
-  * ``evojump.datacore`` - Data ingestion, validation, and preprocessing
-  * ``evojump.jumprope`` - Jump-diffusion modeling for developmental trajectories
-  * ``evojump.laserplane`` - Cross-sectional analysis algorithms
-  * ``evojump.trajectory_visualizer`` - Advanced visualization system
-  * ``evojump.evolution_sampler`` - Population-level analysis
-  * ``evojump.analytics_engine`` - Comprehensive statistical analysis
-  * ``evojump.cli`` - Command-line interface
+Changed
+~~~~~~~
+* Updated license from MIT to Apache License 2.0
 
-**Stochastic Process Models**
-  * Ornstein-Uhlenbeck with jumps
-  * Geometric jump-diffusion
-  * Compound Poisson processes
-  * Extensible stochastic process framework
+Docs (2026-08-30 documentation deep pass)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+* README: removed fictional ``run_all_tests.py`` flags (``--all``, ``--benchmark``,
+  ``--profile``, ``--memory``, ``--lint``, ``--docs`` all fail with pytest
+  "unrecognized arguments"); documented the wrapper's real forward-to-pytest
+  contract and canonical ``.venv/bin/python -m pytest`` invocations.
+* README: badge block and all repo URLs corrected from the nonexistent
+  ``github.com/evojump/evojump`` to ``github.com/docxology/EvoJump``; unverifiable
+  CI/coveralls/PyPI/RTD badges removed; Python 3.9+ packaging bound stated.
+* README: Quick Start verified by execution (runs verbatim under the venv).
+* docs: API reference now lists FBM/CIR/Levy process classes and the
+  ``shortest_path_analysis``, ``wavelet_analysis``, ``copula_analysis``,
+  ``extreme_value_analysis``, ``regime_switching_analysis`` methods (all verified
+  present in source); Sphinx version bumped to 0.2.0.
+* docs/troubleshooting: added verified v0.2.0 gotchas — SciPy >= 1.15
+  two-sample ``kstest`` breakage (use frozen CDFs), ``uv run`` stalls under heavy
+  load (invoke ``.venv/bin/python`` directly), pandas 3.x numeric-dtype
+  selection in DataCore.
+* docs: Python 3.9+ (not 3.8+) across installation/architecture/contributing/
+  api_reference; JumpRope documented as seven stochastic processes.
 
-**Analysis Methods**
-  * Time series analysis with trend detection and seasonality analysis
-  * Multivariate statistics including PCA, CCA, and cluster analysis
-  * Bayesian inference with credible intervals and model comparison
-  * Network analysis with centrality measures and community detection
-  * Causal inference using Granger causality testing
-  * Advanced dimensionality reduction (FastICA, t-SNE)
-  * Spectral analysis for frequency domain insights
-  * Nonlinear dynamics analysis (Lyapunov exponents)
-  * Information theory analysis (entropy measures)
-  * Robust statistical methods resistant to outliers
-  * Spatial analysis (Moran's I autocorrelation)
+0.2.0 (2026-08-30) — audit & hardening pass
+-------------------------------------------
 
-**Visualization Capabilities**
-  * Interactive 3D phenotypic landscape visualization
-  * Animated developmental process sequences
-  * Comparative multi-condition trajectory visualization
-  * Publication-quality static plots
-  * Real-time statistical analysis interface
+Fixed
+~~~~~
+* **Packaging**: ``requires-python`` bounded to ``>=3.9,<3.15``; ``cupy-cuda12`` extra
+  marker restricted to ``python_full_version < 3.14`` on linux x86_64 and uv
+  ``environments`` limited to darwin/linux so resolution succeeds; setuptools
+  package discovery fixed (``where = ["src"]``) — installs were broken before.
+* **JumpRope**: OU and geometric jump-diffusion log-likelihoods replaced with
+  exact Poisson-jump Gaussian mixtures (previously ignored jump probability
+  mass); compound-Poisson likelihood now exact (previously only ``-lambda*dt``);
+  all processes accept a seeded ``Generator`` — ``JumpRope.fit(seed=...)`` and
+  ``generate_trajectories(seed=...)`` are reproducible; unused ``numba``/``cuda``
+  import removed (no GPU code exists despite the extra).
+* **EvolutionSampler**: importance sampling now uses real exponential-tilt
+  weights with systematic resampling and records effective sample size;
+  MCMC is a real Metropolis-Hastings chain and records acceptance rate
+  (previously both silently aliased plain Monte Carlo); phylogenetic signal
+  computed as Moran's I on the distance matrix (previously hardcoded 0.0);
+  parent-offspring heritability refuses row-order pseudo-pedigrees and
+  returns NaN with a warning unless explicit ``parent``/``offspring`` columns
+  exist.
+* **AnalyticsEngine**: Kaplan-Meier now produces Nelson-Aalen hazards,
+  Greenwood CIs, and a true KM median (previously hazard = constant 0.1
+  placeholder, median = plain median of times); largest Lyapunov exponent via
+  the Rosenstein method and correlation dimension via Grassberger-Procaccia
+  slopes (previously hardcoded placeholders); Bayesian linear regression uses
+  the conjugate Normal-Inverse-Gamma posterior with split R-hat and a real
+  log-evidence approximation (previously fake ``r_hat=1.0``, evidence ``0.0``).
+* **CLI**: ``visualize`` subcommand called instance methods on the class and
+  crashed with TypeError; now instantiates ``TrajectoryVisualizer``, generates
+  trajectories on demand, and forces the Agg backend headless; ``fit``/``analyze``
+  ``--model-type`` choices extended to all seven supported processes; missing
+  ``_validate_input_file`` implemented (strict ``.csv`` suffix, FileNotFoundError
+  -> exit 1); ``--output`` accepted after subcommands (analyze/fit/visualize/
+  sample) with global fallback; ``--samples`` alias for ``--n-samples``; analyze
+  writes ``analysis_results.json`` + ``data_summary.json``; sample output uses
+  real phenotype column names in long format; ``fit`` seeds the model.
+* **Drosophila case study**: ``DrosophilaPopulation.generations`` default
+  restored to 10 (demo passes 100 explicitly); generated table now carries
+  ``genotype`` (0/1), ``phenotype``, and ``allele_frequency`` columns matching the
+  documented analysis contract; ``individual_id`` kept as object dtype;
+  boolean assessors return real Python bools (previously ``np.bool_``).
+* **DataCore/JumpRope edge cases**: ``DataCore`` accepts (and defers on) empty
+  series — ``JumpRope.fit`` raises a clear error for empty data; unfitted
+  ``JumpRope.generate_trajectories`` falls back to the process's own parameters;
+  laserplane KS test uses frozen CDFs (scipy >= 1.15 name+args breakage).
+* **Flake control**: seeded the stochastic Levy heavy-tail test.
+* **DataCore**: missing-data interpolation is temporally ordered (sort by
+  time, interpolate, restore order) so results are row-order independent;
+  ``dataset_id`` in aggregation is stable instead of ``id()``-based.
+* **TrajectoryVisualizer**: animation axes fixed across frames (previously
+  rescaled per frame); frame CI documented as the SEM band it computes.
+* **README**: capability claims aligned with actual implementations (UMAP,
+  deep learning, AutoML, real-time claims removed).
 
-**Command Line Interface**
-  * ``evojump-cli analyze`` - Analyze developmental trajectories
-  * ``evojump-cli fit`` - Fit stochastic process models
-  * ``evojump-cli visualize`` - Create visualizations
-  * ``evojump-cli sample`` - Sample from evolutionary populations
+Added
+~~~~~
+* ``tests/test_audit_regression_2026_08_30.py``: 17 regression tests covering
+  every fix above (real data/computation, no mocks).
+* ``NetworkAnalyzer.shortest_path_analysis()`` (weighted + unweighted shortest
+  paths; ``construct_correlation_network`` now persists the graph — previously
+  it was computed and discarded).
+* CLI input validation (``_validate_input_file``), structured
+  ``analysis_results.json`` / ``data_summary.json`` outputs, subcommand-level
+  ``--output``/``--samples`` aliases, on-demand trajectory generation in
+  ``visualize``, and headless-safe logging configuration (package logger, not
+  root).
 
-**Testing and Quality**
-  * Comprehensive test suite with enforced coverage floor (pyproject pytest addopts)
-  * Real data testing (no mocks)
-  * Integration testing across modules
-  * Performance benchmarking
-  * Continuous integration pipeline
+Changed
+~~~~~~~
+* Coverage gate set to an honestly measured 68% floor (the previous 95% gate
+  was aspirational and unmet by every recorded run; visualizer module is at
+  34%).
 
-**Documentation**
-  * Complete user guide with examples
-  * API reference documentation
-  * Installation and troubleshooting guides
-  * Contributing guidelines
-  * Architecture overview
+0.1.0 (2024-10-01)
+------------------
 
-**Examples and Tutorials**
-  * Basic usage demonstration
-  * Advanced analytics examples
-  * Visualization tutorials
-  * Orchestration patterns
-  * Real-world use cases
+Added
+~~~~~
 
-**Performance Optimizations**
-  * Vectorized operations using NumPy
-  * Memory-efficient algorithms
-  * Parallel processing support
-  * Caching strategies
-  * GPU acceleration capabilities
+Core Framework
+""""""""""""""
+* **DataCore Module**: Complete data management system
+  - Time series data ingestion and validation
+  - Multiple data format support (CSV, HDF5, SQL)
+  - Data preprocessing and quality control
+  - Missing data interpolation methods
+  - Outlier detection and removal
+  - Normalization methods (z-score, min-max, robust)
+  - Metadata management system
 
-**Breaking Changes**
-  * None (initial release)
+* **JumpRope Engine**: Stochastic process modeling
+  - Jump-diffusion model implementation
+  - Ornstein-Uhlenbeck process
+  - Geometric jump-diffusion
+  - Compound Poisson process
+  - Fractional Brownian Motion (FBM)
+  - Cox-Ingersoll-Ross (CIR) process
+  - Lévy processes
+  - Parameter estimation and model fitting
+  - Trajectory generation and simulation
+  - Cross-section computation
 
-**Known Issues**
-  * Some advanced analytics methods are placeholder implementations
-  * GPU acceleration requires additional setup
-  * Large dataset processing may require memory optimization
+* **LaserPlane Analyzer**: Cross-sectional analysis
+  - Distribution fitting (normal, lognormal, gamma, beta, etc.)
+  - Statistical comparison methods (KS test, Mann-Whitney, etc.)
+  - Moment analysis and confidence intervals
+  - Bootstrap analysis
+  - Goodness-of-fit assessment
+  - Quantile estimation
 
-**Migration Guide**
-  * None (initial release)
+* **TrajectoryVisualizer**: Advanced visualization system
+  - Static trajectory plotting
+  - Animated trajectory sequences
+  - Cross-section visualizations
+  - Density heatmaps
+  - Violin plots for distribution evolution
+  - Ridge plots (joyplots) for temporal distributions
+  - Phase portraits
+  - Landscape analysis plots
+  - Model comparison visualizations
+  - Publication-quality graphics export
 
-Version 0.0.x (Development)
----------------------------
+* **AnalyticsEngine**: Statistical analysis suite
+  - Time series analysis (trends, seasonality, change points)
+  - ARIMA modeling
+  - Multivariate analysis (PCA, CCA, cluster analysis)
+  - Dimensionality reduction (t-SNE, UMAP)
+  - Predictive modeling (random forest, cross-validation)
+  - Wavelet analysis
+  - Copula methods
+  - Extreme value theory
+  - Regime switching detection
+  - Bayesian inference and model comparison
+  - Network analysis and community detection
+  - Causal inference methods
 
-**Pre-release development versions with incremental feature additions.**
+* **EvolutionSampler**: Population-level analysis
+  - Population dynamics modeling
+  - Heritability estimation
+  - Selection gradient computation
+  - Effective population size estimation
+  - Monte Carlo and MCMC sampling
+  - Phylogenetic comparative methods
+  - Quantitative genetics approaches
+  - Selective sweep detection
 
-**0.0.9 (Unreleased)**
-  * Enhanced error handling and validation
-  * Improved documentation and examples
-  * Performance optimizations
-  * Bug fixes and stability improvements
+* **CLI Interface**: Command-line tools
+  - Data analysis workflows
+  - Model fitting automation
+  - Visualization generation
+  - Batch processing support
 
-**0.0.8**
-  * Added advanced analytics methods
-  * Improved visualization capabilities
-  * Enhanced command-line interface
-  * Performance optimizations
+Testing Framework
+"""""""""""""""""
+* **173 test methods** across 8 comprehensive test suites
+* **95%+ code coverage** requirement
+* **Real data testing** - no mocks, biological/synthetic data only
+* **Integration testing** - cross-module validation
+* **Performance validation** - large dataset testing
+* **Multiple testing modes**: quick, full, benchmark, CI/CD
+* Test files:
 
-**0.0.7**
-  * Added population-level analysis
-  * Improved stochastic process modeling
-  * Enhanced cross-sectional analysis
-  * Added comprehensive testing
+  - ``test_datacore.py`` - 24 tests
+  - ``test_jumprope.py`` - 22 tests
+  - ``test_laserplane.py`` - 25 tests
+  - ``test_trajectory_visualizer.py`` - 19 tests
+  - ``test_analytics_engine.py`` - 39 tests
+  - ``test_evolution_sampler.py`` - 21 tests
+  - ``test_advanced_features.py`` - 23 tests
+  - ``test_cli.py`` - 20 tests
 
-**0.0.6**
-  * Added trajectory visualization
-  * Improved data preprocessing
-  * Enhanced model fitting algorithms
-  * Added more stochastic process types
+Documentation
+"""""""""""""
+* Comprehensive README with installation, usage, and examples
+* Testing framework documentation (AGENTS.md)
+* API reference documentation
+* User guides and tutorials
+* Scientific methodology documentation
+* Architecture documentation
+* Contributing guidelines
+* Troubleshooting guide
 
-**0.0.5**
-  * Added cross-sectional analysis
-  * Improved data validation
-  * Enhanced model parameter estimation
-  * Added basic visualization
+Examples
+""""""""
+* Basic usage examples
+* Advanced features demonstrations
+* Animation examples
+* Comprehensive analytics demos
+* Drosophila case study
+* Performance benchmarks
+* Orchestrator examples
 
-**0.0.4**
-  * Added stochastic process modeling
-  * Improved data structures
-  * Enhanced parameter fitting
-  * Added basic analysis methods
+Scientific Applications
+~~~~~~~~~~~~~~~~~~~~~~~
+* Developmental biology trajectory analysis
+* Evolutionary biology population dynamics
+* Quantitative genetics analysis
+* Agricultural research optimization
+* Medical research and biomarker discovery
+* Systems biology complex trait modeling
 
-**0.0.3**
-  * Added data preprocessing
-  * Improved data validation
-  * Enhanced metadata management
-  * Added basic model fitting
+Key Features
+~~~~~~~~~~~~
+* Novel "cross-sectional laser" metaphor for developmental analysis
+* Multiple stochastic process implementations for biological modeling
+* Advanced statistical and machine learning methods
+* Rich visualization capabilities (static, animated, interactive)
+* Scientific rigor with comprehensive validation
+* Extensible modular architecture
+* High-performance computing support
 
-**0.0.2**
-  * Added basic data structures
-  * Implemented data loading
-  * Added simple validation
-  * Created project structure
+Performance
+~~~~~~~~~~~
+* Efficient vectorized operations using NumPy
+* Optional GPU acceleration support
+* Parallel processing capabilities
+* Memory-efficient data structures
+* Streaming algorithms for large datasets
 
-**0.0.1**
-  * Initial project setup
-  * Basic module structure
-  * Placeholder implementations
-  * Development environment setup
+Dependencies
+~~~~~~~~~~~~
+* Python 3.8+
+* NumPy ≥ 1.21.0
+* SciPy ≥ 1.7.0
+* Pandas ≥ 1.3.0
+* Matplotlib ≥ 3.5.0
+* Plotly ≥ 5.0.0
+* Scikit-learn ≥ 1.0.0
+* PyWavelets ≥ 1.3.0
+* NetworkX ≥ 2.6.0
+* StatsModels ≥ 0.13.0
+* Seaborn ≥ 0.11.0
+* And more (see ``pyproject.toml``)
+
+Release Notes
+-------------
+
+Version 0.1.0 Highlights
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+This initial release represents a complete, production-ready framework for evolutionary ontogenetic analysis. The system has been developed using strict test-driven development (TDD) principles with comprehensive validation at every level.
+
+**Core Innovations**:
+
+1. Novel analytical metaphor connecting developmental and evolutionary biology
+2. Multiple stochastic process implementations for biological modeling
+3. Comprehensive statistical analysis suite adapted for biological data
+4. Advanced visualization system with animation capabilities
+5. Rigorous scientific validation with real data testing
+
+**Quality Assurance**:
+
+* All features developed with comprehensive test coverage
+* 95%+ code coverage maintained across all modules
+* CI/CD ready with automated testing workflows
+* Professional code quality with Black, Flake8, MyPy
+* Performance benchmarks and optimization validation
+
+**Documentation Quality**:
+
+* Module-level docstrings for all components
+* Complete API reference with parameter descriptions
+* Type annotations throughout codebase
+* Usage examples in docstrings and dedicated examples directory
+* Cross-references between related modules
+
+**Scientific Impact**:
+
+The framework provides researchers with novel tools for analyzing developmental and evolutionary processes, comprehensive modeling of complex biological systems, advanced statistical methods, rich visualization for scientific communication, and an extensible framework for custom analyses.
 
 Future Roadmap
 --------------
 
-**Version 0.2.0 (Planned)**
-  * Complete implementation of all placeholder methods
-  * Enhanced GPU acceleration
-  * Improved web interface
-  * Extended R integration
-  * Advanced machine learning features
+Planned Features
+~~~~~~~~~~~~~~~~
+* Deep learning integration for trajectory prediction
+* Real-time analysis dashboard
+* Cloud-based distributed computing support
+* Additional stochastic process models
+* Enhanced phylogenetic methods
+* Integration with genomic databases
+* Interactive web application
 
-**Version 0.3.0 (Planned)**
-  * Distributed computing support
-  * Cloud deployment capabilities
-  * Advanced visualization features
-  * Enhanced real-time analysis
-  * Improved performance optimizations
-
-**Version 1.0.0 (Planned)**
-  * API stability guarantee
-  * Production-ready features
-  * Comprehensive documentation
-  * Extensive test coverage
-  * Community adoption and validation
-
-**Long-term Vision**
-  * Integration with major scientific computing platforms
-  * Support for emerging data formats and standards
-  * Advanced AI/ML integration
-  * Real-time collaborative analysis
-  * Global scientific community adoption
-
-Deprecation Notices
--------------------
-
-**Deprecated Features**
-  * None currently deprecated
-
-**Scheduled for Removal**
-  * None scheduled for removal in v1.0.0
-
-**Migration Timeline**
-  * Breaking changes will be announced 6 months in advance
-  * Migration guides will be provided
-  * Backward compatibility maintained during transition
-
-Versioning Policy
------------------
-
-**Semantic Versioning**
-  * **MAJOR**: Breaking changes, API redesign
-  * **MINOR**: New features, backward compatible
-  * **PATCH**: Bug fixes, performance improvements
-
-**Release Cadence**
-  * **Major releases**: Every 6-12 months
-  * **Minor releases**: Every 1-3 months
-  * **Patch releases**: As needed for critical fixes
-
-**Pre-release Versions**
-  * **Alpha**: Early feature testing
-  * **Beta**: Feature-complete testing
-  * **Release Candidate**: Final validation
-
-**Support Policy**
-  * **Current version**: Full support
-  * **Previous version**: Security fixes only
-  * **Older versions**: Community support
-
-Contributing to Changelog
--------------------------
-
-**How to Add Entries**
-  * Add new entries at the top of the appropriate version section
-  * Use clear, descriptive language
-  * Group related changes together
-  * Include issue/PR references when available
-
-**Entry Format**
-  * **Feature**: Description of new functionality
-  * **Fix**: Description of bug fixes
-  * **Change**: Description of modifications
-  * **Deprecation**: Description of deprecated features
-  * **Removal**: Description of removed features
-
-**Example Entry**
-  * Added ``bayesian_analysis()`` method to AnalyticsEngine for posterior sampling and credible interval calculation
-
-**Categories**
-  * **Core Features**: New major functionality
-  * **Improvements**: Enhancements to existing features
-  * **Bug Fixes**: Corrections to existing functionality
-  * **Documentation**: Documentation updates
-  * **Testing**: Test additions and improvements
-  * **Performance**: Performance optimizations
-  * **API Changes**: API modifications
-  * **Dependencies**: Dependency updates
-
-This changelog provides a comprehensive record of EvoJump's evolution and helps users understand what has changed between versions.
+Under Consideration
+~~~~~~~~~~~~~~~~~~~
+* R language integration
+* Julia language bindings
+* Additional visualization backends
+* Plugin architecture for custom analyses

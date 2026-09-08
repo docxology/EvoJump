@@ -77,7 +77,7 @@ Validated using synthetic data with known dependence structures:
 - Kendall's tau correctly computed for dependence strength
 - Rank-based transformations preserve dependence structure
 
-![Copula analysis of synthetic developmental data showing rank-based scatter plot with Kendall's $\tau = 0.45$ (p < 0.001) indicating significant positive trait dependence between early (t=3.3) and late (t=6.7) developmental phenotypes. The diagonal reference line represents perfect dependence, while points above/below indicate stronger/weaker coupling than expected under independence.\label{fig:copula}](figures/figure_4_copula.png){ width=85% }
+![Copula analysis of synthetic developmental data showing rank-based scatter plot with significant positive rank dependence (Kendall's $\tau \approx 0.5$, p < 0.001, as annotated in the figure by the seeded generation script, seed 42) between early (t=3.3) and late (t=6.7) developmental phenotypes. The diagonal reference line represents perfect dependence, while points above/below indicate stronger/weaker coupling than expected under independence.\label{fig:copula}](figures/figure_4_copula.png){ width=85% }
 
 ### Extreme Value Theory
 
