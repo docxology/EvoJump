@@ -137,16 +137,35 @@ def fit_copula(data1, data2, copula_type='gaussian'):
     u2 = rankdata(data2) / (len(data2) + 1)
 
     if copula_type == 'gaussian':
-        # Gaussian copula parameter
+        # Gaussian copula parameter: correlation of the inverse-normal-
+        # transformed uniforms (maximum likelihood for Gaussian margins)
         z1 = norm.ppf(u1)
         z2 = norm.ppf(u2)
         rho = np.corrcoef(z1, z2)[0, 1]
         return {'rho': rho}
 
+    elif copula_type == 'student':
+        # Student-t copula: rho from Kendall's tau via the exact relation
+        # tau = (2/pi) * arcsin(rho); degrees of freedom from excess
+        # kurtosis (nu = 4 + 6/excess, clamped to [2.1, 100])
+        tau = stats.kendalltau(data1, data2)[0]
+        rho = np.sin(np.pi * tau / 2.0)
+        kurt = 0.5 * (stats.kurtosis(data1) + stats.kurtosis(data2))
+        nu = 4.0 + 6.0 / kurt if kurt > 1e-12 else 100.0
+        return {'rho': rho, 'nu': min(max(nu, 2.1), 100.0)}
+
     elif copula_type == 'clayton':
-        # Clayton copula via Kendall's tau
+        # Clayton copula via Kendall's tau (positive dependence only)
         tau = stats.kendalltau(data1, data2)[0]
         theta = 2 * tau / (1 - tau)
+        return {'theta': theta}
+
+    elif copula_type == 'frank':
+        # Frank copula: exact inversion of the Kendall's tau relation
+        # tau = 1 - 4/theta * (1 - Debye1(theta)), solved by brentq over a
+        # wide positive bracket; sign-flipped for negative tau
+        tau = stats.kendalltau(data1, data2)[0]
+        theta = _frank_theta_from_tau(tau)
         return {'theta': theta}
 ```
 
@@ -273,13 +292,14 @@ def test_ornstein_uhlenbeck_stationary():
 Google-style docstrings throughout:
 
 ```python
-def fit(self, data_core, model_type='jump-diffusion', **kwargs):
+def fit(cls, data_core, model_type='jump-diffusion', seed=None, **kwargs):
     """
     Fit stochastic process model to data.
 
     Parameters:
         data_core: DataCore instance with training data
         model_type: Type of stochastic process
+        seed: Optional seed for reproducible fitting
         **kwargs: Additional model parameters
 
     Returns:
@@ -358,7 +378,7 @@ Each visualization method supports both static (matplotlib) and interactive (Plo
 ```toml
 [project]
 name = "evojump"
-version = "0.1.0"
+version = "0.5.0"
 requires-python = ">=3.9,<3.15"
 dependencies = [
     "numpy>=1.21.0",
@@ -469,6 +489,8 @@ visualizer.plot_comprehensive_trajectories(
     fbm_model,
     output_path='figures/figure_2_comprehensive.png'
 )
+```
+
 
 #### Individual Model Visualizations (Figure 3)
 
@@ -584,7 +606,7 @@ generate_copula_analysis(fbm_model, 'figures/figure_4_copula.png')
 - SciPy 1.7.0 or higher
 - Matplotlib 3.5.0 or higher
 - pandas 1.3.0 or higher
-- EvoJump 0.1.0 or higher
+- EvoJump 0.5.0 or higher
 
 ### Installation
 
@@ -655,6 +677,10 @@ evolution_analysis = sampler.analyze_evolutionary_patterns()
 
 pop_stats = evolution_analysis['population_statistics']
 genetic_params = evolution_analysis['genetic_parameters']
+# Unidentifiable entries (e.g. broad-sense heritability) are np.nan, never
+# placeholders; 'available' records whether the additive/environmental split
+# could be estimated at all (requires a pedigree and replicated time points)
+print(f"Genetic parameters available: {genetic_params['available']}")
 
 print(f"Effective population size: {pop_stats.effective_population_size:.0f}")
 print(f"Mean heritability: {np.mean(list(pop_stats.heritability_estimates.values())):.3f}")

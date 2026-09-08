@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "evojump"
-version = "0.4.0"
+version = "0.5.0"
 description = "A Comprehensive Framework for Evolutionary Ontogenetic Analysis"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 authors = [
-    {name = "EvoJump Development Team"},
+    {name = "Daniel Ari Friedman"},
 ]
 classifiers = [
     "Development Status :: 4 - Beta",

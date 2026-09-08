@@ -25,3 +25,11 @@ from `paper/paper.md` — note `paper/README.md` credits Daniel Ari Friedman
 while `paper/paper.md` lists "EvoJump Development Team"; an owner should
 reconcile that discrepancy) and `references.bib`. Needs owner input before
 any migration; no content was rewritten in this audit.
+
+**Author-identity resolution (2026-09-08):** the owner decided the author
+identity is **Daniel Ari Friedman**, affiliation **Active Inference
+Institute**, ORCID 0000-0001-6232-9096. The discrepancy noted above is
+resolved: `paper/paper.md` YAML now credits Daniel Ari Friedman / Active
+Inference Institute with the ORCID (pandoc-valid author fields), matching
+the author block in `paper/README.md`. Manuscript dated September 2026,
+aligned with the v0.5.0 release.

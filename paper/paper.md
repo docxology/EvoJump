@@ -1,9 +1,10 @@
 ---
 title: "EvoJump: A Unified Framework for Stochastic Modeling of Evolutionary Ontogenetic Trajectories"
 author:
-  - name: EvoJump Development Team
-    affiliation: Computational Evolutionary Biology Laboratory
-date: September 2025
+  - name: Daniel Ari Friedman
+    affiliation: Active Inference Institute
+    orcid: 0000-0001-6232-9096
+date: September 2026
 abstract-title: Abstract
 abstract: |
   Developmental biology and evolutionary genetics require sophisticated analytical frameworks to characterize the complex, often discontinuous nature of phenotypic change across ontogeny. We present EvoJump, a comprehensive computational framework that conceptualizes developmental trajectories as stochastic processes sweeping across analytical cross-sections, enabling the characterization of both continuous developmental dynamics and discrete evolutionary transitions. The framework implements multiple classes of stochastic processes including jump-diffusion models, fractional Brownian motion, Cox-Ingersoll-Ross processes, and Lévy processes, integrated with advanced statistical methodologies including wavelet analysis, copula methods, extreme value theory, and regime-switching algorithms. Through comprehensive benchmarking and validation, we demonstrate the framework's capabilities for analyzing developmental trajectories, identifying evolutionary constraints, and predicting phenotypic outcomes. EvoJump represents a significant advance in computational tools for evolutionary developmental biology, enabling researchers to address fundamental questions about the mechanistic basis of phenotypic evolution.

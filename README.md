@@ -9,13 +9,15 @@ EvoJump represents a groundbreaking analytical framework that conceptualizes evo
 
 ## Status at a glance (agent orientation)
 
-Verified 2026-08-31 on this checkout — re-verify with the commands shown.
+Verified 2026-09-08 on this checkout — re-verify with the commands shown.
 
 - **What this is:** a Python framework for evolutionary ontogenetic analysis
   (jump-diffusion models over developmental trajectories). Details: [Features](#-features)
-- **Current state:** v0.4.0 (test-suite hardening pass — 95% coverage floor
-  enforced, hypothesis property suite, conftest-shared fixtures). Test roster:
-  `ls tests/test_*.py` (17 files incl. property invariants). Verified
+- **Current state:** v0.5.0 (release polish — Gallery figures embedded below;
+  author identity resolved to **Daniel Ari Friedman** / Active Inference
+  Institute, ORCID 0000-0001-6232-9096; citation DOI
+  10.5281/zenodo.22664675). Test roster: `ls tests/test_*.py` (17 files,
+  incl. the hypothesis property suite and pytest-xdist support). Verified
   full-suite result **667 passed / 99% coverage** (2026-09-08; re-check with
   `tail -5 coverage.xml` after a fresh run).
 - **Verify (primary command):**
@@ -33,6 +35,7 @@ Verified 2026-08-31 on this checkout — re-verify with the commands shown.
 - [Command Line Interface](#-command-line-interface)
 - [Applications and Use Cases](#-applications-and-use-cases)
 - [Architecture](#-architecture)
+- [Gallery](#gallery)
 - [Testing](#-testing)
 - [Documentation](#-documentation)
 - [Contributing](#-contributing)
@@ -265,6 +268,40 @@ evojump-cli sample population.csv --samples 1000 --output samples.csv
 - Machine learning algorithms
 - Predictive modeling
 
+## Gallery
+
+Representative outputs generated on this checkout (sources: `paper/figures/` and `drosophila_case_study_outputs/`).
+
+### Comprehensive jump-diffusion overview
+
+![Comprehensive jump-diffusion analysis](paper/figures/figure_2_comprehensive.png)
+
+A nine-panel walkthrough of one simulated phenotype — trajectories with mean ± SD, density heatmap, cross-sections at t = 2.5/5.1/7.6, violins, ridges, phase portrait, mean/CV curves, fitted parameters (diffusion dominates), and an initial-vs-final change scatter. Read it first for the end-to-end shape of the laser-plane pipeline: mean drifts 10→18 while the coefficient of variation climbs to ~0.45 and plateaus.
+
+### Fractional Brownian motion — trajectory density heatmap
+
+![FBM trajectory density heatmap](paper/figures/figure_3_fbm_heatmap.png)
+
+Trajectory density over developmental time for the FBM model: the bright hotspot near phenotype ≈ 10 at t = 0 is the shared starting point, and the widening, dimming band reads off how phenotypic variance grows under long-range dependence.
+
+### Copula — temporal rank dependence
+
+![Copula temporal dependence](paper/figures/figure_4_copula.png)
+
+Rank-transformed phenotype values at t = 3.33 vs t = 6.67 against the perfect-dependence diagonal: Kendall's τ = 0.511 (p < 0.001) reads off moderate, significant rank persistence — early-ranked individuals tend to stay high-ranked, with substantial reshuffling between the two time points.
+
+### Drosophila — selective sweep
+
+![Drosophila selective sweep](paper/figures/figure_drosophila_sweep.png)
+
+Red-eyed allele frequency across 100 generations in the drosophila case study: the sweep rises from ~0.10, crosses the 0.5 threshold near generation 21, and plateaus near 0.97 — read off sweep timing and the final fixation level directly from the trajectory.
+
+### Drosophila — marker correlation network
+
+![Drosophila marker correlation network](drosophila_case_study_outputs/drosophila_network_analysis.png)
+
+Marker correlation network over 20 phenotypic markers: the dense central cluster (markers 0–16) identifies a block of highly inter-correlated, largely redundant markers, while the isolated nodes 17–19 mark independent markers worth tracking as distinct trait axes.
+
 ## 🧪 Testing
 
 EvoJump follows test-driven development (TDD) with comprehensive test coverage and multiple testing modes:
@@ -317,7 +354,7 @@ MPLBACKEND=Agg .venv/bin/coverage run --source=src/evojump -m pytest tests/ -q
 
 ### Test Coverage
 
-- **Coverage floor: 95% enforced** via `coverage report --fail-under=95` (v0.4.0; measured full-suite: 667 tests, 99% — see coverage.xml/htmlcov after a run)
+- **Coverage floor: 95% enforced** via `coverage report --fail-under=95` (v0.5.0; measured full-suite: 667 tests, 99% — see coverage.xml/htmlcov after a run)
 - **Real data testing** - no mocks, all tests use biological/synthetic data
 - **Integration testing** - cross-module interaction validation
 - **Performance validation** - large dataset and efficiency testing
@@ -457,7 +494,7 @@ uv sync --group dev
 
 ### Key Development Principles
 - Follow test-driven development (TDD)
-- Maintain high test coverage (see the pyproject coverage floor)
+- Maintain high test coverage (95% floor, enforced by `coverage report --fail-under=95`)
 - Use real methods and data in tests (no mocks)
 - Write comprehensive documentation
 - Follow scientific computing best practices
@@ -474,7 +511,7 @@ The Apache 2.0 license provides:
 - **Trademark protection** - Does not grant rights to use contributor trademarks
 
 ```
-Copyright 2024 EvoJump Development Team
+Copyright 2024-2026 Daniel Ari Friedman (Active Inference Institute)
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -494,13 +531,16 @@ limitations under the License.
 If you use EvoJump in your research, please cite:
 
 ```bibtex
-@software{evojump2024,
+@software{evojump2026,
   title={EvoJump: A Comprehensive Framework for Evolutionary Ontogenetic Analysis},
-  author={EvoJump Development Team},
-  year={2024},
+  author={Daniel Ari Friedman},
+  year={2026},
+  doi={10.5281/zenodo.22664675},
   url={https://github.com/docxology/EvoJump}
-}
 ```
+
+Author: **Daniel Ari Friedman** (Active Inference Institute,
+[ORCID 0000-0001-6232-9096](https://orcid.org/0000-0001-6232-9096)).
 
 ## 🔗 Links
 
@@ -515,9 +555,9 @@ If you use EvoJump in your research, please cite:
 
 EvoJump is now a fully functional, production-ready framework with:
 
-- **7 Core Modules** - Complete data management, modeling, analysis, and visualization (`ls src/evojump/*.py`; verified 2026-08-31)
-- **Comprehensive test suite** - 17 test files covering all components plus property invariants (`ls tests/test_*.py`; verified 2026-09-08)
-- **Multiple Testing Modes** - Quick, full, benchmark, CI/CD ready
+- **7 Core Modules** - Complete data management, modeling, analysis, and visualization (`ls src/evojump/*.py`; verified 2026-09-08)
+- **Comprehensive test suite** - 17 test files incl. the hypothesis property suite (`ls tests/test_*.py`; verified 2026-09-08)
+- **Multiple Testing Modes** - Quick, full, benchmark, CI/CD ready; pytest-xdist parallel (`-n auto`)
 - **Complete Documentation** - User guides, API reference, scientific context
 - **Advanced Analytics** - Bayesian, network, causal, dimensionality reduction
 - **Professional Architecture** - Modular, extensible, maintainable design
@@ -525,11 +565,10 @@ EvoJump is now a fully functional, production-ready framework with:
 ### 📊 **Technical Specifications**
 
 The per-component numbers below are **historical, unverified prose values**
-(v0.1.0-era, unstated provenance) — not a current measurement. Their
-weighted average is inconsistent with the verified aggregate of **70.94%
-(280 tests passed) at commit 1c47a4e** (floor: 68%). The executable truth
-is `coverage.xml` / `htmlcov/` after a fresh full-suite run; re-measure
-before relying on any per-module number.
+(v0.1.0-era, unstated provenance) — not a current measurement. The verified
+v0.5.0 aggregate is **99% coverage, 667 tests passed (2026-09-08)** at the
+95% floor. The executable truth is `coverage.xml` / `htmlcov/` after a fresh
+full-suite run; re-measure before relying on any per-module number.
 
 | Component | Status | Coverage (historical, unverified) | Tests | Examples |
 |-----------|--------|----------|-------|----------|
@@ -574,7 +613,7 @@ EvoJump successfully demonstrates applications in:
 ### 🏆 **Quality Assurance**
 
 - **Test-Driven Development** - All features developed with comprehensive testing
-- **Enforced coverage floor** - Maintained via the pyproject pytest addopts
+- **Enforced coverage floor** - Maintained via `coverage report --fail-under=95` (coverage run; pytest-cov args crash on this numpy 2.5 stack)
 - **CI/CD Ready** - Automated testing and validation workflows
 - **Code Quality** - Black formatting, Flake8 style, MyPy type checking
 - **Performance Benchmarks** - Profiling and optimization validation
@@ -602,10 +641,11 @@ EvoJump builds upon decades of research in developmental biology, evolutionary t
 
 **Publication Citation:**
 ```
-@software{evojump2024,
+@software{evojump2026,
   title={EvoJump: A Comprehensive Framework for Evolutionary Ontogenetic Analysis},
-  author={EvoJump Development Team},
-  year={2024},
+  author={Daniel Ari Friedman},
+  year={2026},
+  doi={10.5281/zenodo.22664675},
   url={https://github.com/docxology/EvoJump}
 }
 ```

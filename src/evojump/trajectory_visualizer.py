@@ -26,6 +26,7 @@ figure. Pass ``close=True`` to have the visualizer close the figure right
 
 import os
 import numpy as np
+import textwrap
 import pandas as pd
 import networkx as nx
 import matplotlib
@@ -80,11 +81,122 @@ def _mean_ci_band(trajectories: np.ndarray,
     return mean, mean - n_std * sem, mean + n_std * sem, '95% CI'
 
 
+def _apply_plot_style() -> None:
+    """Apply the shared matplotlib rcParams used by every static panel.
+
+    Single source of truth for the module's polished defaults: readable
+    font sizes, a subtle dotted grid, despined axes, constrained layout,
+    and a DPI floor of 120. Called at the top of each public plot and
+    re-asserted in ``_save`` so figures created elsewhere also inherit
+    the style.
+    """
+    plt.rcParams.update({
+        'figure.dpi': 120,
+        'savefig.dpi': 120,
+        'figure.constrained_layout.use': True,
+        'font.size': 10,
+        'axes.titlesize': 12,
+        'axes.labelsize': 11,
+        'xtick.labelsize': 9,
+        'ytick.labelsize': 9,
+        'legend.fontsize': 9,
+        'axes.grid': True,
+        'grid.alpha': 0.25,
+        'grid.linestyle': ':',
+        'axes.spines.top': False,
+        'axes.spines.right': False,
+        'legend.framealpha': 0.9,
+    })
+
+
+def _model_param_note(model: Any) -> str:
+    """Return a compact description of a fitted model for panel corners.
+
+    Combines the model type (an explicit ``model_type`` attribute when
+    present, else the stochastic process name) with the key numeric
+    fitted parameters, so comparison panels can be read without opening
+    the parameter objects. Returns an empty string when the model
+    exposes no usable identity or parameters.
+    """
+    model_type = getattr(model, 'model_type', None)
+    if not model_type:
+        model_type = getattr(getattr(model, 'stochastic_process', None),
+                             'process_name', None)
+    params = (getattr(model, 'fitted_parameters', None)
+              or getattr(model, 'parameters', None))
+    pieces = []
+    if params is not None and hasattr(params, '__dict__'):
+        for name, value in vars(params).items():
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                pieces.append(f"{name}={value:.3g}")
+    prefix = f"{model_type}: " if model_type else ""
+    return prefix + ", ".join(pieces)
+
+
+def _annotate_model_params(ax: Axes, models: List[Any]) -> None:
+    """Draw fitted-parameter notes for each model in a small corner text.
+
+    Long one-line notes are wrapped so the box stays inside the axes.
+    """
+    wrapped = []
+    for note in (_model_param_note(m) for m in models):
+        if note:
+            wrapped.extend(textwrap.wrap(note, width=44) or [''])
+    if not wrapped:
+        return
+    ax.text(0.98, 0.02, "\n".join(wrapped), transform=ax.transAxes,
+            fontsize=7, ha='right', va='bottom', fontfamily='monospace',
+            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+
+
+def _aicc_winner_note(fits: Any) -> Optional[str]:
+    """Return the AICc winner annotation for distribution-fit results.
+
+    ``fits`` may be a mapping of candidate name -> fit mapping (each
+    carrying an ``aicc`` entry) or a single fit mapping with
+    ``distribution`` and ``aicc`` keys. Returns None when no finite
+    AICc information is present, so panels render unchanged.
+    """
+    if not isinstance(fits, dict) or not fits:
+        return None
+    if isinstance(fits.get('aicc'), (int, float)) and np.isfinite(fits['aicc']):
+        best = fits.get('distribution', 'fit')
+        return f"Best fit: {best} (AICc={fits['aicc']:.2f})"
+    scored = [
+        (fit['aicc'], name)
+        for name, fit in fits.items()
+        if isinstance(fit, dict)
+        and isinstance(fit.get('aicc'), (int, float))
+        and np.isfinite(fit['aicc'])
+    ]
+    if not scored:
+        return None
+    best_aicc, best_name = min(scored)
+    return f"Best fit: {best_name} (AICc={best_aicc:.2f})"
+
+
+def _draw_fit_note(ax: Axes, source: Any) -> Optional[str]:
+    """Annotate ``ax`` with the AICc-winning distribution when known.
+
+    ``source`` is an optional-fit carrier (e.g. a model exposing
+    ``distribution_fits`` or ``distribution_fit``). Returns the drawn
+    note, or None when the source carries no AICc information.
+    """
+    fits = (getattr(source, 'distribution_fits', None)
+            or getattr(source, 'distribution_fit', None))
+    note = _aicc_winner_note(fits)
+    if note:
+        ax.text(0.02, 0.98, note, transform=ax.transAxes, fontsize=8,
+                ha='left', va='top',
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    return note
+
+
 @dataclass
 class PlotConfig:
     """Configuration for plot appearance and behavior."""
     figsize: Tuple[float, float] = (12, 8)
-    dpi: int = 100
+    dpi: int = 120  # matches the _apply_plot_style() DPI floor
     style: str = 'default'
     palette: str = 'viridis'
     alpha: float = 0.7
@@ -228,6 +340,7 @@ class TrajectoryVisualizer:
         """
         if output_dir is None:
             return
+        _apply_plot_style()  # figures created elsewhere still inherit the style
         output_dir.mkdir(parents=True, exist_ok=True)
         out_path = output_dir / filename
         if hasattr(fig, 'write_html'):
@@ -274,6 +387,7 @@ class TrajectoryVisualizer:
             n_trajectories = trajectories.shape[0]
 
         # Select subset of trajectories
+        _apply_plot_style()
         selected_trajectories = trajectories[:n_trajectories]
 
         if interactive:
@@ -288,6 +402,7 @@ class TrajectoryVisualizer:
                                  show_ci: bool = True,
                                  close: bool = False) -> Figure:
         """Create static matplotlib plot of trajectories."""
+        _apply_plot_style()
         fig, ax = plt.subplots(figsize=self.config.figsize, dpi=self.config.dpi)
 
         # Plot individual trajectories
@@ -317,8 +432,6 @@ class TrajectoryVisualizer:
         ax.set_title('Developmental Trajectories')
         ax.grid(self.config.show_grid, alpha=0.3)
         ax.legend() if self.config.show_legend else None
-
-        plt.tight_layout()
 
         self._save(fig, output_dir, 'trajectories.png', close=close)
 
@@ -404,6 +517,7 @@ class TrajectoryVisualizer:
             Matplotlib or Plotly figure
         """
         logger.info("Creating cross-section plot")
+        _apply_plot_style()
 
         if time_points is None:
             time_points = jump_rope_model.time_points[::max(1, len(jump_rope_model.time_points)//5)]
@@ -420,6 +534,7 @@ class TrajectoryVisualizer:
                                    show_kde: bool = False,
                                    close: bool = False) -> Figure:
         """Create static matplotlib plot of cross-sections."""
+        _apply_plot_style()
         n_plots = len(time_points)
         n_cols = min(3, n_plots)
         n_rows = (n_plots + n_cols - 1) // n_cols
@@ -429,8 +544,6 @@ class TrajectoryVisualizer:
             axes = np.array([[axes]])
         elif n_rows == 1:
             axes = axes.reshape(1, -1)
-        elif n_cols == 1:
-            axes = axes.reshape(-1, 1)
 
         for i, time_point in enumerate(time_points):
             row, col = i // n_cols, i % n_cols
@@ -463,9 +576,12 @@ class TrajectoryVisualizer:
             ax.set_xlabel('Phenotype Value')
             ax.set_ylabel('Density')
             ax.grid(self.config.show_grid, alpha=0.3)
-            ax.legend() if i == 0 else None
+            # Every panel with labelled overlays gets its own legend so a
+            # reader never has to infer which curve is which.
+            if ax.get_legend_handles_labels()[0]:
+                ax.legend(loc='best', fontsize='small')
+            _draw_fit_note(ax, jump_rope_model)
 
-        plt.tight_layout()
 
         self._save(fig, output_dir, 'cross_sections.png', close=close)
 
@@ -544,6 +660,7 @@ class TrajectoryVisualizer:
             Matplotlib or Plotly figure
         """
         logger.info("Creating landscape plot")
+        _apply_plot_style()
 
         if jump_rope_model.trajectories is None:
             raise ValueError("No trajectories available. Generate trajectories first.")
@@ -558,6 +675,7 @@ class TrajectoryVisualizer:
                                output_dir: Optional[Path] = None,
                                close: bool = False) -> Figure:
         """Create static matplotlib 3D landscape plot."""
+        _apply_plot_style()
         try:
             from mpl_toolkits.mplot3d import Axes3D
         except ImportError:
@@ -584,7 +702,6 @@ class TrajectoryVisualizer:
         ax.set_zlabel(z_label)
         ax.set_title('Phenotypic Landscape')
 
-        plt.tight_layout()
 
         self._save(fig, output_dir, 'landscape.png', close=close)
 
@@ -668,6 +785,7 @@ class TrajectoryVisualizer:
             Matplotlib animation object
         """
         logger.info("Creating animation")
+        _apply_plot_style()
 
         if jump_rope_model.trajectories is None:
             raise ValueError("No trajectories available. Generate trajectories first.")
@@ -712,7 +830,8 @@ class TrajectoryVisualizer:
             for i in range(current_trajectories.shape[0]):
                 ax1.plot(jump_rope_model.time_points[start_idx:current_time_idx+1],
                         current_trajectories[i, start_idx:current_time_idx+1],
-                        alpha=self.config.alpha, linewidth=self.config.linewidth * 0.5)
+                        alpha=self.config.alpha, linewidth=self.config.linewidth * 0.5,
+                        label='Individual trajectories' if i == 0 else None)
 
             ax1.set_xlabel('Developmental Time')
             ax1.set_ylabel('Phenotype Value')
@@ -721,6 +840,7 @@ class TrajectoryVisualizer:
             ax1.set_title(f'Developmental Trajectories '
                           f'(Time: {frame.time_point:.2f}{window_label})')
             ax1.grid(True, alpha=0.3)
+            ax1.legend(loc='upper left', fontsize='small')
             # Re-assert fixed limits each frame: ax1.clear() wipes them.
             ax1.set_xlim(jump_rope_model.time_points[0], jump_rope_model.time_points[-1])
             ax1.set_ylim(y_min - pad, y_max + pad)
@@ -779,6 +899,7 @@ class TrajectoryVisualizer:
             Matplotlib figure with multiple panels
         """
         logger.info("Creating comprehensive model comparison visualization")
+        _apply_plot_style()
 
         if len(models) != len(model_names):
             raise ValueError("Number of models must match number of names")
@@ -810,6 +931,8 @@ class TrajectoryVisualizer:
         ax1.set_title('Mean Trajectories\nwith ±1 SD Bands')
         ax1.legend()
         ax1.grid(True, alpha=0.3)
+        # Corner note: model type + key fitted parameters per model.
+        _annotate_model_params(ax1, models)
 
         # Panel 2: Final distribution comparison
         ax2 = plt.subplot(3, 3, 2)
@@ -827,6 +950,10 @@ class TrajectoryVisualizer:
         ax2.set_title('Final Distributions')
         ax2.legend()
         ax2.grid(True, alpha=0.3)
+        # AICc winner when any model carries distribution-fit results.
+        for _m in models:
+            if _draw_fit_note(ax2, _m):
+                break
 
         # Panel 3: Jump pattern comparison
         ax3 = plt.subplot(3, 3, 3)
@@ -1038,8 +1165,6 @@ class TrajectoryVisualizer:
         ax9.set_ylim(0, 1)
         ax9.axis('off')
 
-        plt.tight_layout()
-
         self._save(fig, output_dir, 'model_comparison.png', close=close)
 
         return fig
@@ -1079,6 +1204,7 @@ class TrajectoryVisualizer:
             Matplotlib figure
         """
         logger.info("Creating model comparison plot")
+        _apply_plot_style()
 
         if len(models) != len(model_names):
             raise ValueError("Number of models must match number of names")
@@ -1118,12 +1244,18 @@ class TrajectoryVisualizer:
         axes[0, 0].set_ylabel('Phenotype')
         axes[0, 0].legend()
         axes[0, 0].grid(True, alpha=0.3)
+        # Corner note: model type + key fitted parameters per model.
+        _annotate_model_params(axes[0, 0], models)
 
         axes[0, 1].set_title('Final Distributions')
         axes[0, 1].set_xlabel('Phenotype Value')
         axes[0, 1].set_ylabel('Density')
         axes[0, 1].legend()
         axes[0, 1].grid(True, alpha=0.3)
+        # AICc winner when any model carries distribution-fit results.
+        for _m in models:
+            if _draw_fit_note(axes[0, 1], _m):
+                break
 
         axes[1, 0].set_title('Estimated Jump Times')
         axes[1, 0].set_xlabel('Time')
@@ -1139,7 +1271,6 @@ class TrajectoryVisualizer:
         axes[1, 1].set_xticklabels(model_names, rotation=45)
         axes[1, 1].grid(True, alpha=0.3)
 
-        plt.tight_layout()
 
         self._save(fig, output_dir, 'model_comparison.png', close=close)
 
@@ -1162,6 +1293,7 @@ class TrajectoryVisualizer:
             Matplotlib figure
         """
         logger.info("Creating Bayesian analysis plot")
+        _apply_plot_style()
 
         fig, axes = plt.subplots(2, 2, figsize=self.config.figsize, dpi=self.config.dpi)
         fig.suptitle('Bayesian Analysis Results', fontsize=16)
@@ -1211,7 +1343,6 @@ class TrajectoryVisualizer:
         axes[1, 1].set_ylim(0, 1)
         axes[1, 1].axis('off')
 
-        plt.tight_layout()
 
         self._save(fig, output_dir, 'bayesian_analysis.png', close=close)
 
@@ -1234,6 +1365,7 @@ class TrajectoryVisualizer:
             Matplotlib figure
         """
         logger.info("Creating network analysis plot")
+        _apply_plot_style()
 
         fig, axes = plt.subplots(2, 2, figsize=self.config.figsize, dpi=self.config.dpi)
         fig.suptitle('Network Analysis Results', fontsize=16)
@@ -1299,7 +1431,6 @@ class TrajectoryVisualizer:
                 axes[1, 1].set_ylim(0, 1)
                 axes[1, 1].axis('off')
 
-        plt.tight_layout()
 
         self._save(fig, output_dir, 'network_analysis.png', close=close)
 
@@ -1322,6 +1453,7 @@ class TrajectoryVisualizer:
             Matplotlib figure
         """
         logger.info("Creating dimensionality reduction plot")
+        _apply_plot_style()
 
         fig, axes = plt.subplots(1, 3, figsize=(18, 6))
         fig.suptitle('Dimensionality Reduction Analysis', fontsize=16)
@@ -1357,7 +1489,6 @@ class TrajectoryVisualizer:
             axes[2].set_ylim(0, 1)
             axes[2].axis('off')
 
-        plt.tight_layout()
 
         self._save(fig, output_dir, 'dimensionality_reduction.png', close=close)
 
@@ -1380,6 +1511,7 @@ class TrajectoryVisualizer:
             Matplotlib figure
         """
         logger.info("Creating spectral analysis plot")
+        _apply_plot_style()
 
         fig, axes = plt.subplots(2, 2, figsize=self.config.figsize, dpi=self.config.dpi)
         fig.suptitle('Spectral Analysis Results', fontsize=16)
@@ -1423,7 +1555,6 @@ class TrajectoryVisualizer:
         axes[1, 1].set_ylim(0, 1)
         axes[1, 1].axis('off')
 
-        plt.tight_layout()
 
         self._save(fig, output_dir, 'spectral_analysis.png', close=close)
 
@@ -1446,6 +1577,7 @@ class TrajectoryVisualizer:
             Matplotlib figure
         """
         logger.info("Creating nonlinear dynamics plot")
+        _apply_plot_style()
 
         fig, axes = plt.subplots(2, 2, figsize=self.config.figsize, dpi=self.config.dpi)
         fig.suptitle('Nonlinear Dynamics Analysis', fontsize=16)
@@ -1492,7 +1624,6 @@ class TrajectoryVisualizer:
             axes[1, 1].set_ylim(0, 1)
             axes[1, 1].axis('off')
 
-        plt.tight_layout()
 
         self._save(fig, output_dir, 'nonlinear_dynamics.png', close=close)
 
@@ -1515,6 +1646,7 @@ class TrajectoryVisualizer:
             Matplotlib figure
         """
         logger.info("Creating information theory plot")
+        _apply_plot_style()
 
         fig, axes = plt.subplots(2, 2, figsize=self.config.figsize, dpi=self.config.dpi)
         fig.suptitle('Information Theory Analysis', fontsize=16)
@@ -1535,11 +1667,12 @@ class TrajectoryVisualizer:
         if information_result.mutual_information.size > 0:
             mi_data = information_result.mutual_information
             if mi_data.ndim > 1:
-                axes[0, 1].imshow(mi_data, cmap='viridis', aspect='auto')
+                im = axes[0, 1].imshow(mi_data, cmap='viridis', aspect='auto')
                 axes[0, 1].set_title('Mutual Information Matrix')
+                axes[0, 1].grid(False)  # dotted grid over an image reads as noise
                 axes[0, 1].set_xlabel('Variable Index')
                 axes[0, 1].set_ylabel('Variable Index')
-                plt.colorbar(axes[0, 1].imshow(mi_data, cmap='viridis', aspect='auto'), ax=axes[0, 1])
+                plt.colorbar(im, ax=axes[0, 1])
 
         # Complexity measures
         if information_result.complexity_measures:
@@ -1564,7 +1697,6 @@ class TrajectoryVisualizer:
             axes[1, 1].set_ylim(0, 1)
             axes[1, 1].axis('off')
 
-        plt.tight_layout()
 
         self._save(fig, output_dir, 'information_theory.png', close=close)
 
@@ -1587,6 +1719,7 @@ class TrajectoryVisualizer:
             Matplotlib figure
         """
         logger.info("Creating robust statistics plot")
+        _apply_plot_style()
 
         fig, axes = plt.subplots(2, 2, figsize=self.config.figsize, dpi=self.config.dpi)
         fig.suptitle('Robust Statistics Analysis', fontsize=16)
@@ -1639,7 +1772,6 @@ class TrajectoryVisualizer:
             axes[1, 1].set_ylabel('Relative Efficiency')
             axes[1, 1].grid(True, alpha=0.3)
 
-        plt.tight_layout()
 
         self._save(fig, output_dir, 'robust_statistics.png', close=close)
 
@@ -1664,6 +1796,7 @@ class TrajectoryVisualizer:
             Matplotlib figure with multiple panels
         """
         logger.info("Creating comprehensive trajectory visualization")
+        _apply_plot_style()
 
         if jump_rope_model.trajectories is None:
             raise ValueError("No trajectories available. Generate trajectories first.")
@@ -1725,7 +1858,6 @@ class TrajectoryVisualizer:
         ax9 = plt.subplot(3, 3, 9)
         self._plot_evolution_summary(jump_rope_model, ax9)
 
-        plt.tight_layout()
 
         self._save(fig, output_dir, 'comprehensive_trajectories.png', close=close)
 
@@ -1749,6 +1881,7 @@ class TrajectoryVisualizer:
         ax.set_xlabel('Phenotype')
         ax.set_ylabel('Time')
         ax.set_title('Density Heatmap')
+        ax.grid(False)  # dotted grid over an image reads as noise
         plt.colorbar(im, ax=ax, shrink=0.8)
 
     def _plot_cross_section_panel(self, jump_rope_model, time_points, ax):
@@ -1773,6 +1906,7 @@ class TrajectoryVisualizer:
         ax.set_title('Cross-Sectional\nDistributions')
         ax.legend()
         ax.grid(True, alpha=0.3)
+        _draw_fit_note(ax, jump_rope_model)
 
     def _plot_violin_panel(self, jump_rope_model, ax):
         """Plot violin plot panel."""
@@ -1792,6 +1926,9 @@ class TrajectoryVisualizer:
         for pc in parts['bodies']:
             pc.set_facecolor('lightblue')
             pc.set_alpha(0.7)
+        # Label the summary markers so the panel explains itself.
+        parts['cmeans'].set_label('Mean')
+        parts['cmedians'].set_label('Median')
 
         ax.set_xticks(positions)
         ax.set_xticklabels([f'{t:.1f}' for t in selected_times])
@@ -1799,6 +1936,7 @@ class TrajectoryVisualizer:
         ax.set_ylabel('Phenotype Value')
         ax.set_title('Violin Plots')
         ax.grid(True, alpha=0.3)
+        ax.legend(fontsize='small')
 
     def _plot_ridge_panel(self, jump_rope_model, ax):
         """Plot ridge plot panel."""
@@ -1821,10 +1959,12 @@ class TrajectoryVisualizer:
                 kde = gaussian_kde(values)
                 density = kde(x_range)
 
-                # Offset each distribution
+                # Offset each distribution; each layer is labelled with its
+                # time point so the ridge panel carries its own legend.
                 y_offset = i * 0.1
                 ax.fill_between(x_range, y_offset, y_offset + density * 0.1,
-                              alpha=0.6, color=self.config.colors[i % len(self.config.colors)])
+                              alpha=0.6, color=self.config.colors[i % len(self.config.colors)],
+                              label=f't = {time:.1f}')
                 ax.plot(x_range, y_offset + density * 0.1,
                        color=self.config.colors[i % len(self.config.colors)], linewidth=1)
             except:
@@ -1835,6 +1975,8 @@ class TrajectoryVisualizer:
         ax.set_title('Ridge Plot')
         ax.set_ylim(-0.1, (n_distributions-1) * 0.1 + 0.1)
         ax.set_xlim(global_min, global_max)
+        if ax.get_legend_handles_labels()[0]:
+            ax.legend(fontsize='small', ncol=2, loc='upper left')
 
     def _plot_phase_portrait_panel(self, jump_rope_model, ax):
         """Plot phase portrait panel."""
@@ -2006,6 +2148,7 @@ class TrajectoryVisualizer:
             Matplotlib or Plotly figure
         """
         logger.info("Creating trajectory density heatmap")
+        _apply_plot_style()
 
         if jump_rope_model.trajectories is None:
             raise ValueError("No trajectories available. Generate trajectories first.")
@@ -2109,6 +2252,7 @@ class TrajectoryVisualizer:
             if sort_rows:
                 title += f' (rows sorted by {row_sort_statistic.replace("_", " ")})'
             ax.set_title(title)
+            ax.grid(False)  # dotted grid over an image reads as noise
 
             cbar = plt.colorbar(im, ax=ax)
             cbar.set_label('Trajectory Density', rotation=270, labelpad=20)
@@ -2136,6 +2280,7 @@ class TrajectoryVisualizer:
             Matplotlib figure
         """
         logger.info("Creating violin plots")
+        _apply_plot_style()
         
         if jump_rope_model.trajectories is None:
             raise ValueError("No trajectories available. Generate trajectories first.")
@@ -2170,15 +2315,17 @@ class TrajectoryVisualizer:
             color = self.config.colors[i % len(self.config.colors)]
             pc.set_facecolor(color)
             pc.set_alpha(0.7)
-        
+        # Label the summary markers so the panel explains itself.
+        parts['cmeans'].set_label('Mean')
+        parts['cmedians'].set_label('Median')
         ax.set_xticks(range(len(labels)))
         ax.set_xticklabels(labels, rotation=45)
         ax.set_xlabel('Developmental Time')
         ax.set_ylabel('Phenotype Value')
         ax.set_title('Phenotype Distribution Evolution (Violin Plots)')
         ax.grid(True, alpha=0.3)
+        ax.legend(fontsize='small')
         
-        plt.tight_layout()
         
         self._save(fig, output_dir, 'violin_plots.png', close=close)
         
@@ -2203,6 +2350,7 @@ class TrajectoryVisualizer:
             Matplotlib figure
         """
         logger.info("Creating ridge plot")
+        _apply_plot_style()
         
         if jump_rope_model.trajectories is None:
             raise ValueError("No trajectories available. Generate trajectories first.")
@@ -2267,7 +2415,6 @@ class TrajectoryVisualizer:
         axes[-1].spines['bottom'].set_visible(True)
         
         fig.suptitle('Phenotype Distribution Evolution (Ridge Plot)', fontsize=16, y=0.995)
-        plt.tight_layout()
         
         self._save(fig, output_dir, 'ridge_plot.png', close=close)
         
@@ -2294,6 +2441,7 @@ class TrajectoryVisualizer:
             Matplotlib or Plotly figure
         """
         logger.info("Creating phase portrait")
+        _apply_plot_style()
         
         if jump_rope_model.trajectories is None:
             raise ValueError("No trajectories available. Generate trajectories first.")

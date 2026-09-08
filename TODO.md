@@ -24,13 +24,18 @@ moved to the "Done (verified)" section with date. Agent-ergonomics pass
 - [x] No orientation ladder (status / next-actions / verification) in README — FIXED 2026-08-31 ("Status at a glance" section, verified claims only).
 - [x] No root TODO/backlog file — FIXED 2026-08-31 (this file).
 
-## Major
-
-- [ ] Full-suite pytest re-run on this external-drive checkout is ~30+ min under fleet load (see `paper/paper_verification_report.md` measurements of 2026-08-30) and could not be completed in the 2026-08-31 doc pass; the coverage.xml (65.9%) is also below the 68% floor. Defer to an idle-machine session: run `MPLBACKEND=Agg .venv/bin/python -m pytest tests/ -q --no-cov` then a coverage run, and reconcile README's coverage table with measured output. NOT done here — slow-drive constraint, no gate claimed.
-- [ ] Author-identity discrepancy between `paper/README.md` (Daniel Ari Friedman) and `paper/paper.md` ("EvoJump Development Team") already flagged in `docs/manuscript/MANUSCRIPT_STATUS.md` — needs owner decision, not a doc-pass edit.
-
 ## Done (verified)
 
+- [x] 2026-09-08 (v0.5.0 release pass): Full-suite gate completed on this
+  checkout — `MPLBACKEND=Agg .venv/bin/coverage run --source=src/evojump -m
+  pytest tests/ -q` + `.venv/bin/coverage report --fail-under=95`:
+  **667 passed / 99% coverage** (floor 95%). README coverage prose reconciled
+  to the measured values (previous historical note: 70.94% / 280 tests /
+  68% floor).
+- [x] 2026-09-08 (v0.5.0 release pass): Author identity resolved by owner
+  decision — **Daniel Ari Friedman** (Active Inference Institute, ORCID
+  0000-0001-6232-9096); applied in `paper/paper.md` YAML, `.zenodo.json`,
+  `CITATION.cff`, and README citation blocks (verified in all three files).
 - [x] 2026-08-31 (second doc pass): Minor items 1 fixed; items 2-5 found already-fixed/stale and closed with evidence; items 6-7 fixed.
 
 - [x] 2026-08-31: agent-ergonomics pass — see `REVIEW_LOG_2026-08-31.md` for the cold-start audit and every change made.

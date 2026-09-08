@@ -1,9 +1,9 @@
 # AGENTS.md — `EvoJump/examples/`
 
 Demo/orchestration scripts (verified 2026-08-29; 14 files):
-advanced_features_demo.py, animation_demo.py, basic_usage_fixed.py, comprehensive_advanced_analytics_demo.py, comprehensive_animation_demo.py, comprehensive_demo.py, drosophila_case_study.py, enhanced_animation_demo.py, performance_benchmarks.py, simple_animation_demo.py, simple_orchestrator.py, thin_orchestrator_examples.py, thin_orchestrator_working.py, working_demo.py plus `README.md`. Thin orchestrators over `src/evojump/` —
+advanced_features_demo.py, animation_demo.py, comprehensive_advanced_analytics_demo.py, comprehensive_animation_demo.py, comprehensive_demo.py, drosophila_case_study.py, enhanced_animation_demo.py, performance_benchmarks.py, simple_animation_demo.py, simple_orchestrator.py, working_demo.py (superseded scripts live in `archive/`: basic_usage_fixed.py, thin_orchestrator_examples.py, thin_orchestrator_working.py) plus `README.md`. Thin orchestrators over `src/evojump/` —
 business logic stays in the package. Several scripts are superseded variants
-(`basic_usage_fixed.py`, `working_demo.py`, `thin_orchestrator_*.py`); prefer
+(`working_demo.py` top-level; `basic_usage_fixed.py` and `thin_orchestrator_*.py` in `archive/`); prefer
 `comprehensive_demo.py` and `drosophila_case_study.py`. `__pycache__/` is
 generated.
 

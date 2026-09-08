@@ -158,8 +158,11 @@ EvoJump also provides a powerful command-line interface:
    # Analyze data
    evojump-cli analyze data.csv --output results/
 
-   # Fit model
+   # Fit model (all seven process types supported)
    evojump-cli fit data.csv --model-type jump-diffusion --output model.pkl
+
+   # Specify a non-default time column (analyze, fit, and sample)
+   evojump-cli fit data.csv --model-type cir --time-column age_days --output model.pkl
 
    # Visualize results
    evojump-cli visualize model.pkl --plot-type trajectories --output plots/
@@ -169,6 +172,14 @@ EvoJump also provides a powerful command-line interface:
 
    # Get help
    evojump-cli --help
+
+**Output handling:** every subcommand accepts its own ``--output``/``-o``
+flag. When omitted, it falls back to the **global** ``--output`` given
+before the subcommand (``evojump-cli --output results/ analyze data.csv``).
+For ``fit``, ``--output`` is an alias for ``--output-model``.
+
+**Exit codes:** ``0`` = success, ``1`` = runtime failure (e.g. missing
+input file), ``2`` = usage error (bad arguments or no subcommand).
 
 Real-World Example: Plant Development
 -------------------------------------
@@ -185,7 +196,7 @@ Here's how EvoJump was used to analyze plant developmental data:
 
    # Create DataCore with multiple phenotypes
    data_core = ej.DataCore.load_from_csv(
-       plant_data,
+       "arabidopsis_development.csv",
        time_column='days_after_germination',
        phenotype_columns=['leaf_area', 'stem_height', 'root_length', 'chlorophyll_content']
    )
@@ -326,4 +337,5 @@ Now that you're familiar with the basics:
 3. **Advanced Usage**: Learn about advanced features in :doc:`advanced_usage`
 4. **Contributing**: Help improve EvoJump by reading :doc:`../contributing`
 
-Happy analyzing! 🎉
+
+Happy analyzing!

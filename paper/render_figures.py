@@ -28,7 +28,7 @@ from pathlib import Path
 import sys
 import os
 import argparse
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 # Add src directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -36,6 +36,23 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from evojump.datacore import DataCore, TimeSeriesData
 from evojump.jumprope import JumpRope
 from evojump.trajectory_visualizer import TrajectoryVisualizer
+
+
+# Consistent publication style for every paper figure: shared font sizes,
+# despined axes, and a subdued grid, applied before any figure is created.
+plt.rcParams.update({
+    'font.size': 10,
+    'axes.titlesize': 11,
+    'axes.labelsize': 10,
+    'xtick.labelsize': 9,
+    'ytick.labelsize': 9,
+    'legend.fontsize': 8,
+    'axes.spines.top': False,
+    'axes.spines.right': False,
+    'axes.grid': True,
+    'grid.alpha': 0.3,
+    'savefig.dpi': 300,
+})
 
 
 def create_synthetic_developmental_data(
@@ -136,6 +153,117 @@ def fit_stochastic_model(data: pd.DataFrame) -> JumpRope:
     return model
 
 
+# Axis labels that gain explicit units when figures are annotated.
+_UNIT_MAP = {
+    'Developmental Time': 'Developmental Time (a.u.)',
+    'Time': 'Time (a.u.)',
+    'Phenotype Value': 'Phenotype Value (a.u.)',
+    'Phenotype': 'Phenotype (a.u.)',
+    'Standard Deviation': 'Standard Deviation (a.u.)',
+    'Density': 'Density (1/a.u.)',
+    'Value': 'Statistic Value (a.u.)',
+}
+
+
+def _model_param_label(model: JumpRope) -> str:
+    """One-line description of a fitted model's type and key parameters."""
+    process = model.stochastic_process
+    bits = [getattr(process, 'process_name', type(process).__name__)]
+    hurst = getattr(process, 'hurst', None)
+    if hurst is not None:
+        bits.append(f"H = {hurst:.2f}")
+    params = model.fitted_parameters
+    if params is not None:
+        if params.reversion_speed > 0 and params.equilibrium != 0.0:
+            bits.append(f"equilibrium = {params.equilibrium:.2f}")
+            bits.append(f"reversion = {params.reversion_speed:.2f}")
+        else:
+            bits.append(f"drift = {params.drift:.3f}")
+            bits.append(f"diffusion = {params.diffusion:.3f}")
+    return ', '.join(bits)
+
+
+def _label_model_lines_with_params(fig, models: List[JumpRope],
+                                   model_names: List[str]) -> None:
+    """Label each model line (via the comparison legend) with its fitted params."""
+    ax = fig.axes[0]
+    params_by_name = dict(zip(model_names, (_model_param_label(m) for m in models)))
+    # Relabel the source Line2D artists: legend handles are copies in
+    # recent matplotlib, so mutating them would not survive a legend rebuild.
+    relabeled = False
+    for line in ax.get_lines():
+        label = line.get_label()
+        if label in params_by_name:
+            line.set_label(f"{label}\n  {params_by_name[label]}")
+            relabeled = True
+    if relabeled:
+        ax.legend()
+
+
+def _add_panel_captions_and_units(fig) -> None:
+    """Prefix titled panels with (a), (b), ... captions and add units to axis labels."""
+    caption_index = 0
+    for ax in fig.axes:
+        title = ax.get_title()
+        if not title:
+            continue  # colorbars and untitled panels get no caption
+        ax.set_title(f"({chr(ord('a') + caption_index)}) {title}")
+        caption_index += 1
+        for getter, setter in ((ax.get_xlabel, ax.set_xlabel),
+                               (ax.get_ylabel, ax.set_ylabel)):
+            label = getter()
+            if label in _UNIT_MAP:
+                setter(_UNIT_MAP[label])
+
+
+def _dominant_timescale(model: JumpRope) -> Optional[Tuple[float, str]]:
+    """Dominant timescale of the mean trajectory, in time units.
+
+    Returns ``(timescale, descriptor)`` where the descriptor records the
+    estimator ('ACF peak' or '1/e decorrelation'), or None when no timescale
+    is resolvable from the trajectories.
+    """
+    if model.trajectories is None:
+        return None
+    x = np.mean(model.trajectories, axis=0)
+    x = x - np.mean(x)
+    n = len(x)
+    if n < 8:
+        return None
+    acf = np.correlate(x, x, mode='full')[n - 1:]
+    if not np.isfinite(acf[0]) or acf[0] <= 0:
+        return None
+    acf = acf / acf[0]
+    for k in range(2, n - 1):
+        if acf[k] >= acf[k - 1] and acf[k] > acf[k + 1] and acf[k] > 0.3:
+            return float(model.time_points[k] - model.time_points[0]), 'ACF peak'
+    below = np.nonzero(acf < 1.0 / np.e)[0]
+    if below.size and below[0] > 0:
+        return (float(model.time_points[below[0]] - model.time_points[0]),
+                '1/e decorrelation')
+    return None
+
+
+def _annotate_heatmap(fig, model: JumpRope) -> None:
+    """Add colorbar units and the dominant timescale to a density heatmap."""
+    main_axes = None
+    for ax in fig.axes:
+        if ax.get_ylabel() == 'Trajectory Density':
+            ax.set_ylabel('Trajectory Density (trajectories per bin)',
+                          rotation=270, labelpad=20)
+        elif ax.get_images():
+            main_axes = ax
+    result = _dominant_timescale(model)
+    if result is None or main_axes is None:
+        return
+    timescale, method = result
+    main_axes.text(0.02, 0.02,
+                   f"Dominant timescale: {timescale:.2f} a.u. ({method})",
+                   transform=main_axes.transAxes, fontsize=9,
+                   ha='left', va='bottom',
+                   bbox=dict(boxstyle='round', facecolor='white', alpha=0.85))
+
+
 def generate_all_figures(models: List[JumpRope], model_names: List[str], figures_dir: Path) -> Dict[str, str]:
     """
     Generate all figures for the paper using multiple models.
@@ -165,6 +293,7 @@ def generate_all_figures(models: List[JumpRope], model_names: List[str], figures
         output_dir=figures_dir
     )
     comparison_path = figures_dir / 'figure_1_comparison.png'
+    _label_model_lines_with_params(fig_comparison, models, model_names)
     fig_comparison.savefig(comparison_path, dpi=300, bbox_inches='tight')
     plt.close(fig_comparison)
     generated_figures['figure_1_comparison'] = str(comparison_path)
@@ -177,6 +306,7 @@ def generate_all_figures(models: List[JumpRope], model_names: List[str], figures
         output_dir=figures_dir
     )
     comprehensive_path = figures_dir / 'figure_2_comprehensive.png'
+    _add_panel_captions_and_units(fig_comprehensive)
     fig_comprehensive.savefig(comprehensive_path, dpi=300, bbox_inches='tight')
     plt.close(fig_comprehensive)
     generated_figures['figure_2_comprehensive'] = str(comprehensive_path)
@@ -194,6 +324,7 @@ def generate_all_figures(models: List[JumpRope], model_names: List[str], figures
             output_dir=figures_dir
         )
         heatmap_path = figures_dir / f'figure_3_{name.lower()}_heatmap.png'
+        _annotate_heatmap(fig_heatmap, model)
         fig_heatmap.savefig(heatmap_path, dpi=300, bbox_inches='tight')
         plt.close(fig_heatmap)
         generated_figures[f'figure_3_{name.lower()}_heatmap'] = str(heatmap_path)
@@ -281,12 +412,18 @@ def generate_copula_analysis(model: JumpRope, figures_dir: Path) -> str:
     ax.plot([0, 1], [0, 1], 'r--', alpha=0.7, linewidth=2, label='Perfect Dependence')
 
     # Estimate Kendall's tau (dependence measure)
-    from scipy.stats import kendalltau
+    from scipy.stats import kendalltau, norm
     tau, p_value = kendalltau(data_t1, data_t2)
+
+    # Fitted Gaussian copula parameter: correlation of the inverse-normal
+    # transforms of the PIT uniforms (same estimator as
+    # AnalyticsEngine.copula_analysis for copula_type='gaussian').
+    copula_param = float(np.corrcoef(norm.ppf(u), norm.ppf(v))[0, 1])
 
     # Add text with dependence statistics
     ax.text(0.05, 0.95,
-           f"Kendall's τ = {tau:.3f}\n(p-value = {p_value:.3f})",
+           f"Kendall's τ = {tau:.3f} (p = {p_value:.3f})\n"
+           f"Gaussian copula ρ = {copula_param:.3f}",
            transform=ax.transAxes, fontsize=12,
            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
            verticalalignment='top')
@@ -303,7 +440,6 @@ def generate_copula_analysis(model: JumpRope, figures_dir: Path) -> str:
     cbar = plt.colorbar(scatter, ax=ax)
     cbar.set_label('Individual Index', rotation=270, labelpad=20)
 
-    plt.tight_layout()
 
     copula_path = figures_dir / 'figure_4_copula.png'
     plt.savefig(copula_path, dpi=300, bbox_inches='tight')

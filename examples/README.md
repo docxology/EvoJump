@@ -6,6 +6,7 @@ This directory contains comprehensive examples demonstrating the usage of the Ev
 
 ### 🚀 **Basic Usage Examples**
 - **`working_demo.py`** - Working demonstration of all core features
+- **`simple_orchestrator.py`** - Minimal end-to-end pipeline demo (writes `simple_orchestrator_outputs/`)
 
 ### 📊 **Advanced Analytics Examples**
 - **`comprehensive_demo.py`** - Full analysis pipeline with all modules
@@ -24,11 +25,15 @@ This directory contains comprehensive examples demonstrating the usage of the Ev
 ### ⚡ **Performance Examples**
 - **`performance_benchmarks.py`** - Performance testing and benchmarking
 
+> Superseded variants (`basic_usage_fixed.py`, `thin_orchestrator_examples.py`, `thin_orchestrator_working.py`) live in `archive/` and are not listed above.
+
 ## Running Examples
 
 ```bash
 # Basic usage demonstration
 python examples/working_demo.py
+
+python examples/simple_orchestrator.py
 
 # Comprehensive analysis
 python examples/comprehensive_demo.py
@@ -75,6 +80,9 @@ Examples generate multiple output types:
 - **GIF animations** - Dynamic developmental processes
 - **JSON reports** - Comprehensive analysis results
 - **CSV data** - Processed datasets and results
+
+
+Output directories are CWD-relative (the repo root when run via `run_all_examples.py`): `demo_outputs/`, `evojump_outputs/`, `comprehensive_analytics_outputs/`, `comprehensive_animation_outputs/`, `enhanced_animations/`, `simple_animation_outputs/`, `simple_orchestrator_outputs/`, `animation_outputs/`, `outputs/figures/`, `outputs/benchmarks/`, and `drosophila_case_study_outputs/`.
 
 ## Scientific Applications
 

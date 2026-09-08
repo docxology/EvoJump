@@ -258,11 +258,24 @@ Analyzes dependence structure between variables using copulas, capturing non-lin
 
 **Returns:**
 
+- ``copula_type``: The fitted copula family
 - ``copula_parameter``: Estimated copula parameter
-- ``kendall_tau``: Kendall's tau correlation coefficient
-- ``spearman_rho``: Spearman's rank correlation
-- ``upper_tail_dependence``: Upper tail dependence coefficient
-- ``lower_tail_dependence``: Lower tail dependence coefficient
+- ``kendall_tau`` / ``kendall_tau_pvalue``: Kendall's tau and its p-value
+- ``spearman_rho`` / ``spearman_rho_pvalue``: Spearman's rank correlation and its p-value
+- ``upper_tail_dependence`` / ``lower_tail_dependence``: Empirical tail dependence coefficients
+- ``degrees_of_freedom``: Present for the ``'student'`` copula only (method-of-moments estimate on excess kurtosis)
+- ``dependence_class``: ``'positive'``, ``'negative'``, or ``'independent'``
+
+**Copula families and estimation details:**
+
+- ``'gaussian'``: parameter is the correlation of the inverse-normal-transformed ranks
+- ``'student'``: rho from Kendall's tau via ``tau = (2/pi) arcsin(rho)``;
+  degrees of freedom by the method of moments on excess kurtosis
+- ``'clayton'``: method of moments ``2*tau/(1-tau)``; requires positive
+  dependence (raises ``ValueError`` for ``tau <= 0``)
+- ``'frank'``: **exact** inversion of the tau relation
+  ``tau = 1 - 4/theta * (1 - Debye1(theta))`` (sign-flipped for negative tau),
+  not an approximation
 
 **Applications:**
 
@@ -307,6 +320,133 @@ Characterizes extreme phenotypes using extreme value theory, estimating return l
 - Assessing evolutionary constraints
 - Risk assessment for rare developmental outcomes
 
+Spectral Analysis
+~~~~~~~~~~~~~~~~~
+
+Frequency-domain analysis using Welch's method, with optional
+magnitude-squared coherence between two signals.
+
+**Usage:**
+
+.. code-block:: python
+
+    result = analytics.spectral_analysis(
+        'phenotype',
+        sampling_frequency=1.0,
+        coherence_column='phenotype2'  # optional second signal
+    )
+
+    print(f"Dominant frequencies: {result.dominant_frequencies}")
+    print(f"Spectral entropy: {result.spectral_entropy:.3f}")
+
+**Parameters:**
+
+- ``signal_column`` (str): Column with signal data
+- ``sampling_frequency`` (float): Sampling frequency (default ``1.0``)
+- ``coherence_column`` (str, optional): Second column; when given, the
+  magnitude-squared coherence between the two signals is stored in
+  ``coherence_matrix`` as an ``(n_frequencies, 2)`` array of
+  ``[frequency, coherence]``. Without it ``coherence_matrix`` is empty
+  (coherence is a two-signal quantity).
+
+**Returns** (``SpectralResult``):
+
+- ``power_spectrum``: Welch power spectral density
+- ``frequency_peaks``: Frequencies of spectral peaks (power above its 75th percentile)
+- ``spectral_entropy``: Spectral entropy of the normalized power
+- ``dominant_frequencies``: Peak frequencies
+- ``coherence_matrix``: Coherence array (empty when no ``coherence_column``)
+
+Spatial Analysis (Moran's I)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Quantifies spatial autocorrelation with Moran's I.
+
+**Usage:**
+
+.. code-block:: python
+
+    result = analytics.spatial_analysis('phenotype')
+
+    print(f"Moran's I: {result['morans_i']:.3f}")
+    print(f"Autocorrelation: {result['spatial_autocorrelation']}")
+    print(f"Weights: {result['weights_kind']}")
+
+    # Custom n x n weights (rows/columns match the non-NaN observations)
+    n = len(analytics.data)
+    W = np.ones((n, n)) - np.eye(n)
+    result = analytics.spatial_analysis('phenotype', spatial_weights=W)
+
+**Parameters:**
+
+- ``value_column`` (str): Column with values to analyze
+- ``spatial_weights`` (ndarray, optional): n x n spatial weights matrix
+  W. When given, Moran's I is ``I = (n / S0) * (z' W z) / (z' z)`` with
+  z the centered values and ``S0 = sum(W)``; the shape must match the
+  number of non-NaN observations of the column.
+
+**Returns:**
+
+- ``morans_i``: Moran's I statistic (``NaN`` when undefined)
+- ``spatial_autocorrelation``: ``'Positive'`` (I > 0.1), ``'Negative'``
+  (I < -0.1), or ``'None'``
+- ``weights_kind``: ``'supplied'`` when an explicit weights matrix is
+  passed; ``'linear_adjacency'`` for the default (``w_ij = 1`` for
+  adjacent observations in sequence order)
+
+Robust Statistical Analysis
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Real M-estimators — not placeholders: Huber and Tukey biweight location
+via IRLS, and the Rousseeuw-Croux Sn scale estimator.
+
+**Usage:**
+
+.. code-block:: python
+
+    result = analytics.robust_statistical_analysis('phenotype')
+
+    print(f"Huber estimate: {result['location_estimates']['huber_estimator']:.3f}")
+    print(f"Tukey biweight: {result['location_estimates']['tukey_biweight']:.3f}")
+    print(f"Sn scale: {result['scale_estimates']['sn_scale']:.3f}")
+
+**Returns:**
+
+- ``location_estimates``: ``median``, ``trimmed_mean``,
+  ``huber_estimator``, ``tukey_biweight``
+- ``scale_estimates``: ``mad``, ``mad_normalized`` (consistent with the
+  normal distribution), ``iqr``, ``sn_scale``
+- ``robust_location_preferred``: The trimmed mean
+- ``robust_scale_preferred``: The MAD normalized to normal consistency
+
+Canonical Correlation Analysis
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Relates two blocks of variables via CCA
+(``MultivariateAnalyzer.canonical_correlation_analysis``), computing
+canonical correlations from the generalized eigenproblem
+``cov11^{-1/2} cov12 cov22^{-1} cov21 cov11^{-1/2}``.
+
+**Usage:**
+
+.. code-block:: python
+
+    from evojump.analytics_engine import MultivariateAnalyzer
+
+    mv = MultivariateAnalyzer(data_core.get_aggregated_data())
+    cca = mv.canonical_correlation_analysis(block1, block2)
+
+    print(f"Canonical correlations: {cca['canonical_correlations']}")
+
+**Returns:**
+
+- ``canonical_correlations``: Sorted canonical correlations
+- ``canonical_variables_1``: X-side canonical coefficients
+- ``canonical_variables_2``: Y-side canonical coefficients (scaled to unit canonical variates)
+- ``eigenvalues``: Squared canonical correlations
+- ``scaler1_mean`` / ``scaler1_scale`` / ``scaler2_mean`` / ``scaler2_scale``: Standardization used
+
+
 Regime Switching Analysis
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -333,12 +473,125 @@ Identifies discrete regimes in time series data and estimates transition probabi
 - ``transition_matrix``: Count matrix of regime transitions
 - ``transition_probabilities``: Probability matrix of regime transitions
 - ``n_switches``: Total number of regime switches
+- ``switch_timepoints``: Indices of the observations where the regime changed
 
 **Applications:**
 
 - Identifying developmental phases
 - Detecting environmental regime shifts
 - Modeling punctuated equilibrium
+
+
+Cross-Section Distribution Comparison
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``LaserPlaneAnalyzer.compare_distributions`` compares the model's
+reference cross-section against one or more condition-specific samples
+at a time point and returns a fully populated ``DistributionComparison``
+(``test_statistics``, ``p_values``, ``effect_sizes`` and
+``significant_differences`` are filled in, not left empty).
+
+**Usage:**
+
+.. code-block:: python
+
+    import numpy as np
+
+    model.generate_trajectories(n_samples=100, x0=10.0, seed=7)
+    analyzer = ej.LaserPlaneAnalyzer(model)
+    comparison = analyzer.compare_distributions(
+        time_point=5.0,
+        condition_data={
+            'control': np.asarray([...]),
+            'treated': np.asarray([...]),
+        },
+        test='auto',                     # or 'ks', 'anderson', 'cramer', 'mann_whitney', 't_test'
+        rng=np.random.default_rng(42)    # seeds permutation p-values
+    )
+
+    print(comparison.test_statistics)
+    print(comparison.p_values)
+    print(comparison.effect_sizes)       # Cohen's d per condition
+    print(comparison.significant_differences)
+
+The module-level ``DistributionComparer.compare_distributions(data1,
+data2, test='auto', rng=None)`` performs the same tests directly on two
+samples; Anderson-Darling and Cramer-von Mises p-values are permutation
+based and inherit reproducibility from ``rng``.
+
+Evolutionary Genetic Parameters
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``EvolutionSampler.analyze_evolutionary_patterns`` reports real
+quantities or explicit NaN — never fabricated placeholders:
+
+- ``genetic_parameters['available']``: ``True`` only when a
+  ``parent``/``offspring`` pedigree exists and at least one time point
+  has replicated observations; ``additive_variance``,
+  ``environmental_variance`` and ``narrow_sense_heritability`` are NaN
+  when the flag is ``False``. ``dominance_variance``,
+  ``epistatic_variance`` and ``broad_sense_heritability`` are not
+  identifiable from phenotypes alone and are always NaN.
+- ``selection_analysis['selection_differential']`` and
+  ``selection_analysis['selection_response']``: **per-trait
+  dictionaries** (trait name to value), not scalars.
+- ``phylogenetic_signal``: computed via Moran's I only when a distance
+  matrix has been supplied and each trait vector aligns with the matrix
+  rows; otherwise the entry is left empty.
+
+**Usage:**
+
+.. code-block:: python
+
+    sampler = ej.EvolutionSampler(population_data)
+    results = sampler.analyze_evolutionary_patterns()
+    genetics = results['genetic_parameters']
+    if genetics.get('available'):
+        print(f"Narrow-sense heritability: {genetics['narrow_sense_heritability']:.3f}")
+    for trait, differential in results['selection_analysis']['selection_differential'].items():
+        print(f"{trait}: S = {differential:.3f}")
+
+Comprehensive Report Column Selection
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``AnalyticsEngine.comprehensive_analysis_report`` accepts explicit
+column pairs for the sections that need a hypothesized direction:
+
+.. code-block:: python
+
+    report = analytics.comprehensive_analysis_report(
+        bayesian_columns=('phenotype1', 'phenotype2'),   # (x, y) regression pair
+        causal_columns=('temperature', 'growth_rate')    # (cause, effect) Granger pair
+    )
+
+Without an explicit pair the corresponding section is reported as
+``{'not_analyzed': ...}`` — Bayesian regression and Granger causality on
+arbitrary first-two columns produced uninterpretable results, so they
+are skipped rather than fabricated.
+
+Reproducibility (Seeding)
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+All stochastic entry points accept an explicit generator or seed:
+
+.. code-block:: python
+
+    import numpy as np
+
+    model = ej.JumpRope.fit(data_core, model_type='jump-diffusion',
+                            seed=42)                    # or rng=np.random.default_rng(42)
+    trajectories = model.generate_trajectories(n_samples=100, x0=10.0, seed=7)
+
+    sampler = ej.EvolutionSampler(population_data)
+
+    sampler.seed(42)                                    # seeds the sampler's generator
+
+    analyzer = ej.LaserPlaneAnalyzer(model)
+    cross = analyzer.analyze_cross_section(5.0, n_bootstrap=1000,
+                                          rng=np.random.default_rng(3))
+    bayes = analytics.bayesian_analysis('phenotype1', 'phenotype2', seed=5)
+    comparison = analyzer.compare_distributions(
+        5.0, {'treated': treated}, rng=np.random.default_rng(11))
 
 Best Practices
 --------------

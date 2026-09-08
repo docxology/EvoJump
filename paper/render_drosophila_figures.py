@@ -33,10 +33,15 @@ from evojump.analytics_engine import AnalyticsEngine
 plt.style.use('default')
 plt.rcParams.update({
     'font.size': 10,
+    'axes.titlesize': 11,
     'axes.labelsize': 10,
     'xtick.labelsize': 9,
     'ytick.labelsize': 9,
     'legend.fontsize': 9,
+    'axes.spines.top': False,
+    'axes.spines.right': False,
+    'axes.grid': True,
+    'grid.alpha': 0.3,
     'figure.dpi': 300,
     'savefig.dpi': 300,
     'savefig.bbox': 'tight'
@@ -213,6 +218,20 @@ class DrosophilaFigureGenerator:
 
         # Save figure
         output_path = self.output_dir / 'figure_drosophila_sweep.png'
+
+        # Stats box: selection regime and sweep landmarks
+        selection_coefficient = population_config.selection_coefficient
+        relative_fitness = population_config.advantageous_trait_fitness
+        final_frequency = float(gen_data['red_allele_frequency'].iloc[-1])
+        crossing = gen_data[gen_data['red_allele_frequency'] >= 0.5]
+        stats_lines = [f"s = {selection_coefficient:.2f}  (w = {relative_fitness:.2f})"]
+        if not crossing.empty:
+            stats_lines.append(
+                f"50% crossing: generation {int(crossing['generation'].iloc[0])}")
+        stats_lines.append(f"Final frequency: {final_frequency:.3f}")
+        ax.text(0.02, 0.97, '\n'.join(stats_lines), transform=ax.transAxes,
+                fontsize=10, verticalalignment='top',
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.85))
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         plt.close(fig)
 
@@ -267,10 +286,11 @@ class DrosophilaFigureGenerator:
             G.add_node(f'Marker_{i}', distance=sweep_df[sweep_df['marker_id'] == i]['linkage_distance'].iloc[0])
 
         # Add edges based on correlation (stricter threshold for clarity with 20 markers)
+        correlation_threshold = 0.7
         for i in range(n_markers):
             for j in range(i+1, n_markers):
                 corr = correlation_matrix[i, j]
-                if abs(corr) > 0.7:  # Higher threshold for 20 markers
+                if abs(corr) > correlation_threshold:
                     G.add_edge(f'Marker_{i}', f'Marker_{j}', weight=abs(corr))
 
         # Create plot with larger size for 20 markers
@@ -307,6 +327,13 @@ class DrosophilaFigureGenerator:
         sm.set_array([])
         cbar = plt.colorbar(sm, ax=ax, label='Linkage Distance (cM)', fraction=0.046, pad=0.04)
         cbar.ax.tick_params(labelsize=9)
+
+        # Stats box: edge threshold and graph size
+        ax.text(0.02, 0.98,
+                f"Edge threshold |r| > {correlation_threshold}\n"
+                f"Nodes: {G.number_of_nodes()}   Edges: {G.number_of_edges()}",
+                transform=ax.transAxes, fontsize=11, verticalalignment='top',
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.85))
 
         # Save figure
         output_path = self.output_dir / 'figure_drosophila_network.png'

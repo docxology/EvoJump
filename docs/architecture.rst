@@ -8,25 +8,25 @@ Design Philosophy
 
 EvoJump is built on several core design principles:
 
-**🔬 Scientific Rigor**
+**Scientific Rigor**
   * Real data analysis (no mocks in tests)
   * Statistically sound methods
   * Reproducible results
   * Comprehensive validation
 
-**🏗️ Modular Architecture**
+**Modular Architecture**
   * Clean separation of concerns
   * Highly extensible design
   * Plugin system support
   * Minimal coupling between components
 
-**⚡ Performance & Scalability**
+**Performance & Scalability**
   * Optimized for large biological datasets
   * Parallel processing support
   * Memory-efficient algorithms
   * GPU acceleration capabilities
 
-**🎯 User Experience**
+**User Experience**
   * Intuitive API design
   * Comprehensive documentation
   * Rich visualization capabilities
@@ -90,10 +90,10 @@ System Components
   * Advanced methods (Bayesian, network, causal inference)
 
 **Command Line Interface**
-  * Batch processing capabilities
-  * Automation and scripting support
-  * Integration with workflow systems
-  * User-friendly interface for non-programmers
+  * Four subcommands: ``analyze``, ``fit``, ``visualize``, ``sample``
+  * Per-subcommand ``--output``/``-o`` with a global ``--output`` fallback
+  * ``--time-column`` on ``analyze``, ``fit``, and ``sample``
+  * Exit codes: 0 (success), 1 (runtime failure), 2 (usage error)
 
 Data Flow Architecture
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -331,6 +331,8 @@ hierarchy; EvoJump raises standard built-in exceptions:
   * ``ValueError`` for invalid parameters and malformed input data
   * ``FileNotFoundError`` for missing input files (CLI exits with code 1)
   * ``RuntimeError`` for operations on unfitted or inconsistent models
+  * CLI exit codes: ``0`` = success, ``1`` = runtime failure, ``2`` = usage
+    error (bad arguments or no subcommand)
 
 **Error Recovery**
   * Graceful degradation for partial failures

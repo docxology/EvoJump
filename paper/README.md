@@ -165,7 +165,7 @@ To contribute to the paper:
 If you use EvoJump in your research, please cite:
 
 ```
-Friedman, D. A. (2025). EvoJump: A Unified Framework for Stochastic 
+Friedman, D. A. (2026). EvoJump: A Unified Framework for Stochastic 
 Modeling of Evolutionary Ontogenetic Trajectories. 
 [Journal details to be added upon publication]
 ```
@@ -192,4 +192,4 @@ For questions about the paper:
 
 **Pages**: 85 (with figures and complete implementation code)
 
-**Last Updated**: September 2025
+**Last Updated**: September 2026

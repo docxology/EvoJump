@@ -66,7 +66,7 @@ The continuous wavelet transform is computed using the PyWavelets library, which
 
 Copula fitting proceeds in two steps: first, transform marginal data to uniform $[0,1]$ distributions using empirical ranks; second, fit the copula dependence structure to these uniform margins. For Gaussian copulas, we transform uniform margins to standard normal via the inverse normal CDF and estimate the correlation parameter. For Clayton copulas, we compute Kendall's $\tau$ and convert to the copula parameter via $\theta = 2\tau/(1-\tau)$. This approach separates marginal distributions from dependence structure, enabling flexible modeling of complex trait relationships.
 
-## Changelog of Methods (v0.2.0)
+## Changelog of Methods
 
 Version 0.2.0 corrected several methodological descriptions that had drifted from the implementation. The most substantive corrections:
 
@@ -79,6 +79,21 @@ Version 0.2.0 corrected several methodological descriptions that had drifted fro
 - **Lyapunov and dimension estimators.** Largest Lyapunov exponent (Rosenstein) and correlation dimension (Grassberger-Procaccia) are now computed with their published algorithms rather than surrogate statistics.
 
 Sections 3, 5, and 12 were updated in this pass so that every stated statistical claim matches the v0.2.0 implementation.
+
+Version 0.3.0 (comprehensive review & release pass) replaced the remaining placeholder statistics with real estimators:
+
+- **Exact GJD and OU likelihoods completed.** The geometric jump-diffusion one-jump log-likelihood now includes the drift shift and diffusion variance (previously omitted, biasing fits), and the OU log-likelihood is the full Poisson-Gaussian mixture (up to $k = 20$ jumps per step), matching the simulation model in every parameter regime.
+- **Proper CCA eigenproblem.** Canonical correlation analysis solves the generalized eigenproblem $\mathrm{cov}_{11}^{-1}\mathrm{cov}_{12}\mathrm{cov}_{22}^{-1}\mathrm{cov}_{21}$ and returns both coefficient sets (`canonical_variables_1` / `canonical_variables_2`), replacing an earlier SVD surrogate.
+- **Joint NaN dropping.** Copula, Bayesian, and survival analyses drop rows jointly on the analysed pair so observations stay aligned, instead of independently masking each column.
+- **Exact Frank relation and Student-t copula.** The Frank parameter is solved from the exact Kendall's $\tau$ relation $\tau = 1 - \tfrac{4}{\theta}\left(1 - D_1(\theta)\right)$ (Debye function $D_1$ evaluated by quadrature, bracketed root-finding, sign-flipped for negative $\tau$); the Student-t copula family was added ($\rho$ from $\tau$, $\nu$ from excess kurtosis).
+- **Real robust M-estimators.** Huber and Tukey location/scale estimation are genuine iteratively reweighted M-estimators, and the $S_n$ scale estimator uses the published Rousseeuw–Croux algorithm, replacing earlier median placeholders.
+
+Version 0.4.0 (test-suite hardening & release pass) fixed two estimator defects surfaced by the expanded validation suite:
+
+- **Gower phylogenetic covariance with PSD validation.** Phylogenetic covariance is a double-centered (Gower) kernel computed from the distance matrix and validated for positive semidefiniteness before use, replacing the raw distance matrix.
+- **Corrected Scholz–Stephens statistic.** The AD-type $k$-sample statistic had an inverted formula (larger under the null than under separation); it now uses the correct eq. 7 midrank formula, verified against scipy across randomized trials including ties.
+- **Granger causality statsmodels >= 0.15 fix.** The `verbose` kwarg removed in statsmodels 0.15 was dropped, restoring an entire Granger path that had been dead code returning error dicts.
+- **Standardized selection gradient.** The directional-selection statistic is the standardized regression slope $S / \mathrm{SD}(\text{first time point})$, with per-trait `selection_differential` / `selection_response` dictionaries and an `available` marker (NaN) for genetic parameters that are unidentifiable without pedigree structure.
 
 ## Performance Optimization
 

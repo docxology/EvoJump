@@ -128,7 +128,7 @@ Specialized Use Cases
 ---------------------
 
 Plant Development Analysis
-~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Example analyzing Arabidopsis thaliana development:
 
@@ -142,7 +142,7 @@ Example analyzing Arabidopsis thaliana development:
 
    # Create DataCore with multiple phenotypes
    data_core = ej.DataCore.load_from_csv(
-       plant_data,
+       "arabidopsis_development.csv",
        time_column='days_after_germination',
        phenotype_columns=['leaf_area', 'stem_height', 'root_length', 'chlorophyll_content']
    )
@@ -192,7 +192,7 @@ Population-level evolutionary analysis:
    pop_stats = evolution_results['population_statistics']
 
    print(f"Effective population size: {pop_stats.effective_population_size:.0f}")
-   print(f"Mean heritability: {pop_stats.mean_heritability:.3f}")
+   print(f"Heritability estimates: {pop_stats.heritability_estimates}")
 
    # Cluster individuals by developmental trajectories
    clusters = sampler.cluster_individuals(n_clusters=3)
@@ -226,6 +226,12 @@ Advanced time series analysis of developmental data:
    # Spectral analysis
    spectral_result = analytics.spectral_analysis('phenotype1')
    print(f"Dominant frequencies: {spectral_result.dominant_frequencies}")
+
+   # With coherence against a second signal: coherence_matrix becomes an
+   # (n_frequencies, 2) array of [frequency, coherence]
+   spectral_result = analytics.spectral_analysis(
+       'phenotype1', coherence_column='phenotype2')
+   print(f"Coherence matrix shape: {spectral_result.coherence_matrix.shape}")
 
 Network Analysis
 ~~~~~~~~~~~~~~~~
@@ -469,7 +475,7 @@ Analyzing organism development:
              f"(mean={result.moments['mean']:.2f})")
 
 Evolutionary Ecology
-~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~
 
 Population dynamics and adaptation:
 

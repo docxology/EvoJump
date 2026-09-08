@@ -5,6 +5,43 @@ All notable changes to the EvoJump project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-09-08 (docs, manuscript & visualization polish)
+
+### Added
+- README Gallery: five annotated figures (comprehensive nine-panel,
+  FBM density heatmap with dominant-timescale annotation, Gaussian copula
+  with τ/ρ box, Drosophila selective sweep with s/w/50%-crossing stats box,
+  20-marker network with threshold/edge counts).
+- Docs: new sections for spectral coherence (`coherence_column`), spatial
+  analysis (`spatial_weights`/`weights_kind`), robust M-estimators, proper
+  CCA, cross-section distribution comparison (`rng=`), evolutionary genetic
+  parameters (`available` marker, per-trait dicts), comprehensive-report
+  column selection, and the reproducibility (seed/rng) surface; every code
+  snippet in docs/ ast-parsed and execution-verified; api_reference gained
+  all previously undocumented public classes.
+- Visualization: centralized rcParams style helper (120 dpi, constrained
+  layout, desplined axes, subtle grid); fitted-parameter annotations on
+  model-comparison panels; AICc-winner notes on distribution panels;
+  legends on all multi-line cross-section/violin/ridge/animation panels.
+- Paper figures: per-model fitted-parameter legend labels, (a)-(i) panel
+  captions with units, colorbar units + dominant-timescale annotation,
+  Gaussian copula ρ box, Drosophila sweep/network stats boxes — all
+  regenerated deterministically (seed 42).
+
+### Changed
+- Author identity resolved to Daniel Ari Friedman (Active Inference
+  Institute, ORCID 0000-0001-6232-9096) across paper.md YAML, README,
+  pyproject, CITATION.cff, .zenodo.json; manuscript date September 2026;
+  methods changelog in 05_implementation.md extended through v0.4.0;
+  12_code.md listings updated to v0.5.0 API (seed=, copula options,
+  genetic_parameters 'available'); TODO.md Major items closed.
+- PlotConfig.dpi default 100 → 120.
+
+### Fixed
+- docs/quickstart + examples snippets: two code blocks passed DataFrames to
+  `DataCore.load_from_csv` (crash); broken code fence in 12_code.md;
+  short RST underlines; stale example roster in examples/AGENTS.md.
+
 ## [0.4.0] - 2026-09-08 (test-suite hardening & release pass)
 
 ### Changed

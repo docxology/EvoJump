@@ -202,6 +202,38 @@ DistributionComparison
    :undoc-members:
    :show-inheritance:
 
+DistributionFitter
+~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: evojump.laserplane.DistributionFitter
+   :no-index:
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+DistributionComparer
+~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: evojump.laserplane.DistributionComparer
+   :no-index:
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+   Compares two samples with Kolmogorov-Smirnov, Anderson-Darling
+   (permutation p-values seeded via ``rng``), Cramer-von Mises,
+   Mann-Whitney, and t-test implementations.
+
+MomentAnalyzer
+~~~~~~~~~~~~~~
+
+.. autoclass:: evojump.laserplane.MomentAnalyzer
+   :no-index:
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+
 TrajectoryVisualizer
 ~~~~~~~~~~~~~~~~~~~~
 
@@ -218,12 +250,29 @@ TrajectoryVisualizer
    .. automethod:: plot_ridge
    .. automethod:: plot_phase_portrait
    .. automethod:: create_animation
-   .. automethod:: create_animation
 
 PlotConfig
 ~~~~~~~~~~
 
 .. autoclass:: evojump.trajectory_visualizer.PlotConfig
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+AnimationFrame
+~~~~~~~~~~~~~~
+
+.. autoclass:: evojump.trajectory_visualizer.AnimationFrame
+   :no-index:
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+AnimationController
+~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: evojump.trajectory_visualizer.AnimationController
+   :no-index:
    :members:
    :undoc-members:
    :show-inheritance:
@@ -240,10 +289,49 @@ EvolutionSampler
    .. automethod:: analyze_evolutionary_patterns
    .. automethod:: cluster_individuals
 
+   .. automethod:: seed
+      :no-index:
+
 PopulationStatistics
 ~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: evojump.evolution_sampler.PopulationStatistics
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+SampleResult
+~~~~~~~~~~~~
+
+.. autoclass:: evojump.evolution_sampler.SampleResult
+   :no-index:
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+PopulationModel
+~~~~~~~~~~~~~~~
+
+.. autoclass:: evojump.evolution_sampler.PopulationModel
+   :no-index:
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+PhylogeneticAnalyzer
+~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: evojump.evolution_sampler.PhylogeneticAnalyzer
+   :no-index:
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+QuantitativeGenetics
+~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: evojump.evolution_sampler.QuantitativeGenetics
+   :no-index:
    :members:
    :undoc-members:
    :show-inheritance:
@@ -258,12 +346,16 @@ AnalyticsEngine
 
    .. automethod:: analyze_time_series
    .. automethod:: analyze_multivariate
+   .. automethod:: detect_changes
+      :no-index:
    .. automethod:: predictive_modeling
+   .. automethod:: survival_analysis
+      :no-index:
    .. automethod:: bayesian_analysis
-   .. automethod:: network_analysis
-   .. automethod:: shortest_path_analysis
-   .. automethod:: causal_inference
    .. automethod:: advanced_dimensionality_reduction
+      :no-index:
+   .. automethod:: network_analysis
+   .. automethod:: causal_inference
    .. automethod:: wavelet_analysis
    .. automethod:: copula_analysis
    .. automethod:: extreme_value_analysis
@@ -468,20 +560,26 @@ Version Compatibility
 ---------------------
 
 **Python Versions**
-  * Requires Python 3.9+ (``requires-python >=3.9,<3.15``; primary testing on 3.12)
-  * Limited support: Python 3.7 (some features may not work)
+  * Requires Python 3.9+ (``requires-python >=3.9,<3.15``; CI runs 3.9-3.12)
 
 **Dependency Versions**
-  * NumPy: 1.21.0 - 1.26.0
-  * SciPy: 1.7.0 - 1.12.0
-  * Pandas: 1.3.0 - 2.1.0
-  * Matplotlib: 3.5.0 - 3.8.0
-  * Plotly: 5.0.0 - 5.17.0
-  * Scikit-learn: 1.0.0 - 1.4.0
+  * Minimum versions (``pyproject.toml``): NumPy >= 1.21.0, SciPy >= 1.7.0,
+    Pandas >= 1.3.0, Matplotlib >= 3.5.0
+  * Reference stack (v0.5.0 tested): NumPy 2.5.2, SciPy 1.18.1, Pandas 3.0.5,
+    Matplotlib 3.11.1, Plotly 7.0.0, Scikit-learn 1.9.0
+  * Note: ``pytest-cov`` cannot be used on the NumPy >= 2.5 stack; the
+    coverage gate runs ``coverage run --source=src/evojump -m pytest`` and
+    ``coverage report --fail-under=95`` instead
 
 **Breaking Changes**
-  * v0.1.0: Initial release
-  * No breaking changes planned for v0.2.0
+  * v0.2.0: CLI ``fit``/``analyze``/``sample`` gained ``--time-column`` and a
+    subcommand ``--output`` with a global ``--output`` fallback; exit codes
+    standardized to 0 (success), 1 (runtime failure), 2 (usage error)
+  * v0.3.0: license changed from MIT to Apache License 2.0;
+    ``selection_differential``/``selection_response`` in EvolutionSampler
+    results are now per-trait dictionaries (previously scalars)
+  * v0.4.0: coverage gate enforced at 95% via ``coverage run`` (pytest-cov
+    plugin unsupported on NumPy >= 2.5)
   * API stability guaranteed until v1.0.0
 
 Migration Guide

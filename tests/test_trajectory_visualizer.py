@@ -62,7 +62,7 @@ class TestPlotConfig:
         config = trajectory_visualizer.PlotConfig()
 
         assert config.figsize == (12, 8)
-        assert config.dpi == 100
+        assert config.dpi == 120
         assert config.style == 'default'
         assert config.alpha == 0.7
         assert config.linewidth == 2.0
@@ -86,6 +86,151 @@ class TestPlotConfig:
         assert config.alpha == 0.5
         assert config.linewidth == 3.0
         assert config.show_confidence_intervals is False
+
+
+class TestPlotStyleHelpers:
+    """Module-level style and annotation helpers (v0.5.0 polish)."""
+
+    def test_apply_plot_style_sets_polished_rcparams(self):
+        trajectory_visualizer._apply_plot_style()
+        import matplotlib as mpl
+        assert mpl.rcParams['figure.dpi'] >= 120
+        assert mpl.rcParams['savefig.dpi'] >= 120
+        assert mpl.rcParams['figure.constrained_layout.use'] is True
+        assert mpl.rcParams['axes.spines.top'] is False
+        assert mpl.rcParams['axes.spines.right'] is False
+        assert mpl.rcParams['axes.grid'] is True
+
+    def test_static_plots_inherit_style_and_despined_axes(self):
+        model = make_seeded_model(n_samples=10)
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        fig = viz.plot_trajectories(model, n_trajectories=5, interactive=False)
+        ax = fig.get_axes()[0]
+        assert not ax.spines['top'].get_visible()
+        assert not ax.spines['right'].get_visible()
+        plt.close(fig)
+
+    def test_model_param_note_formats_process_and_params(self):
+        model = make_seeded_model()
+        note = trajectory_visualizer._model_param_note(model)
+        assert 'Ornstein-Uhlenbeck with Jumps' in note
+        assert 'drift=' in note and 'diffusion=' in note
+
+    def test_model_param_note_empty_without_params_or_identity(self):
+        note = trajectory_visualizer._model_param_note(SimpleNamespace())
+        assert note == ''
+
+    def test_annotate_model_params_draws_corner_text(self):
+        model = make_seeded_model()
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        fig, ax = plt.subplots()
+        trajectory_visualizer._annotate_model_params(ax, [model])
+        assert ax.texts, "expected a parameter corner note"
+        plt.close(fig)
+
+    def test_annotate_model_params_silent_without_notes(self):
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        fig, ax = plt.subplots()
+        trajectory_visualizer._annotate_model_params(ax, [SimpleNamespace()])
+        assert not ax.texts
+        plt.close(fig)
+
+    def test_aicc_winner_note_selects_lowest_aicc(self):
+        fits = {'normal': {'aicc': 10.0}, 'beta': {'aicc': 5.5},
+                'unfitted': {'aicc': np.inf}}
+        note = trajectory_visualizer._aicc_winner_note(fits)
+        assert note == 'Best fit: beta (AICc=5.50)'
+
+    def test_aicc_winner_note_single_fit_dict(self):
+        note = trajectory_visualizer._aicc_winner_note(
+            {'distribution': 'normal', 'aicc': -3.25})
+        assert note == 'Best fit: normal (AICc=-3.25)'
+
+    def test_aicc_winner_note_absent_information_is_none(self):
+        assert trajectory_visualizer._aicc_winner_note(None) is None
+        assert trajectory_visualizer._aicc_winner_note({}) is None
+        assert trajectory_visualizer._aicc_winner_note({'a': {'nope': 1}}) is None
+        assert trajectory_visualizer._aicc_winner_note({'aicc': np.inf}) is None
+
+    def test_draw_fit_note_annotates_carrier_object(self):
+        carrier = SimpleNamespace(
+            distribution_fit={'distribution': 'normal', 'aicc': 12.5})
+        fig, ax = plt.subplots()
+        note = trajectory_visualizer._draw_fit_note(ax, carrier)
+        assert note is not None and 'normal' in note
+        assert ax.texts and 'AICc=12.50' in ax.texts[0].get_text()
+        plt.close(fig)
+
+    def test_draw_fit_note_silent_without_fit_information(self):
+        fig, ax = plt.subplots()
+        assert trajectory_visualizer._draw_fit_note(ax, SimpleNamespace()) is None
+        assert not ax.texts
+        plt.close(fig)
+
+    def test_model_comparison_annotates_fitted_parameters(self):
+        m1 = make_seeded_model(seed=42)
+        m2 = make_seeded_model(seed=43)
+        # One model carries distribution-fit results -> the Final
+        # Distributions panel annotates the AICc winner.
+        m1.distribution_fits = {'normal': {'aicc': 7.25},
+                                'beta': {'aicc': 3.5}}
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        fig = viz.plot_model_comparison([m1, m2], ['Model A', 'Model B'])
+        ax1_texts = '\n'.join(t.get_text() for t in fig.axes[0].texts)
+        assert 'Ornstein-Uhlenbeck with Jumps' in ax1_texts
+        assert 'drift=' in ax1_texts
+        ax2_texts = '\n'.join(t.get_text() for t in fig.axes[1].texts)
+        assert 'Best fit: beta (AICc=3.50)' in ax2_texts
+        plt.close(fig)
+
+    def test_plot_comparison_annotates_params_and_fit_winner(self):
+        m1 = make_seeded_model(seed=42)
+        m1.distribution_fit = {'distribution': 'normal', 'aicc': 42.0}
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        fig = viz.plot_comparison([m1], ['Model A'])
+        ax1_texts = '\n'.join(t.get_text() for t in fig.get_axes()[0].texts)
+        assert 'drift=' in ax1_texts
+        ax2_texts = '\n'.join(t.get_text() for t in fig.get_axes()[1].texts)
+        assert 'Best fit: normal (AICc=42.00)' in ax2_texts
+        plt.close(fig)
+
+    def test_model_comparison_fit_note_absent_for_plain_models(self):
+        # JumpRope models carry no distribution-fit results, so the AICc
+        # panel annotation must stay silent rather than invent one.
+        m1 = make_seeded_model(seed=42)
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        fig = viz.plot_model_comparison([m1], ['Only'])
+        assert not fig.axes[1].texts
+        plt.close(fig)
+
+    def test_cross_section_legends_on_every_labelled_panel(self):
+        model = make_seeded_model(n_samples=15)
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        fig = viz.plot_cross_sections(model, time_points=[2.0, 6.0],
+                                      show_kde=True, interactive=False)
+        for ax in fig.get_axes():
+            assert ax.get_legend() is not None, (
+                "labelled overlay panel missing its legend")
+        plt.close(fig)
+
+    def test_comprehensive_violin_and_ridge_panels_have_legends(self):
+        model = make_seeded_model(seed=42)
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        fig = viz.plot_comprehensive_trajectories(model)
+        panels = {ax.get_title(): ax for ax in fig.axes if ax.get_title()}
+        assert panels['Violin Plots'].get_legend() is not None
+        assert panels['Ridge Plot'].get_legend() is not None
+        plt.close(fig)
+
+    def test_animation_trajectory_panel_has_legend(self):
+        model = make_seeded_model(n_samples=10)
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        anim = viz.create_animation(model, n_frames=2)
+        anim._func(0)
+        legend = anim._fig.axes[0].get_legend()
+        assert legend is not None
+        assert 'Individual trajectories' in legend.get_texts()[0].get_text()
+        plt.close(anim._fig)
 
 
 class TestTrajectoryVisualizer:
