@@ -9,6 +9,7 @@ authors:
 version: 0.3.0
 date-released: "2026-09-08"
 license: Apache-2.0
+doi: 10.5281/zenodo.22664675
 repository-code: "https://github.com/docxology/EvoJump"
 abstract: "EvoJump models ontogenetic development as a jump-diffusion process sweeping across a fixed analytical plane, yielding dynamic cross-sectional views of phenotypic distributions across a developmental timeline. Includes data QC, seven stochastic process models, cross-sectional distribution analysis, visualization/animation, evolutionary sampling, and a statistical analysis engine."
 keywords:
