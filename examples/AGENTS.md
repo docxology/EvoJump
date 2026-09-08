@@ -18,4 +18,4 @@ generated.
   `comprehensive_sample_data.csv`, `animation_data.csv`,
   `multi_condition_data.csv`, `animation_rich_data.csv`,
   `orchestrator_data.csv`, ...).
-Repo-wide policy: see `/Volumes/external_drive/Git/template/projects/ongoing/AGENTS.md`.
+Repo-wide policy: see `../AGENTS.md`.

@@ -9,7 +9,7 @@ High-Performance Computing
 .. note::
    EvoJump has no configuration API: there is no ``evojump.config``
    module and no global knobs for thread counts, caching, GPU toggles, or
-   memory limits (v0.2.0). Parallelism and memory efficiency come from
+   memory limits (as of v0.5.0). Parallelism and memory efficiency come from
    standard Python tooling, as shown below.
 
 Parallel Processing
@@ -37,7 +37,7 @@ dependency) can partition the raw data before it reaches ``DataCore``.
 GPU Acceleration
 ~~~~~~~~~~~~~~~~
 
-Not available in v0.2.0: the optional ``evojump[gpu]`` extra installs
+Not available (as of v0.5.0): the optional ``evojump[gpu]`` extra installs
 ``cupy``, but no code path in the package uses it. Trajectory generation
 runs on the CPU and scales with ``n_samples``:
 

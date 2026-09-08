@@ -193,7 +193,7 @@ Advanced Configuration
 ----------------------
 
 .. note::
-   EvoJump v0.2.0 supports no environment variables (no ``EVOJUMP_*``
+   EvoJump (as of v0.5.0) supports no environment variables (no ``EVOJUMP_*``
    variables), no configuration file (no ``~/.evojump/config.yaml``), and
    no global configuration API (no ``evojump.config`` module). All
    behavior is controlled through function and method parameters.

@@ -11,7 +11,7 @@ Affiliation: Active Inference Institute
 
 ## Paper Structure
 
-The paper is organized into 12 modular sections:
+The paper is organized into 12 sections + 1 case-study section (06a):
 
 1. **Abstract** (`01_abstract.md`) - Summary of the framework and contributions
 2. **Introduction** (`02_introduction.md`) - Background, motivation, and conceptual framework
@@ -23,7 +23,7 @@ The paper is organized into 12 modular sections:
 8. **Conclusion** (`08_conclusion.md`) - Summary and broader impact
 9. **References** (`09_references.md`) - Complete bibliography
 10. **Figures** (`10_figures.md`) - Figure reproducibility and technical details
-11. **Glossary** (`11_glossary.md`) - Comprehensive symbol definitions (150+ entries)
+11. **Glossary** (`11_glossary.md`) - Comprehensive notation definitions (~130 notation entries)
 12. **Code Listings** (`12_code.md`) - Complete implementation code and examples
 
 ## Building the Paper
@@ -49,24 +49,23 @@ brew install --cask mactex
 
 **Build PDF only**:
 ```bash
-pandoc combined_paper.md -o evojump_paper.pdf --pdf-engine=pdflatex
+pandoc output/combined_paper.md -o evojump_paper.pdf --pdf-engine=pdflatex
 ```
 
 **Build HTML only**:
 ```bash
-pandoc combined_paper.md -o evojump_paper.html --standalone --katex
+pandoc output/combined_paper.md -o evojump_paper.html --standalone --katex
 ```
 
 ## Output Files
 
 All build outputs are automatically placed in the `output/` subdirectory:
 
-- `output/evojump_paper.pdf` - Publication-ready PDF version (85 pages, 4.7 MB with figures)
+- `output/evojump_paper.pdf` - Publication-ready PDF version (size varies with content — rebuilt by `build_paper.sh` with figures)
 - `output/evojump_paper.html` - Web-viewable HTML version with KaTeX math rendering
 - `output/evojump_paper.docx` - Microsoft Word version for collaborative editing
-- `output/combined_paper.md` - All sections combined into single markdown file (2,722 lines)
+- `output/combined_paper.md` - All sections combined into single markdown file (2,587 lines)
 - `output/build.log` - Build process log for debugging
-- `output/FINAL_COMPREHENSIVE_STATUS.md` - Complete build verification and status
 
 ## Paper Content
 
@@ -188,8 +187,6 @@ For questions about the paper:
 
 **Status**: Complete - ready for submission
 
-**Word Count**: ~18,000 words across all sections (including code listings)
-
-**Pages**: 85 (with figures and complete implementation code)
+**Word Count**: approximate (~18,000 words across all sections, including code listings — see `output/evojump_paper.pdf`)
 
 **Last Updated**: September 2026

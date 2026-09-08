@@ -6,4 +6,4 @@ and the rendered paper in `../../paper/output/`.
 
 ## Gotchas
 - Do not confuse this with `../../paper/` — this folder tracks status only.
-Repo-wide policy: see `/Volumes/external_drive/Git/template/projects/ongoing/AGENTS.md`.
+Repo-wide policy: see `../../AGENTS.md`.

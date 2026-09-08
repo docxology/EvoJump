@@ -9,7 +9,7 @@ This document outlines the comprehensive testing framework for the EvoJump proje
 EvoJump follows a strict test-driven development approach with the following core principles:
 
 - **Real Data Testing**: All tests use real biological and synthetic data, never mocks
-- **Comprehensive Coverage**: 95% floor enforced via `coverage report --fail-under=95` over `src/evojump` (gate is direct `coverage run`, not pytest-cov — see pyproject note; verified full-suite result 667 passed / 99% on 2026-09-08 — re-check with `tail -5 coverage.xml` after a fresh full run)
+- **Comprehensive Coverage**: 95% floor enforced via `coverage report --fail-under=95` over `src/evojump` (gate is direct `coverage run`, not pytest-cov — see pyproject note; verified full-suite result 684 passed / 99% on 2026-09-08 — re-check with `head -2 coverage.xml | grep line-rate` after a fresh full run)
 - **Integration Testing**: Tests validate interactions between all major components
 - **Edge Case Validation**: Extensive testing of error conditions and boundary cases
 - **Performance Validation**: Tests ensure computational efficiency for large datasets
@@ -102,9 +102,10 @@ EvoJump follows a strict test-driven development approach with the following cor
 
 ### Running Tests
 
-`run_tests.py` is a thin wrapper that forwards extra args to pytest verbatim
-(see its usage line); the canonical invocation is pytest itself. Invoke the venv
-python directly — `uv run` can stall under heavy load.
+`run_tests.py` is a thin wrapper that forwards args to pytest after applying
+its `--quick`/`--coverage` conveniences (see its usage line); the canonical
+invocation is pytest itself. Invoke the venv python directly — `uv run` can
+stall under heavy load.
 
 ```bash
 # Fast feedback (no coverage)
@@ -125,14 +126,16 @@ python directly — `uv run` can stall under heavy load.
 
 ### Test Configuration
 
-All test configuration lives in `pyproject.toml` under
-`[tool.pytest.ini_options]` (testpaths, naming patterns, coverage reports,
-and the `--cov-fail-under=68` floor). Do not duplicate the block here —
-read `pyproject.toml` as the single source of truth.
+All test configuration lives in `pyproject.toml`: pytest settings under
+`[tool.pytest.ini_options]` (testpaths, naming patterns, addopts) and the
+coverage gate under `[tool.coverage.run]` — direct `coverage run
+--source=src/evojump` + `coverage report --fail-under=95` (pytest-cov
+invocations crash on numpy>=2.5; see the pyproject note). Do not duplicate
+the block here — read `pyproject.toml` as the single source of truth.
 
 ## Coverage Requirements
 
-- **Minimum Coverage**: 68% aggregate floor via pyproject `--cov-fail-under=68`; check current number with `tail -5 coverage.xml` (line-rate attribute) after a run
+- **Minimum Coverage**: 95% floor via `coverage report --fail-under=95` over `src/evojump` (direct `coverage run`, not pytest-cov); check the current measured value with `head -2 coverage.xml | grep line-rate` after a run
 - **Branch Coverage**: Validated for critical paths
 - **Integration Coverage**: All module interactions tested
 - **Performance Coverage**: Large dataset handling validated

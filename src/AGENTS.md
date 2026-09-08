@@ -15,4 +15,4 @@ Package source root. Contains one package: `evojump/` (modules: `datacore.py`,
 ```bash
 .venv/bin/python -m pytest ../tests/ -q   # from EvoJump root: .venv/bin/python -m pytest tests/ -q --no-cov
 ```
-Repo-wide policy: see `/Volumes/external_drive/Git/template/projects/ongoing/AGENTS.md`.
+Repo-wide policy: see `../AGENTS.md`.

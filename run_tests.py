@@ -6,19 +6,22 @@ only chooses a sensible default invocation and surfaces pass/fail + exit code.
 The canonical direct command is:
     MPLBACKEND=Agg .venv/bin/python -m pytest tests/ -q --no-cov -p no:cacheprovider
 
+Coverage gate: direct `coverage run` + `coverage report --fail-under` over
+src/evojump (pytest-cov args crash on numpy>=2.5 — see the pyproject note).
+
 Usage:
-    python run_tests.py [--quick] [--coverage] [--fail-under N] [pytest args...]
+    python run_tests.py [--quick] [--coverage] [pytest args...]
 """
 import subprocess
 import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
-DEFAULT_FAIL_UNDER = 68  # mirrors pyproject addopts --cov-fail-under=68
+DEFAULT_FAIL_UNDER = 95  # coverage report gate over src/evojump (see pyproject note)
 
 
-def build_cmd(argv: list[str]) -> list[str]:
-    cmd = [sys.executable, "-m", "pytest", "tests/"]
+def build_cmds(argv: list[str]) -> list[list[str]]:
+    """Return the command(s) to run: pytest, or coverage run + coverage report."""
     args = list(argv)
     coverage = False
     if "--coverage" in args:
@@ -29,25 +32,32 @@ def build_cmd(argv: list[str]) -> list[str]:
         coverage = False
         if "--no-cov" not in args:
             args.insert(0, "--no-cov")
-    if not coverage and "--no-cov" not in args and not any(
-        a.startswith("--cov") for a in args
-    ):
-        # pyproject addopts always inject --cov*; disable unless asked for.
+    if coverage:
+        run_cmd = COVERAGE_RUN + ["-m", "pytest", "tests/"] + args
+        report_cmd = [
+            ".venv/bin/coverage",
+            "report",
+            f"--fail-under={DEFAULT_FAIL_UNDER}",
+        ]
+        return [run_cmd, report_cmd]
+    cmd = [str(PROJECT_ROOT / ".venv/bin/python"), "-m", "pytest", "tests/"]
+    if "--no-cov" not in args and not any(a.startswith("--cov") for a in args):
+        # pyproject addopts no longer inject --cov*; keep plain runs fast anyway.
         args.insert(0, "--no-cov")
-    if not any(a.startswith("--cov-fail-under") for a in args) and coverage:
-        args.append(f"--cov-fail-under={DEFAULT_FAIL_UNDER}")
-    return cmd + args
+    return [cmd + args]
 
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    cmd = build_cmd(argv)
-    print("Running:", " ".join(cmd), flush=True)
-    try:
-        proc = subprocess.run(cmd, cwd=PROJECT_ROOT)
-        return proc.returncode
-    except KeyboardInterrupt:
-        return 130
+    for cmd in build_cmds(argv):
+        print("Running:", " ".join(cmd), flush=True)
+        try:
+            proc = subprocess.run(cmd, cwd=PROJECT_ROOT)
+        except KeyboardInterrupt:
+            return 130
+        if proc.returncode != 0:
+            return proc.returncode
+    return 0
 
 
 if __name__ == "__main__":

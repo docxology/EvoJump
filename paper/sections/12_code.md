@@ -6,7 +6,7 @@ This section contains all code examples and implementation details referenced th
 
 ### Software Architecture
 
-**Class Hierarchy**:
+**Class Hierarchy** (stochastic processes):
 
 ```python
 StochasticProcess (ABC)
@@ -16,13 +16,16 @@ StochasticProcess (ABC)
 |-- FractionalBrownianMotion
 |-- CoxIngersollRoss
 +-- LevyProcess
+```
 
-Analyzer (ABC)
-|-- TimeSeriesAnalyzer
-|-- MultivariateAnalyzer
-|-- BayesianAnalyzer
-|-- NetworkAnalyzer
-+-- CausalInference
+**Analytics-Engine Component Classes** (the five analytics components provided by the analytics engine):
+
+```python
+TimeSeriesAnalyzer
+MultivariateAnalyzer
+BayesianAnalyzer
+NetworkAnalyzer
+CausalInference
 ```
 
 ### Algorithmic Implementation

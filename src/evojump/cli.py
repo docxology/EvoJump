@@ -110,11 +110,6 @@ Examples:
         type=Path,
         help='Output directory for results'
     )
-    parser.add_argument(
-        '--config',
-        type=Path,
-        help='Configuration file (YAML format)'
-    )
 
     # Subcommands
     subparsers = parser.add_subparsers(dest='command', help='Available commands')

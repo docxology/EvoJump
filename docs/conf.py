@@ -20,8 +20,8 @@ copyright = '2026, EvoJump Development Team'
 author = 'EvoJump Development Team'
 
 # The full version, including alpha/beta/rc tags
-release = '0.5.0'
-version = '0.5.0'
+release = '0.5.1'
+version = '0.5.1'
 
 
 # -- General configuration ---------------------------------------------------
@@ -86,10 +86,6 @@ html_theme_options = {
     'titles_only': False
 }
 
-# Custom CSS
-html_css_files = [
-    'custom.css',
-]
 
 # -- Options for autodoc ----------------------------------------------------
 
@@ -197,7 +193,6 @@ texinfo_documents = [
 epub_title = project
 epub_author = author
 epub_uid = 'evojump-' + release
-epub_cover = ('_static/cover.png', '')
 
 # A list of files that should not be packed into the epub file.
 epub_exclude_files = ['search.html']

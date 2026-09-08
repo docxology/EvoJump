@@ -335,7 +335,7 @@ Now that you're familiar with the basics:
 1. **Explore Examples**: Check out the ``examples/`` directory for more advanced usage
 2. **API Reference**: See :doc:`api_reference` for detailed API documentation
 3. **Advanced Usage**: Learn about advanced features in :doc:`advanced_usage`
-4. **Contributing**: Help improve EvoJump by reading :doc:`../contributing`
+4. **Contributing**: Help improve EvoJump by reading :doc:`contributing`
 
 
 Happy analyzing!

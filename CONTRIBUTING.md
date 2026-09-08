@@ -44,7 +44,7 @@ EvoJump follows strict test-driven development practices:
 
 1. **Write tests first**: Before implementing new features, write comprehensive tests
 2. **Use real data**: All tests must use real biological or synthetic data (no mocks)
-3. **Maintain coverage**: Meet the coverage floor enforced in pyproject pytest addopts
+3. **Maintain coverage**: Meet the 95% floor via `coverage report --fail-under=95` over `src/evojump` (direct `coverage run`, not pytest-cov — see pyproject note)
 4. **Run tests frequently**: Use `.venv/bin/python -m pytest tests/ -q --no-cov` for rapid feedback
 
 ### Code Quality Standards
@@ -289,8 +289,9 @@ class TestFeatureName:
    - Use fixed random seeds for reproducibility
 
 3. **Test Coverage**:
-   - Keep coverage above the enforced 68% floor (`--cov-fail-under=68` in
-     pyproject.toml; 95%+ on new code is a stretch goal, not a gate)
+   - Keep coverage above the enforced 95% floor (`coverage report
+     --fail-under=95` over `src/evojump`; direct `coverage run`, not
+     pytest-cov — see the pyproject note)
    - Test both success and failure paths
    - Include integration tests
    - Test performance with large datasets
@@ -304,7 +305,7 @@ class TestFeatureName:
 # Full test with coverage (enforced floor from pyproject.toml)
 .venv/bin/python -m pytest tests/
 
-# Or via the thin wrapper (forwards extra args to pytest verbatim)
+# Or via the thin wrapper (applies its --quick/--coverage conveniences, then forwards to pytest)
 python run_tests.py --quick
 
 # Specific test file

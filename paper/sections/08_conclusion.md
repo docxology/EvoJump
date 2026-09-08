@@ -79,7 +79,7 @@ The framework stands ready to analyze the next generation of developmental datas
 
 **Support**: Issues and feature requests can be submitted via GitHub Issues. Community discussion occurs on the project discussion board.
 
-**Data Availability**: All code, examples, and synthetic datasets used in this paper are openly available at [https://github.com/docxology/EvoJump](https://github.com/docxology/EvoJump). Synthetic datasets used for figure generation are available in the EvoJump repository under `examples/data/`. Complete reproduction scripts are provided in `examples/paper_figures.py`. All source code, tests, and examples are openly available for review, modification, and extension.
+**Data Availability**: All code, examples, and synthetic datasets used in this paper are openly available at [https://github.com/docxology/EvoJump](https://github.com/docxology/EvoJump). Synthetic datasets used for figure generation are generated synthetically (seeded, deterministic) inside the repository's figure-rendering scripts `paper/render_figures.py` and `paper/render_drosophila_figures.py`. All source code, tests, and examples are openly available for review, modification, and extension.
 
 
 

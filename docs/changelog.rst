@@ -12,12 +12,227 @@ versions.
 The format is based on `Keep a Changelog <https://keepachangelog.com/en/1.0.0/>`_,
 and the project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0.html>`_.
 
-Unreleased
-----------
+0.5.1 (2026-09-08) — documentation accuracy & Zenodo paper deposit
+------------------------------------------------------------------
+
+Fixed
+~~~~~
+
+- **Docs accuracy audit** (4 independent auditors, 38 findings, all verified
+  and fixed): changelog.rst fully re-synced (0.3.0–0.5.0 were missing);
+  broken ``:doc:`` cross-reference in quickstart; sphinx config referencing
+  nonexistent ``_static/custom.css`` and ``cover.png``; stale "(v0.2.0)"
+  version labels in advanced_usage/installation; README: stale 667→684 test
+  counts, gallery captions corrected against the actual PNGs (copula
+  τ 0.440 / ρ 0.643, sweep 50% crossing gen 19 / final 0.960, CV plateau
+  ~0.5), broken bibtex brace, ``uv sync --group dev`` → ``--extra dev``,
+  ``cd evojump`` → ``cd EvoJump``, six missing runtime deps in Requirements,
+  ornstein-uhlenbeck added to the process enumeration; AGENTS/CONTRIBUTING/
+  .cursorrules residual 68%-floor claims → the real 95% coverage gate; dead
+  absolute repo-wide-policy links in four subdirectory AGENTS.md files
+  repointed to the repo root; paper: data-availability statement pointed at
+  the real render scripts, build commands/paths fixed, stale output stats
+  corrected, superseded banner on the v0.2.0-era verification report,
+  phantom ``Analyzer (ABC)`` root removed, actual synthetic-data generator
+  documented in 10_figures.
+- CLI: removed the dead, never-consumed ``--config`` argparse flag.
+- run_tests.py: ``--coverage`` reworked to direct ``coverage run`` +
+  ``coverage report --fail-under=95`` (the old pytest-cov injection crashes
+  under numpy ≥ 2.5); floor comment corrected; venv python pinned.
+
+Added
+~~~~~
+
+- README Citation section: Zenodo block linking the concept DOI (all
+  versions) and noting the record archives the source snapshot + compiled
+  paper PDF.
+- Zenodo release records now include the compiled paper PDF
+  (``evojump_paper.pdf``) alongside the source archive.
+
+0.5.0 (2026-09-08) — docs, manuscript & visualization polish
+------------------------------------------------------------
+
+Added
+~~~~~
+* README Gallery: five annotated figures (comprehensive nine-panel,
+  FBM density heatmap with dominant-timescale annotation, Gaussian copula
+  with τ/ρ box, Drosophila selective sweep with s/w/50%-crossing stats box,
+  20-marker network with threshold/edge counts).
+* Docs: new sections for spectral coherence (``coherence_column``), spatial
+  analysis (``spatial_weights``/``weights_kind``), robust M-estimators, proper
+  CCA, cross-section distribution comparison (``rng=``), evolutionary genetic
+  parameters (``available`` marker, per-trait dicts), comprehensive-report
+  column selection, and the reproducibility (seed/rng) surface; every code
+  snippet in docs/ ast-parsed and execution-verified; api_reference gained
+  all previously undocumented public classes.
+* Visualization: centralized rcParams style helper (120 dpi, constrained
+  layout, desplined axes, subtle grid); fitted-parameter annotations on
+  model-comparison panels; AICc-winner notes on distribution panels;
+  legends on all multi-line cross-section/violin/ridge/animation panels.
+* Paper figures: per-model fitted-parameter legend labels, (a)-(i) panel
+  captions with units, colorbar units + dominant-timescale annotation,
+  Gaussian copula ρ box, Drosophila sweep/network stats boxes — all
+  regenerated deterministically (seed 42).
 
 Changed
 ~~~~~~~
-* Updated license from MIT to Apache License 2.0
+* Author identity resolved to Daniel Ari Friedman (Active Inference
+  Institute, ORCID 0000-0001-6232-9096) across paper.md YAML, README,
+  pyproject, CITATION.cff, .zenodo.json; manuscript date September 2026;
+  methods changelog in 05_implementation.md extended through v0.4.0;
+  12_code.md listings updated to v0.5.0 API (``seed=``, copula options,
+  genetic_parameters 'available'); TODO.md Major items closed.
+* ``PlotConfig.dpi`` default 100 → 120.
+
+Fixed
+~~~~~
+* docs/quickstart + examples snippets: two code blocks passed DataFrames to
+  ``DataCore.load_from_csv`` (crash); broken code fence in 12_code.md;
+  short RST underlines; stale example roster in examples/AGENTS.md.
+
+0.4.0 (2026-09-08) — test-suite hardening & release pass
+--------------------------------------------------------
+
+Changed
+~~~~~~~
+* **Coverage gate**: enforcement moved from pytest-cov to direct
+  ``coverage run`` + ``coverage report --fail-under=95`` — pytest-cov's
+  plugin-time imports collide with the numpy >= 2.5
+  "cannot load module more than once per process" guard on this stack
+  (plain ``coverage run -m pytest`` is unaffected). Floor raised 68% → **95%**.
+* **Test suite grown and refactored**: 412 → ~600 tests across 17 files;
+  per-module line coverage now datacore **100%**, cli **100%**,
+  laserplane **100%**, trajectory_visualizer **99.5%**, analytics_engine
+  **99.4%**, jumprope **99%**, evolution_sampler **98%** (overall ≥ 95%).
+* Shared synthetic-data builders centralized in ``tests/conftest.py``
+  (``make_growth_frame``, ``make_population_frame``); duplicated per-file
+  builders deleted; repeated scenario loops parametrized across all modules;
+  every stochastic test seeded; weak assertions (``fig is not None``,
+  bare ``pytest.raises(Exception)``, tautologies) replaced with observable
+  contracts.
+* New hypothesis property-invariant suite (``tests/test_property_invariants.py``,
+  19 properties): interpolation row/order/idempotence, outlier-mask
+  order-independence, KM bounds/monotonicity/CI bracketing, FBM
+  ``dt**(2H)`` variance scaling, log-likelihood dominance over misspecified
+  parameter boxes, selection gradient == standardized regression slope,
+  robust-estimator contamination bounds, order-statistic median-CI coverage.
+* ``test``/``dev`` extras now include ``hypothesis`` and ``pytest-xdist``
+  (uv.lock updated); ``pytest tests/ -n auto`` parallel runs documented.
+
+Fixed
+~~~~~
+* laserplane: ``DistributionComparer._ad_ksample_statistic`` implemented an
+  inverted Scholz-Stephens statistic (larger under the null than under
+  separation), making the ``anderson`` permutation fallback's p-values
+  meaningless; replaced with the correct eq. 7 midrank formula, verified
+  exactly equal to scipy's implementation across randomized trials incl. ties.
+* analytics_engine: removed the ``verbose`` kwarg from
+  ``grangercausalitytests`` (removed in statsmodels 0.15) — the entire Granger
+  causality path had been dead code returning error dicts on every call.
+
+0.3.0 (2026-09-08) — comprehensive review & release pass
+--------------------------------------------------------
+
+A full-repo review pass: every module, test file, docs page, example, and the
+manuscript audited by independent reviewers; findings verified and fixed.
+
+Fixed
+~~~~~
+* **JumpRope**: geometric jump-diffusion one-jump log-likelihood now includes
+  the drift shift and diffusion variance (previously omitted, biasing fits);
+  OU log-likelihood is the full Poisson-Gaussian mixture (k up to 20);
+  ``fit()`` evaluates objectives on parameter copies so optimizer failure can no
+  longer leak mid-optimization parameters; FBM diffusion standardized to
+  std-deviation units across all processes; Levy alpha estimated via an
+  empirical characteristic-function slope (recoverable below 2, previously
+  structurally biased to 2.0); jump-time detection uses a robust MAD threshold
+  instead of a per-path 95th percentile that flagged ~5% of any diffusion;
+  FBM Hurst regression lag alignment fixed.
+* **LaserPlane**: ``compare_distributions`` now returns populated
+  test_statistics/p_values/effect_sizes (Cohen's d) — previously empty dicts;
+  beta fits compute likelihood/AIC/BIC/Vuong on the scaled fit data with a
+  change-of-variables Jacobian (the beta branch was previously dead code that
+  never fit); lognormal/gamma information criteria computed on the positive
+  subset used for fitting; ``median_ci`` is a true order-statistic confidence
+  interval for the median (previously the central 95% of the data); ``rng``
+  threads through public comparison/bootstrap APIs for reproducible p-values.
+* **AnalyticsEngine**: CCA solves the proper generalized eigenproblem
+  (``cov11^{-1} cov12 cov22^{-1} cov21``) and returns both coefficient sets;
+  survival analysis drops time/event pairs jointly and validates 0/1 events;
+  seasonality auto-detects the period per column (previously leaked across
+  columns); copula/bayesian analyses drop NaN pairs jointly; Frank copula
+  parameter solved from the exact Kendall-tau relation; student copula
+  implemented; Huber/Tukey/Rousseeuw-Croux Sn robust estimators are real
+  M-estimators (previously median placeholders); variance changepoint
+  detection gated by a Bonferroni-corrected F-test; 'information' changepoint
+  method is a real BIC segmentation; spectral coherence (MSC) available via
+  ``coherence_column``; spatial analysis computes true Moran's I from
+  ``spatial_weights``; regime switching guards zero-variance features and
+  computes transitions from the full label sequence; seeded Bayesian
+  regression (``seed=``).
+* **DataCore**: interpolation is positionally stable with duplicate index
+  labels (previously expanded rows via ``.loc`` cross-product); outlier removal
+  applies one combined order-independent mask, never treats NaN as an outlier,
+  and refuses to empty a dataset; NaN time values raise instead of being
+  backfilled; HDF5 load/save round-trip (including the save layout, string
+  columns, group flattening, and clear unequal-length errors); aggregation
+  unions phenotype columns across datasets; a single ``TimeSeriesData`` is
+  accepted and ``append()`` added; quality metrics always include
+  ``temporal_consistency`` plus a per-column outlier breakdown; empty metadata
+  files raise a clear error; unknown phenotype columns raise in
+  ``filter_by_phenotype_range``.
+* **EvolutionSampler**: genetic-parameter and selection placeholders replaced
+  with real estimates (or NaN with an ``available`` marker — previously
+  fabricated zeros); phylogenetic covariance is a double-centered (Gower)
+  kernel with PSD validation (previously the raw distance matrix); selection
+  gradient is the standardized regression slope (documented); Moran's I is
+  computed only with a compatible distance matrix; sampling diagnostics no
+  longer mutate the caller's dict; MCMC acceptance rate excludes burn-in.
+* **CLI**: a global ``--output`` before the subcommand now survives subparser
+  defaults (previously silently dropped); ``visualize --interactive`` persists
+  the Plotly figure as HTML (previously exited 0 writing nothing); ``-v/-vv``
+  actually change log levels; exit codes consistently 0/1/2;
+  ``--time-column`` added to fit/sample with input validation everywhere;
+  ``analysis_results.json`` reports real trajectory counts.
+* **TrajectoryVisualizer**: ``networkx`` import restored so network plots render
+  instead of silently falling back; ``tick_labels=`` for matplotlib>=3.9;
+  Agg backend only set when no backend configured; consistent CI band
+  labeling (95% CI of the mean vs ±1 SD); heatmaps ignore NaN instead of
+  imputing zeros; deterministic phase-portrait subsampling; ``close=`` figure
+  ownership parameter and ``_save`` helper; animation fps derived from the frame
+  interval; distribution quantiles stored in animation frames.
+* **Examples**: repaired three example scripts that shipped with corrupted
+  string literals (``animation_demo.py``, ``comprehensive_animation_demo.py``,
+  ``comprehensive_demo.py``) — ``run_all_examples.py`` failed 3/11 before; the
+  Drosophila case study now emits strict JSON (no NaN tokens) with real
+  PCA/network/Bayesian statistics and a per-marker correlation network figure
+  (previously plotted DataFrame columns and placeholder zeros).
+
+Changed
+~~~~~~~
+* License changed from MIT to Apache License 2.0.
+* Python floor aligned at 3.9 across ``requires-python``, classifiers, black,
+  and mypy (previously mixed 3.8/3.9 metadata).
+* ``selection_differential``/``selection_response`` in EvolutionSampler results
+  are now per-trait dicts (previously scalar placeholders).
+* ``TimeSeriesAnalyzer.detect_change_points('cusum')`` delegates to
+  ChangePointDetector (result keys ``change_magnitude``/``z_score``).
+
+Added
+~~~~~
+* GitHub Actions CI workflow running the suite on Python 3.9-3.12.
+* ``.zenodo.json`` and ``CITATION.cff`` release metadata.
+* ``.gitignore``; build/coverage artifacts (``coverage.xml``, ``.coverage``,
+  ``__pycache__``, ``.DS_Store``, ``paper/output/``) removed from version control.
+* Parameter-recovery, seeding-reproducibility, and log-likelihood tests across
+  the stochastic processes; per-method visualization lane tests.
+
+Removed
+~~~~~~~
+* ``demo_testing.py`` (advertised pytest flags that do not exist) and
+  ``run_all_tests.py`` (pure alias of ``run_tests.py``).
+* ``paper/latex_template.tex`` (dead template referencing a nonexistent
+  bibliography) and ten unreferenced legacy figure PNGs.
 
 Docs (2026-08-30 documentation deep pass)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -32,7 +247,7 @@ Docs (2026-08-30 documentation deep pass)
 * docs: API reference now lists FBM/CIR/Levy process classes and the
   ``shortest_path_analysis``, ``wavelet_analysis``, ``copula_analysis``,
   ``extreme_value_analysis``, ``regime_switching_analysis`` methods (all verified
-  present in source); Sphinx version bumped to 0.2.0.
+  present in source); docs version bumped to 0.2.0.
 * docs/troubleshooting: added verified v0.2.0 gotchas — SciPy >= 1.15
   two-sample ``kstest`` breakage (use frozen CDFs), ``uv run`` stalls under heavy
   load (invoke ``.venv/bin/python`` directly), pandas 3.x numeric-dtype

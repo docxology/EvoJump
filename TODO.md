@@ -29,7 +29,7 @@ moved to the "Done (verified)" section with date. Agent-ergonomics pass
 - [x] 2026-09-08 (v0.5.0 release pass): Full-suite gate completed on this
   checkout — `MPLBACKEND=Agg .venv/bin/coverage run --source=src/evojump -m
   pytest tests/ -q` + `.venv/bin/coverage report --fail-under=95`:
-  **667 passed / 99% coverage** (floor 95%). README coverage prose reconciled
+  **684 passed / 99% coverage** (floor 95%). README coverage prose reconciled
   to the measured values (previous historical note: 70.94% / 280 tests /
   68% floor).
 - [x] 2026-09-08 (v0.5.0 release pass): Author identity resolved by owner

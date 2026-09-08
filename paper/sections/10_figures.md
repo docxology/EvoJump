@@ -12,8 +12,8 @@ Synthetic developmental trajectories were generated with parameters chosen to mi
 
 - **Sample size**: 100 individuals × 100 timepoints (representing a moderately-sized developmental study with high temporal resolution)
 - **Time span**: 0 to 10 time units (arbitrary units scalable to days, weeks, or developmental stages depending on organism)
-- **Initial conditions**: Normal distribution with mean 10.0, standard deviation 1.0 (representing natural variation in starting phenotypes)
-- **Model fitting**: Maximum likelihood estimation for all stochastic processes, using L-BFGS-B optimization with multiple random initializations to avoid local optima
+- **Initial conditions**: Deterministic trend with noise and jumps — fixed baseline 10.0 plus 3.0·sin(0.5t) + 0.3t + 0.1t², per-timepoint Gaussian noise (sd 0.5), and 5%-probability jumps of magnitude sd 2.0 (no initial sampling from N(10, 1))
+- **Model fitting**: Maximum likelihood estimation for all stochastic processes, using L-BFGS-B optimization from a single deterministic bounded initial guess
 - **Visualization engine**: Matplotlib 3.5+ for static publication-quality plots, Plotly 5.0+ for interactive versions (not shown in paper)
 - **Image format**: PNG at 300 DPI for raster graphics, PDF for vector graphics where appropriate
 - **Color schemes**: Colorblind-friendly palettes throughout (viridis for sequential data, plasma for diverging data) ensuring accessibility for readers with color vision deficiencies

@@ -5,10 +5,10 @@ already present but outside the standard `manuscript/` layout.
 
 **Evidence checked:** `paper/` contains modular section files
 (`paper/sections/01_abstract.md` … `12_code.md`, matching the section map in
-`paper/README.md`), `paper/paper.md` (assembled manuscript with YAML
-metadata), `paper/build_paper.sh`, `paper/latex_template.tex`,
-`paper/figures/`, and `paper/paper_verification_report.md` (build report:
-85-page PDF, marked SUCCESS). The root ships research outputs
+`paper/paper.md` (assembled manuscript with YAML
+metadata), `paper/build_paper.sh`, `paper/figures/`, and
+`paper/paper_verification_report.md` (build report:
+85-page PDF, marked PASS). The root ships research outputs
 (`drosophila_case_study_outputs/`, `simple_animation_outputs/`,
 `sample_developmental_data.csv`) and a research README.
 

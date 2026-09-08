@@ -5,6 +5,38 @@ All notable changes to the EvoJump project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-09-08 (documentation accuracy & Zenodo paper deposit)
+
+### Fixed
+- **Docs accuracy audit** (4 independent auditors, 38 findings, all verified
+  and fixed): docs/changelog.rst fully re-synced (0.3.0-0.5.0 were missing);
+  broken `:doc:` cross-reference in quickstart; sphinx config referencing
+  nonexistent `_static/custom.css` and `cover.png`; stale "(v0.2.0)" version
+  labels in advanced_usage/installation; README: stale 667→684 test counts,
+  gallery captions corrected against the actual PNGs (copula τ 0.440 / ρ 0.643,
+  sweep 50% crossing gen 19 / final 0.960, CV plateau ~0.5), broken bibtex
+  brace, `uv sync --group dev` → `--extra dev`, `cd evojump` → `cd EvoJump`,
+  six missing runtime deps in Requirements, ornstein-uhlenbeck added to the
+  process enumeration; AGENTS/CONTRIBUTING/.cursorrules residual 68%-floor
+  claims → the real 95% coverage gate; dead absolute repo-wide-policy links
+  in four subdirectory AGENTS.md files repointed to the repo root; paper:
+  data-availability statement pointed at the real render scripts, build
+  commands/paths fixed, stale output stats corrected, superseded banner on
+  the v0.2.0-era verification report, phantom `Analyzer (ABC)` root removed,
+  actual synthetic-data generator documented in 10_figures (was described as
+  N(10,1) sampling).
+- CLI: removed the dead, never-consumed `--config` argparse flag.
+- run_tests.py: `--coverage` reworked to direct `coverage run` +
+  `coverage report --fail-under=95` (the old pytest-cov injection crashes
+  under numpy ≥ 2.5); floor comment corrected; venv python pinned.
+
+### Added
+- README Citation section: Zenodo block linking the concept DOI (all
+  versions) and noting the record archives the source snapshot + compiled
+  paper PDF.
+- Zenodo release records now include the compiled paper PDF
+  (`evojump_paper.pdf`) alongside the source archive.
+
 ## [0.5.0] - 2026-09-08 (docs, manuscript & visualization polish)
 
 ### Added

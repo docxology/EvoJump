@@ -18,7 +18,7 @@ Verified 2026-09-08 on this checkout — re-verify with the commands shown.
   Institute, ORCID 0000-0001-6232-9096; citation DOI
   10.5281/zenodo.22664675). Test roster: `ls tests/test_*.py` (17 files,
   incl. the hypothesis property suite and pytest-xdist support). Verified
-  full-suite result **667 passed / 99% coverage** (2026-09-08; re-check with
+  full-suite result **684 passed / 99% coverage** (2026-09-08; re-check with
   `tail -5 coverage.xml` after a fresh run).
 - **Verify (primary command):**
   `MPLBACKEND=Agg .venv/bin/coverage run --source=src/evojump -m pytest tests/ -q && .venv/bin/coverage report --fail-under=95`
@@ -80,6 +80,12 @@ Verified 2026-09-08 on this checkout — re-verify with the commands shown.
 - Matplotlib ≥ 3.5.0
 - Plotly ≥ 5.0.0
 - Scikit-learn ≥ 1.0.0
+- Numba ≥ 0.56.0
+- Dask ≥ 2022.0.0
+- h5py ≥ 3.7.0
+- SQLAlchemy ≥ 1.4.0
+- PyYAML ≥ 6.0
+- tqdm ≥ 4.62.0
 - PyWavelets ≥ 1.3.0
 - NetworkX ≥ 2.6.0
 - StatsModels ≥ 0.13.0
@@ -276,7 +282,7 @@ Representative outputs generated on this checkout (sources: `paper/figures/` and
 
 ![Comprehensive jump-diffusion analysis](paper/figures/figure_2_comprehensive.png)
 
-A nine-panel walkthrough of one simulated phenotype — trajectories with mean ± SD, density heatmap, cross-sections at t = 2.5/5.1/7.6, violins, ridges, phase portrait, mean/CV curves, fitted parameters (diffusion dominates), and an initial-vs-final change scatter. Read it first for the end-to-end shape of the laser-plane pipeline: mean drifts 10→18 while the coefficient of variation climbs to ~0.45 and plateaus.
+A nine-panel walkthrough of one simulated phenotype — trajectories with mean ± SD, density heatmap, cross-sections at t = 2.5/5.1/7.6, violins, ridges, phase portrait, mean/CV curves, fitted parameters (diffusion dominates), and an initial-vs-final change scatter. Read it first for the end-to-end shape of the laser-plane pipeline: mean drifts 10→18 while the coefficient of variation climbs to ~0.5 and plateaus.
 
 ### Fractional Brownian motion — trajectory density heatmap
 
@@ -288,13 +294,13 @@ Trajectory density over developmental time for the FBM model: the bright hotspot
 
 ![Copula temporal dependence](paper/figures/figure_4_copula.png)
 
-Rank-transformed phenotype values at t = 3.33 vs t = 6.67 against the perfect-dependence diagonal: Kendall's τ = 0.511 (p < 0.001) reads off moderate, significant rank persistence — early-ranked individuals tend to stay high-ranked, with substantial reshuffling between the two time points.
+Rank-transformed phenotype values at t = 3.33 vs t = 6.67 against the perfect-dependence diagonal: Kendall's τ = 0.440 (p < 0.001; Gaussian copula ρ = 0.643) reads off moderate, significant rank persistence — early-ranked individuals tend to stay high-ranked, with substantial reshuffling between the two time points.
 
 ### Drosophila — selective sweep
 
 ![Drosophila selective sweep](paper/figures/figure_drosophila_sweep.png)
 
-Red-eyed allele frequency across 100 generations in the drosophila case study: the sweep rises from ~0.10, crosses the 0.5 threshold near generation 21, and plateaus near 0.97 — read off sweep timing and the final fixation level directly from the trajectory.
+Red-eyed allele frequency across 100 generations in the drosophila case study: the sweep rises from ~0.10, crosses the 0.5 threshold near generation 19, and plateaus at ~0.96 — read off sweep timing and the final fixation level directly from the trajectory.
 
 ### Drosophila — marker correlation network
 
@@ -354,7 +360,7 @@ MPLBACKEND=Agg .venv/bin/coverage run --source=src/evojump -m pytest tests/ -q
 
 ### Test Coverage
 
-- **Coverage floor: 95% enforced** via `coverage report --fail-under=95` (v0.5.0; measured full-suite: 667 tests, 99% — see coverage.xml/htmlcov after a run)
+- **Coverage floor: 95% enforced** via `coverage report --fail-under=95` (v0.5.0; measured full-suite: 684 tests, 99% — see coverage.xml/htmlcov after a run)
 - **Real data testing** - no mocks, all tests use biological/synthetic data
 - **Integration testing** - cross-module interaction validation
 - **Performance validation** - large dataset and efficiency testing
@@ -394,7 +400,7 @@ MPLBACKEND=Agg .venv/bin/coverage run --source=src/evojump -m pytest tests/ -q
 ### Code Quality Testing
 
 ```bash
-# Formatting / style / types (install dev extras first: uv sync --group dev)
+# Formatting / style / types (install dev extras first: uv sync --extra dev)
 black --check --diff src/ tests/
 flake8 src/ tests/
 mypy src/ tests/
@@ -488,8 +494,8 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 ### Development Setup
 ```bash
 git clone https://github.com/docxology/EvoJump.git
-cd evojump
-uv sync --group dev
+cd EvoJump
+uv sync --extra dev
 ```
 
 ### Key Development Principles
@@ -537,10 +543,19 @@ If you use EvoJump in your research, please cite:
   year={2026},
   doi={10.5281/zenodo.22664675},
   url={https://github.com/docxology/EvoJump}
+}
 ```
 
 Author: **Daniel Ari Friedman** (Active Inference Institute,
 [ORCID 0000-0001-6232-9096](https://orcid.org/0000-0001-6232-9096)).
+
+### Zenodo
+
+- **Concept DOI (all versions)**: https://doi.org/10.5281/zenodo.22664675
+
+The Zenodo record for the latest release archives the full source snapshot and the compiled paper PDF (evojump_paper.pdf).
+
+For a machine-readable citation, see [`CITATION.cff`](CITATION.cff).
 
 ## 🔗 Links
 
@@ -566,7 +581,7 @@ EvoJump is now a fully functional, production-ready framework with:
 
 The per-component numbers below are **historical, unverified prose values**
 (v0.1.0-era, unstated provenance) — not a current measurement. The verified
-v0.5.0 aggregate is **99% coverage, 667 tests passed (2026-09-08)** at the
+v0.5.0 aggregate is **99% coverage, 684 tests passed (2026-09-08)** at the
 95% floor. The executable truth is `coverage.xml` / `htmlcov/` after a fresh
 full-suite run; re-measure before relying on any per-module number.
 
@@ -596,7 +611,7 @@ EvoJump successfully demonstrates applications in:
 ### 🚀 **Key Innovations**
 
 1. **Novel Metaphor** - "Cross-sectional laser" concept for developmental analysis
-2. **Multiple Stochastic Processes** - 7 different models (jump-diffusion [OU with jumps], geometric jump-diffusion, compound Poisson, fractional Brownian motion, CIR, Levy)
+2. **Multiple Stochastic Processes** - 7 different models (jump-diffusion [OU with jumps], ornstein-uhlenbeck, geometric jump-diffusion, compound Poisson, fractional Brownian motion, CIR, Levy)
 3. **Advanced Analytics** - Bayesian inference, network analysis, causal discovery
 4. **Rich Visualization** - Static plots, animations, interactive graphics
 5. **Scientific Rigor** - Real data testing, TDD principles, comprehensive validation

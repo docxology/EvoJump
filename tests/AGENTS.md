@@ -19,4 +19,4 @@ MPLBACKEND=Agg .venv/bin/coverage run --source=src/evojump -m pytest tests/ -q
 ```
 (`uv run` stalls under heavy load — see root README.)
 - `__pycache__/` is generated; never document inside it.
-Repo-wide policy: see `/Volumes/external_drive/Git/template/projects/ongoing/AGENTS.md`.
+Repo-wide policy: see `../AGENTS.md`.
