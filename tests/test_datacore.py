@@ -218,6 +218,20 @@ class TestTimeSeriesData:
         # 'nearest' snaps to the closest observation instead of interpolating
         # (linear would give 17.0 and 24.0)
         assert ts_data.data['phenotype1'].tolist() == [10.0, 10.0, 31.0, 31.0]
+    def test_interpolate_missing_data_no_numeric_phenotypes_is_noop(self):
+        """A frame whose only numeric column is time has nothing to fill."""
+        data = pd.DataFrame({
+            'time': [1.0, 2.0, 3.0],
+            'strain': ['WT', 'MUT', 'WT'],
+        })
+        ts_data = datacore.TimeSeriesData(
+            data=data, time_column='time', phenotype_columns=['strain'])
+
+        ts_data.interpolate_missing_data(method='linear')
+
+        # No-op path: the non-numeric phenotype column is left untouched
+        assert ts_data.data['strain'].tolist() == ['WT', 'MUT', 'WT']
+        assert ts_data.data['time'].tolist() == [1.0, 2.0, 3.0]
 class TestMetadataManager:
     """Test MetadataManager class."""
 
@@ -239,12 +253,13 @@ class TestMetadataManager:
         assert metadata_mgr.metadata['processing_history'][0]['step'] == 'test_step'
         assert metadata_mgr.metadata['processing_history'][0]['parameters'] == {'param1': 'value1'}
 
-    def test_save_and_load_metadata_yaml(self):
-        """Test saving and loading metadata in YAML format."""
+    @pytest.mark.parametrize("suffix", ['.yaml', '.json'])
+    def test_save_and_load_metadata_roundtrip(self, suffix):
+        """Saved metadata reloads through a new MetadataManager in every format."""
         metadata_mgr = datacore.MetadataManager()
         metadata_mgr.add_processing_step('test_step', {'param': 'value'})
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode='w', suffix=suffix, delete=False) as f:
             temp_file = Path(f.name)
 
         try:
@@ -259,25 +274,18 @@ class TestMetadataManager:
         finally:
             temp_file.unlink()
 
-    def test_save_and_load_metadata_json(self):
-        """Test saving and loading metadata in JSON format."""
-        metadata_mgr = datacore.MetadataManager()
-        metadata_mgr.add_processing_step('test_step', {'param': 'value'})
-
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+    def test_save_metadata_unsupported_suffix_raises(self):
+        """Test that saving to an unsupported metadata format raises ValueError."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
             temp_file = Path(f.name)
 
         try:
-            metadata_mgr.save_metadata(temp_file)
-
-            # Create new metadata manager and load
-            metadata_mgr2 = datacore.MetadataManager(temp_file)
-
-            assert metadata_mgr2.metadata['processing_history'][0]['step'] == 'test_step'
-            assert metadata_mgr2.metadata['processing_history'][0]['parameters'] == {'param': 'value'}
-
+            metadata_mgr = datacore.MetadataManager()
+            with pytest.raises(ValueError, match="Unsupported metadata format"):
+                metadata_mgr.save_metadata(temp_file)
         finally:
             temp_file.unlink()
+
 
 
     def test_load_metadata_empty_file_raises(self):
@@ -582,8 +590,14 @@ class TestDataCore:
         # Check that outlier was removed
         assert 1000 not in data_core.time_series_data[0].data['phenotype1'].values
 
-    def test_normalize_data_zscore(self):
-        """Test data normalization using z-score."""
+    @pytest.mark.parametrize("method,check", [
+        # z-score: mean 0, std 1; min-max: [0, 1]; robust: median 0
+        ("zscore", lambda col: abs(col.mean()) < 1e-10 and abs(col.std() - 1.0) < 1e-10),
+        ("minmax", lambda col: abs(col.min()) < 1e-10 and abs(col.max() - 1.0) < 1e-10),
+        ("robust", lambda col: abs(col.median()) < 1e-10),
+    ])
+    def test_normalize_data(self, method, check):
+        """Normalization satisfies the per-method contract and preserves order."""
         data = pd.DataFrame({
             'time': [1, 2, 3, 4, 5],
             'phenotype1': [10, 12, 14, 16, 18]
@@ -596,61 +610,16 @@ class TestDataCore:
         )
 
         data_core = datacore.DataCore([ts_data])
+        before = ts_data.data['phenotype1'].to_numpy()
 
-        data_core._normalize_data(ts_data, method='zscore')
+        data_core._normalize_data(ts_data, method=method)
 
-        # Check that data is standardized
-        mean_val = data_core.time_series_data[0].data['phenotype1'].mean()
-        std_val = data_core.time_series_data[0].data['phenotype1'].std()
+        normalized = ts_data.data['phenotype1']
+        assert check(normalized)
+        # All three transforms are monotone: the value ranking must survive
+        np.testing.assert_array_equal(
+            np.argsort(before), np.argsort(normalized.to_numpy()))
 
-        assert abs(mean_val) < 1e-10  # Mean should be approximately 0
-        assert abs(std_val - 1.0) < 1e-10  # Std should be approximately 1
-
-    def test_normalize_data_minmax(self):
-        """Test data normalization using min-max scaling."""
-        data = pd.DataFrame({
-            'time': [1, 2, 3, 4, 5],
-            'phenotype1': [10, 12, 14, 16, 18]
-        })
-
-        ts_data = datacore.TimeSeriesData(
-            data=data,
-            time_column='time',
-            phenotype_columns=['phenotype1']
-        )
-
-        data_core = datacore.DataCore([ts_data])
-
-        data_core._normalize_data(ts_data, method='minmax')
-
-        # Check that data is in [0, 1] range
-        min_val = data_core.time_series_data[0].data['phenotype1'].min()
-        max_val = data_core.time_series_data[0].data['phenotype1'].max()
-
-        assert abs(min_val - 0.0) < 1e-10
-        assert abs(max_val - 1.0) < 1e-10
-
-    def test_normalize_data_robust(self):
-        """Test data normalization using robust scaling."""
-        data = pd.DataFrame({
-            'time': [1, 2, 3, 4, 5],
-            'phenotype1': [10, 12, 14, 16, 18]
-        })
-
-        ts_data = datacore.TimeSeriesData(
-            data=data,
-            time_column='time',
-            phenotype_columns=['phenotype1']
-        )
-
-        data_core = datacore.DataCore([ts_data])
-
-        data_core._normalize_data(ts_data, method='robust')
-
-        # Check that median is approximately 0 and MAD is approximately 1
-        median_val = data_core.time_series_data[0].data['phenotype1'].median()
-
-        assert abs(median_val) < 1e-10  # Median should be approximately 0
 
     def test_data_core_accepts_single_time_series(self):
         """Test that DataCore accepts a single TimeSeriesData object."""
@@ -880,3 +849,187 @@ class TestDataCore:
         # Per-column outlier breakdown available
         assert 'outliers_by_column' in quality_metrics
         assert 'phenotype1' in quality_metrics['outliers_by_column']['dataset_0']
+
+    def test_data_core_empty_dataset_list_raises(self):
+        """Test that constructing DataCore without datasets raises."""
+        with pytest.raises(ValueError, match="No time series data provided"):
+            datacore.DataCore([])
+
+    def test_load_from_csv_with_metadata_file(self):
+        """Test that load_from_csv attaches the metadata manager and records the step."""
+        data = self.create_test_data()
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
+            data.to_csv(f.name, index=False)
+            csv_file = Path(f.name)
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            f.write('{"source": "unit-test"}')
+            meta_file = Path(f.name)
+
+        try:
+            data_core = datacore.DataCore.load_from_csv(
+                file_path=csv_file,
+                time_column='time',
+                phenotype_columns=['phenotype1', 'phenotype2'],
+                metadata_file=meta_file
+            )
+
+            # The provided metadata is adopted and provenance is recorded
+            assert data_core.metadata_manager.metadata['source'] == 'unit-test'
+            steps = [s['step'] for s in data_core.metadata_manager.metadata['processing_history']]
+            assert 'load_from_csv' in steps
+        finally:
+            csv_file.unlink()
+            meta_file.unlink()
+
+    def test_load_from_csv_auto_detects_phenotype_columns(self):
+        """Test that phenotype columns are auto-detected when not provided."""
+        data = self.create_test_data()
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
+            data.to_csv(f.name, index=False)
+            csv_file = Path(f.name)
+
+        try:
+            data_core = datacore.DataCore.load_from_csv(
+                file_path=csv_file, time_column='time')
+
+            # Every numeric non-time column becomes a phenotype
+            assert data_core.time_series_data[0].phenotype_columns == [
+                'phenotype1', 'phenotype2']
+        finally:
+            csv_file.unlink()
+
+    def test_load_from_hdf5_fixed_length_string_decode(self):
+        """Test that fixed-length byte-string datasets decode to unicode."""
+        temp_file = Path(tempfile.mktemp(suffix='.h5'))
+        try:
+            with h5py.File(temp_file, 'w') as f:
+                f.create_dataset('time', data=np.array([1.0, 2.0]))
+                f.create_dataset('strain', data=np.array([b'WT', b'MUT'], dtype='S4'))
+
+            data_core = datacore.DataCore.load_from_hdf5(temp_file, time_column='time')
+
+            ts = data_core.time_series_data[0]
+            assert ts.data['strain'].tolist() == ['WT', 'MUT']
+        finally:
+            temp_file.unlink()
+
+    def test_load_from_hdf5_save_layout_unequal_lengths_raises(self):
+        """Test that a save-layout group with unequal-length datasets raises."""
+        temp_file = Path(tempfile.mktemp(suffix='.h5'))
+        try:
+            with h5py.File(temp_file, 'w') as f:
+                group = f.create_group('dataset_0')
+                group.create_dataset('time', data=np.array([1.0, 2.0, 3.0]))
+                group.create_dataset('phenotype1', data=np.array([10.0, 20.0]))
+
+            with pytest.raises(ValueError, match="unequal lengths"):
+                datacore.DataCore.load_from_hdf5(temp_file, time_column='time')
+        finally:
+            temp_file.unlink()
+
+    def test_load_from_hdf5_no_data_columns_raises(self):
+        """Test that an HDF5 file without datasets raises a clear error."""
+        temp_file = Path(tempfile.mktemp(suffix='.h5'))
+        try:
+            with h5py.File(temp_file, 'w'):
+                pass
+
+            with pytest.raises(ValueError, match="No data columns found"):
+                datacore.DataCore.load_from_hdf5(temp_file, time_column='time')
+        finally:
+            temp_file.unlink()
+
+    def test_load_from_hdf5_explicit_phenotype_columns(self):
+        """Test that explicit phenotype_columns override auto-detection."""
+        temp_file = Path(tempfile.mktemp(suffix='.h5'))
+        try:
+            with h5py.File(temp_file, 'w') as f:
+                f.create_dataset('time', data=np.array([1.0, 2.0, 3.0]))
+                f.create_dataset('phenotype1', data=np.array([10.0, 20.0, 30.0]))
+                f.create_dataset('strain', data=np.array([b'WT', b'MUT', b'WT'], dtype='S4'))
+
+            data_core = datacore.DataCore.load_from_hdf5(
+                temp_file, time_column='time', phenotype_columns=['phenotype1'])
+
+            # Only the explicitly listed phenotype is registered, not the
+            # string column or the time column
+            assert data_core.time_series_data[0].phenotype_columns == ['phenotype1']
+        finally:
+            temp_file.unlink()
+
+    def test_load_from_hdf5_with_metadata_file(self):
+        """Test that load_from_hdf5 attaches the metadata manager and records the step."""
+        temp_file = Path(tempfile.mktemp(suffix='.h5'))
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            f.write('{"source": "hdf5-meta"}')
+            meta_file = Path(f.name)
+        try:
+            with h5py.File(temp_file, 'w') as f:
+                f.create_dataset('time', data=np.array([1.0, 2.0]))
+                f.create_dataset('phenotype1', data=np.array([10.0, 20.0]))
+
+            data_core = datacore.DataCore.load_from_hdf5(
+                temp_file, time_column='time', metadata_file=meta_file)
+
+            assert data_core.metadata_manager.metadata['source'] == 'hdf5-meta'
+            steps = [s['step'] for s in data_core.metadata_manager.metadata['processing_history']]
+            assert 'load_from_hdf5' in steps
+        finally:
+            temp_file.unlink()
+            meta_file.unlink()
+
+    def test_remove_outliers_unsupported_method_raises(self):
+        """Test that an unsupported outlier method raises ValueError."""
+        data = self.create_test_data()
+        ts_data = datacore.TimeSeriesData(
+            data=data, time_column='time', phenotype_columns=['phenotype1'])
+        data_core = datacore.DataCore(ts_data)
+
+        with pytest.raises(ValueError, match="Unsupported outlier method"):
+            data_core._remove_outliers(ts_data, method='mad')
+
+    def test_remove_outliers_zscore_constant_column_skipped(self):
+        """Test that a zero-variance phenotype column is skipped, not all-outlier."""
+        data = pd.DataFrame({
+            'time': list(range(1, 10)),
+            'constant': [5.0] * 9,
+            'varying': [10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 5000.0],
+        })
+        ts_data = datacore.TimeSeriesData(
+            data=data, time_column='time', phenotype_columns=['constant', 'varying'])
+        data_core = datacore.DataCore(ts_data)
+
+        data_core._remove_outliers(ts_data, method='zscore', threshold=1.5)
+
+        kept = ts_data.data
+        # The constant column contributes no mask: only the varying outlier
+        # row is dropped
+        assert len(kept) == 8
+        assert kept['constant'].tolist() == [5.0] * 8
+        assert 5000.0 not in kept['varying'].to_numpy()
+
+    def test_save_processed_data_parquet(self):
+        """Test parquet output round-trips, or names the missing engine."""
+        data = self.create_test_data()
+        ts_data = datacore.TimeSeriesData(
+            data=data, time_column='time',
+            phenotype_columns=['phenotype1', 'phenotype2'])
+        data_core = datacore.DataCore(ts_data)
+
+        temp_file = Path(tempfile.mktemp(suffix='.parquet'))
+        try:
+            try:
+                data_core.save_processed_data(temp_file, format='parquet')
+            except ValueError as exc:
+                # No parquet engine installed: the error must name the
+                # missing dependency instead of leaking a raw ImportError
+                assert 'pyarrow' in str(exc) or 'fastparquet' in str(exc)
+            else:
+                saved = pd.read_parquet(temp_file)
+                assert len(saved) == 10
+                assert list(saved.columns) == ['time', 'phenotype1', 'phenotype2']
+        finally:
+            if temp_file.exists():
+                temp_file.unlink()

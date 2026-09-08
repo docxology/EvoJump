@@ -18,7 +18,15 @@ import logging
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
+from conftest import make_growth_frame
+
 from evojump import cli
+
+
+def _cli_frame(n_points: int = 10) -> pd.DataFrame:
+    """CLI-shaped synthetic frame: a ``time`` column plus two phenotypes."""
+    return make_growth_frame(
+        n_points=n_points, phenotype_cols=("phenotype1", "phenotype2"))
 
 
 class TestCLIArgumentParsing:
@@ -65,19 +73,11 @@ class TestCLIArgumentParsing:
 class TestCLIDataValidation:
     """Test CLI data validation."""
 
-    def create_test_data(self):
-        """Create test data for CLI tests."""
-        data = pd.DataFrame({
-            'time': [1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5],
-            'phenotype1': [10, 12, 14, 16, 18, 11, 13, 15, 17, 19, 9, 11, 13, 15, 17],
-            'phenotype2': [20, 22, 24, 26, 28, 21, 23, 25, 27, 29, 19, 21, 23, 25, 27]
-        })
-        return data
 
     def test_validate_csv_input_file(self):
         """Test CSV input file validation."""
         # Test with valid CSV
-        data = self.create_test_data()
+        data = _cli_frame()
 
         with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
             data.to_csv(f.name, index=False)
@@ -111,21 +111,25 @@ class TestCLIDataValidation:
             cli._validate_input_file(nonexistent_file, "csv")
 
 
+    def test_validate_directory_path_raises(self, tmp_path):
+        """Test that an existing directory fails validation as 'not a file'."""
+        with pytest.raises(ValueError, match="not a file"):
+            cli._validate_input_file(tmp_path, "csv")
+
+    def test_validate_csv_with_unparseable_content(self, tmp_path):
+        """Test that a .csv file with non-CSV bytes fails content validation."""
+        bad_csv = tmp_path / "bad.csv"
+        bad_csv.write_bytes(b"\xff\xfe\x00\x01 not a csv")
+        with pytest.raises(ValueError, match="Invalid CSV format"):
+            cli._validate_input_file(bad_csv, "csv")
+
 class TestCLISubcommands:
     """Test CLI subcommand functionality."""
 
-    def create_test_data(self):
-        """Create test data for CLI tests."""
-        data = pd.DataFrame({
-            'time': [1, 2, 3, 4, 5, 1, 2, 3, 4, 5],
-            'phenotype1': [10, 12, 14, 16, 18, 11, 13, 15, 17, 19],
-            'phenotype2': [20, 22, 24, 26, 28, 21, 23, 25, 27, 29]
-        })
-        return data
 
     def test_analyze_command_basic(self):
         """Test basic analyze command functionality."""
-        data = self.create_test_data()
+        data = _cli_frame()
 
         with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
             data.to_csv(f.name, index=False)
@@ -147,7 +151,7 @@ class TestCLISubcommands:
 
     def test_fit_command_basic(self):
         """Test basic fit command functionality."""
-        data = self.create_test_data()
+        data = _cli_frame()
 
         with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
             data.to_csv(f.name, index=False)
@@ -174,7 +178,7 @@ class TestCLISubcommands:
     def test_visualize_command_basic(self):
         """Test basic visualize command functionality."""
         # First create a model file
-        data = self.create_test_data()
+        data = _cli_frame()
 
         with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
             data.to_csv(f.name, index=False)
@@ -211,7 +215,7 @@ class TestCLISubcommands:
 
     def test_sample_command_basic(self):
         """Test basic sample command functionality."""
-        data = self.create_test_data()
+        data = _cli_frame()
 
         with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
             data.to_csv(f.name, index=False)
@@ -242,6 +246,46 @@ class TestCLISubcommands:
             finally:
                 temp_file.unlink()
 
+
+    def test_sample_output_directory_writes_samples_csv(self, tmp_path):
+        """Test that a directory --output writes samples.csv inside it."""
+        csv_path = tmp_path / "population.csv"
+        _cli_frame().to_csv(csv_path, index=False)
+        out_dir = tmp_path / "results"
+
+        result = cli.main([
+            'sample', str(csv_path),
+            '--samples', '20',
+            '--output', str(out_dir)
+        ])
+
+        assert result == 0
+        samples_csv = out_dir / "samples.csv"
+        assert samples_csv.exists()
+        samples_df = pd.read_csv(samples_csv)
+        assert 'sample_id' in samples_df.columns
+        assert 'phenotype1' in samples_df.columns
+
+    def test_sample_mcmc_writes_wide_format(self, tmp_path):
+        """Test that the mcmc method writes one row per sample (wide format)."""
+        csv_path = tmp_path / "population.csv"
+        _cli_frame().to_csv(csv_path, index=False)
+        output_file = tmp_path / "samples_mcmc.csv"
+
+        result = cli.main([
+            'sample', str(csv_path),
+            '--n-samples', '15',
+            '--method', 'mcmc',
+            '--output', str(output_file)
+        ])
+
+        assert result == 0
+        samples_df = pd.read_csv(output_file)
+        assert len(samples_df) == 15
+        assert list(samples_df['sample_id']) == [
+            f"sample_{i:06d}" for i in range(15)]
+        assert 'phenotype1' in samples_df.columns
+        assert 'phenotype2' in samples_df.columns
 
 class TestCLIErrorHandling:
     """Test CLI error handling."""
@@ -309,17 +353,26 @@ class TestCLIErrorHandling:
         temp_file.unlink()
 
 
+    @pytest.mark.parametrize('command', ['analyze', 'fit', 'sample'])
+    def test_missing_time_column_returns_runtime_failure(self, command, tmp_path):
+        """Test that a CSV without the expected time column exits 1, not a traceback."""
+        csv_path = tmp_path / "no_time.csv"
+        pd.DataFrame({"x": [1.0, 2.0, 3.0]}).to_csv(csv_path, index=False)
+
+        assert cli.main(
+            [command, str(csv_path), '--output', str(tmp_path / "out")]) == 1
+
+    def test_visualize_with_corrupt_model_file_returns_runtime_failure(self, tmp_path):
+        """Test that an unpicklable model file exits 1."""
+        corrupt = tmp_path / "corrupt.pkl"
+        corrupt.write_bytes(b"definitely not a pickle")
+
+        assert cli.main(
+            ['visualize', str(corrupt), '--output', str(tmp_path / "out")]) == 1
+
 class TestCLIExitCodesAndOutput:
     """Test exit-code contract, global options, and plot-type coverage."""
 
-    def create_test_data(self, time_col='time'):
-        """Create synthetic test data for CLI tests."""
-        data = pd.DataFrame({
-            time_col: [1, 2, 3, 4, 5, 1, 2, 3, 4, 5],
-            'phenotype1': [10, 12, 14, 16, 18, 11, 13, 15, 17, 19],
-            'phenotype2': [20, 22, 24, 26, 28, 21, 23, 25, 27, 29]
-        })
-        return data
 
     def _save_fitted_model(self, csv_path):
         """Fit a model on synthetic data and save it, returning the path."""
@@ -344,7 +397,7 @@ class TestCLIExitCodesAndOutput:
 
     def test_global_output_precedes_subcommand(self):
         """Test that a global --output given before the subcommand is used."""
-        data = self.create_test_data()
+        data = _cli_frame()
 
         with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
             data.to_csv(f.name, index=False)
@@ -364,7 +417,7 @@ class TestCLIExitCodesAndOutput:
 
     def test_fit_with_renamed_time_column(self):
         """Test that fit accepts a non-default time column via --time-column."""
-        data = self.create_test_data(time_col='age')
+        data = _cli_frame().rename(columns={"time": "age"})
 
         with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
             data.to_csv(f.name, index=False)
@@ -383,6 +436,18 @@ class TestCLIExitCodesAndOutput:
         finally:
             temp_file.unlink()
 
+    def test_fit_output_directory_gets_default_model_filename(self, tmp_path):
+        """Test that an existing directory --output saves <stem>_model.pkl inside."""
+        csv_path = tmp_path / "data.csv"
+        _cli_frame().to_csv(csv_path, index=False)
+        output_dir = tmp_path / "models"
+        output_dir.mkdir()
+
+        result = cli.main(['fit', str(csv_path), '--output', str(output_dir)])
+
+        assert result == 0
+        assert (output_dir / 'data_model.pkl').exists()
+
     @pytest.mark.parametrize('plot_type,expected_name', [
         ('trajectories', 'trajectories.png'),
         ('cross-sections', 'cross_sections.png'),
@@ -390,7 +455,7 @@ class TestCLIExitCodesAndOutput:
     ])
     def test_visualize_static_plot_types(self, plot_type, expected_name):
         """Test each static visualize plot type produces its artifact."""
-        data = self.create_test_data()
+        data = _cli_frame()
 
         with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
             data.to_csv(f.name, index=False)
@@ -416,7 +481,7 @@ class TestCLIExitCodesAndOutput:
     @pytest.mark.parametrize('plot_type', ['trajectories', 'cross-sections', 'landscapes'])
     def test_visualize_interactive_writes_html(self, plot_type):
         """Test that --interactive persists a Plotly HTML artifact."""
-        data = self.create_test_data()
+        data = _cli_frame()
 
         with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
             data.to_csv(f.name, index=False)
@@ -440,6 +505,24 @@ class TestCLIExitCodesAndOutput:
             if model_path is not None:
                 model_path.unlink()
 
+    def test_visualize_animation_writes_gif(self, tmp_path):
+        """Test that the animation plot type saves an animated GIF."""
+        csv_path = tmp_path / "data.csv"
+        _cli_frame().to_csv(csv_path, index=False)
+        model_path = self._save_fitted_model(csv_path)
+        output_dir = tmp_path / "plots"
+        try:
+            result = cli.main([
+                'visualize', str(model_path),
+                '--plot-type', 'animation',
+                '--output', str(output_dir)
+            ])
+            assert result == 0
+            assert (output_dir / 'animation.gif').exists()
+        finally:
+            model_path.unlink()
+
+
 
 class TestCLILogging:
     """Test CLI logging functionality."""
@@ -450,6 +533,18 @@ class TestCLILogging:
         assert logging.getLogger('evojump').level == logging.INFO
         cli.setup_logging(1)
         assert logging.getLogger('evojump').level == logging.DEBUG
+
+    def test_setup_logging_double_v_enables_library_debug(self):
+        """Test that -vv surfaces DEBUG records from driven libraries."""
+        try:
+            cli.setup_logging(2)
+            assert logging.getLogger('evojump').level == logging.DEBUG
+            for name in ('matplotlib', 'pandas', 'plotly'):
+                assert logging.getLogger(name).level == logging.DEBUG
+        finally:
+            for name in ('matplotlib', 'pandas', 'plotly'):
+                logging.getLogger(name).setLevel(logging.WARNING)
+
 
     def test_logging_configuration(self):
         """Test that logging is properly configured."""
@@ -481,6 +576,41 @@ class TestCLILogging:
 
             finally:
                 temp_file.unlink()
+
+
+class TestCLIVersionResolution:
+    """Test get_version() fallbacks when package metadata is unavailable."""
+
+    def test_metadata_failure_falls_back_to_package_version(self, monkeypatch):
+        """Test that a failing metadata lookup falls back to evojump.__version__."""
+        import evojump
+
+        def broken_version(name):
+            raise RuntimeError("metadata unavailable")
+
+        monkeypatch.setattr(cli, '_package_version', broken_version)
+        assert cli.get_version() == evojump.__version__
+
+    def test_missing_dunder_version_reports_unknown(self, monkeypatch):
+        """Test that get_version() reports 'unknown' when no version source exists."""
+        import evojump
+
+        monkeypatch.setattr(cli, '_package_version', None)
+        monkeypatch.delattr(evojump, '__version__')
+        assert cli.get_version() == "unknown"
+
+
+class TestCLIModuleEntryPoint:
+    """Test the ``python -m evojump.cli`` entry-point guard."""
+
+    def test_module_execution_without_subcommand_exits_two(self, monkeypatch):
+        """Test that direct module execution routes through main() (exit 2)."""
+        import runpy
+
+        monkeypatch.setattr(sys, 'argv', ['evojump-cli'])
+        with pytest.raises(SystemExit) as exc_info:
+            runpy.run_module('evojump.cli', run_name='__main__')
+        assert exc_info.value.code == 2
 
 
 if __name__ == '__main__':

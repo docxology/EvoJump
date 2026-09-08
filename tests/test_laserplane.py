@@ -14,6 +14,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from evojump import datacore, jumprope, laserplane
 from scipy import stats
 from scipy.stats import beta, uniform, kstest
+from conftest import make_growth_frame
+
 
 
 class TestDistributionFitter:
@@ -24,8 +26,8 @@ class TestDistributionFitter:
         fitter = laserplane.DistributionFitter()
 
         # Generate normal data
-        np.random.seed(42)
-        data = np.random.normal(10.0, 2.0, 100)
+        rng = np.random.default_rng(42)
+        data = rng.normal(10.0, 2.0, 100)
 
         result = fitter.fit_distribution(data, distribution='normal')
 
@@ -55,8 +57,8 @@ class TestDistributionFitter:
         fitter = laserplane.DistributionFitter()
 
         # Generate normal data
-        np.random.seed(42)
-        data = np.random.normal(10.0, 2.0, 100)
+        rng = np.random.default_rng(42)
+        data = rng.normal(10.0, 2.0, 100)
 
         result = fitter.fit_distribution(data, distribution='auto')
 
@@ -80,7 +82,8 @@ class TestDistributionFitter:
         """Test fitting with invalid distribution."""
         fitter = laserplane.DistributionFitter()
 
-        data = np.random.normal(10.0, 2.0, 100)
+        rng = np.random.default_rng(42)
+        data = rng.normal(10.0, 2.0, 100)
 
         with pytest.raises(ValueError, match="Unsupported distribution"):
             fitter.fit_distribution(data, distribution='invalid_distribution')
@@ -141,6 +144,17 @@ class TestDistributionFitter:
         assert result['n_fit'] == len(data) - 2  # fitted on the positive subset
 
 
+    @pytest.mark.parametrize('dist_name', ['lognormal', 'gamma'])
+    def test_fit_positive_support_distribution_without_enough_positive_values(self, dist_name):
+        """Fewer than four positive observations yields the no-fit sentinel."""
+        fitter = laserplane.DistributionFitter()
+
+        data = np.array([-3.0, -1.0, -2.0, -0.5])
+
+        result = fitter.fit_distribution(data, dist_name)
+
+        assert result == {'distribution': None, 'parameters': None, 'aic': np.inf}
+
 class TestDistributionComparer:
     """Test DistributionComparer class."""
 
@@ -148,9 +162,9 @@ class TestDistributionComparer:
         """Test Kolmogorov-Smirnov test."""
         comparer = laserplane.DistributionComparer()
 
-        np.random.seed(42)
-        data1 = np.random.normal(10.0, 2.0, 100)
-        data2 = np.random.normal(10.5, 2.0, 100)
+        rng = np.random.default_rng(42)
+        data1 = rng.normal(10.0, 2.0, 100)
+        data2 = rng.normal(10.5, 2.0, 100)
 
         result = comparer.compare_distributions(data1, data2, test='ks')
 
@@ -163,9 +177,9 @@ class TestDistributionComparer:
         """Test Mann-Whitney U test."""
         comparer = laserplane.DistributionComparer()
 
-        np.random.seed(42)
-        data1 = np.random.normal(10.0, 2.0, 50)
-        data2 = np.random.normal(12.0, 2.0, 50)
+        rng = np.random.default_rng(42)
+        data1 = rng.normal(10.0, 2.0, 50)
+        data2 = rng.normal(12.0, 2.0, 50)
 
         result = comparer.compare_distributions(data1, data2, test='mann_whitney')
 
@@ -191,8 +205,8 @@ class TestDistributionComparer:
         """Test comparison with identical data."""
         comparer = laserplane.DistributionComparer()
 
-        np.random.seed(42)
-        data1 = np.random.normal(10.0, 2.0, 100)
+        rng = np.random.default_rng(42)
+        data1 = rng.normal(10.0, 2.0, 100)
         data2 = data1.copy()  # Identical data
 
         result = comparer.compare_distributions(data1, data2, test='ks')
@@ -215,6 +229,46 @@ class TestDistributionComparer:
 
         assert result1['p_value'] == result2['p_value']
         assert 0.0 <= result1['p_value'] <= 1.0
+
+    def test_compare_distributions_auto_selects_ks(self):
+        """test='auto' must route to the two-sample Kolmogorov-Smirnov test."""
+        comparer = laserplane.DistributionComparer()
+
+        rng = np.random.default_rng(60)
+        data1 = rng.normal(0.0, 1.0, 60)
+        data2 = rng.normal(0.5, 1.0, 60)
+
+        result = comparer.compare_distributions(data1, data2, test='auto')
+
+        assert result['test'] == 'kolmogorov_smirnov'
+        assert np.isfinite(result['statistic'])
+        assert 0.0 <= result['p_value'] <= 1.0
+
+    def test_compare_distributions_unknown_test_raises(self):
+        """An unsupported test name must raise instead of silently routing."""
+        comparer = laserplane.DistributionComparer()
+
+        rng = np.random.default_rng(61)
+        data1 = rng.normal(0.0, 1.0, 60)
+        data2 = rng.normal(0.0, 1.0, 60)
+
+        with pytest.raises(ValueError, match="Unsupported test"):
+            comparer.compare_distributions(data1, data2, test='permutation')
+
+    def test_anderson_falls_back_to_permutation_on_degenerate_input(self):
+        """Identical observations break anderson_ksamp; the permutation
+        fallback must take over and report an uninformative p-value."""
+        comparer = laserplane.DistributionComparer()
+
+        result = comparer.compare_distributions(
+            np.full(10, 2.5), np.full(10, 2.5), 'anderson',
+            rng=np.random.default_rng(0))
+
+        assert result['method'] == 'anderson_ksamp_permutation'
+        assert result['p_value'] == 1.0  # every relabeling of identical data yields the same statistic
+        assert not result['significant']
+        assert np.isfinite(result['statistic'])
+
 
 
 class TestMomentAnalyzer:
@@ -263,8 +317,8 @@ class TestMomentAnalyzer:
         """Test confidence interval computation."""
         analyzer = laserplane.MomentAnalyzer()
 
-        np.random.seed(42)
-        data = np.random.normal(10.0, 2.0, 100)
+        rng = np.random.default_rng(42)
+        data = rng.normal(10.0, 2.0, 100)
 
         ci = analyzer.compute_confidence_intervals(data, confidence_level=0.95)
 
@@ -309,53 +363,95 @@ class TestMomentAnalyzer:
 
         assert all(np.isnan(v) for v in moments.values() if isinstance(v, float))
 
+    def test_compute_quantiles_all_nan_returns_nan_map(self):
+        """Quantiles of all-NaN data are NaN, keyed by the default grid."""
+        analyzer = laserplane.MomentAnalyzer()
+
+        quantiles = analyzer.compute_quantiles(np.array([np.nan, np.nan]))
+
+        assert set(quantiles) == {'q0.05', 'q0.25', 'q0.50', 'q0.75', 'q0.95'}
+        assert all(np.isnan(v) for v in quantiles.values())
+
+    def test_compute_confidence_intervals_single_observation_returns_nan(self):
+        """With fewer than two observations every confidence interval is undefined."""
+        analyzer = laserplane.MomentAnalyzer()
+
+        ci = analyzer.compute_confidence_intervals(np.array([3.0]))
+
+        assert set(ci) == {'mean_ci', 'median_ci', 'std_ci'}
+        for lo, hi in ci.values():
+            assert np.isnan(lo) and np.isnan(hi)
+
+    def test_estimate_mode_nan_data_returns_nan(self):
+        """Mode estimation on non-finite data must return NaN, not crash."""
+        analyzer = laserplane.MomentAnalyzer()
+
+        assert np.isnan(analyzer._estimate_mode(np.array([np.nan, np.nan])))
+
+
+
+def build_jump_rope(frame=None, time_points=None, n_samples=50, seed=42,
+                    generate=True):
+    """Build a JumpRope model on a synthetic growth frame.
+
+    Uses the shared conftest frame builder unless a custom frame is given;
+    simulated trajectories are seeded so every derived test is deterministic.
+    Set ``generate=False`` for a fitted model without trajectories.
+    """
+    if frame is None:
+        frame = make_growth_frame(n_points=5, phenotype_cols=("phenotype1",),
+                                  seed=seed)
+    if time_points is None:
+        time_points = frame['time'].dropna().unique()
+    ts_data = datacore.TimeSeriesData(
+        data=frame,
+        time_column='time',
+        phenotype_columns=[c for c in frame.columns if c != 'time']
+    )
+
+    data_core = datacore.DataCore([ts_data])
+
+    model = jumprope.JumpRope.fit(
+        data_core,
+        model_type='jump-diffusion',
+        time_points=np.asarray(time_points, dtype=float)
+    )
+
+    if generate:
+        model.generate_trajectories(n_samples=n_samples, x0=10.0, seed=seed)
+
+    return model
+
+
+@pytest.fixture
+def laser_model():
+    """Default seeded JumpRope model with 50 simulated trajectories."""
+    return build_jump_rope()
+
+
+
+
+CROSS_SECTION_FRAME_BUILDERS = {
+    'normal': lambda rng: rng.normal(10.0, 2.0, 50),
+    'lognormal': lambda rng: rng.lognormal(0.0, 0.5, 50),
+    'gamma': lambda rng: rng.gamma(2.0, 2.0, 50),
+}
+
 
 class TestLaserPlaneAnalyzer:
     """Test LaserPlaneAnalyzer class."""
-
-    def create_test_jump_rope(self):
-        """Create test JumpRope model for analyzer tests."""
-        # Create test data
-        data = pd.DataFrame({
-            'time': [1, 2, 3, 4, 5, 1, 2, 3, 4, 5],
-            'phenotype1': [10, 12, 14, 16, 18, 11, 13, 15, 17, 19]
-        })
-
-        ts_data = datacore.TimeSeriesData(
-            data=data,
-            time_column='time',
-            phenotype_columns=['phenotype1']
-        )
-
-        data_core = datacore.DataCore([ts_data])
-
-        model = jumprope.JumpRope.fit(
-            data_core,
-            model_type='jump-diffusion',
-            time_points=np.array([1, 2, 3, 4, 5])
-        )
-
-        # Generate trajectories
-        model.generate_trajectories(n_samples=50, x0=10.0)
-
-        return model
-
-    def test_laser_plane_analyzer_initialization(self):
+    def test_laser_plane_analyzer_initialization(self, laser_model):
         """Test LaserPlaneAnalyzer initialization."""
-        model = self.create_test_jump_rope()
+        analyzer = laserplane.LaserPlaneAnalyzer(laser_model)
 
-        analyzer = laserplane.LaserPlaneAnalyzer(model)
+        assert analyzer.jump_rope == laser_model
+        assert isinstance(analyzer.fitter, laserplane.DistributionFitter)
+        assert isinstance(analyzer.comparer, laserplane.DistributionComparer)
+        assert isinstance(analyzer.moment_analyzer, laserplane.MomentAnalyzer)
 
-        assert analyzer.jump_rope == model
-        assert analyzer.fitter is not None
-        assert analyzer.comparer is not None
-        assert analyzer.moment_analyzer is not None
-
-    def test_analyze_cross_section(self):
+    def test_analyze_cross_section(self, laser_model):
         """Test cross-section analysis."""
-        model = self.create_test_jump_rope()
-
-        analyzer = laserplane.LaserPlaneAnalyzer(model)
+        analyzer = laserplane.LaserPlaneAnalyzer(laser_model)
 
         result = analyzer.analyze_cross_section(time_point=3.0, n_bootstrap=100)
 
@@ -368,13 +464,11 @@ class TestLaserPlaneAnalyzer:
         assert result.goodness_of_fit is not None
         assert result.confidence_intervals is not None
 
-    def test_analyze_cross_section_multiple_times(self):
+    def test_analyze_cross_section_multiple_times(self, laser_model):
         """Test cross-section analysis at multiple time points."""
-        model = self.create_test_jump_rope()
+        analyzer = laserplane.LaserPlaneAnalyzer(laser_model)
 
-        analyzer = laserplane.LaserPlaneAnalyzer(model)
-
-        time_points = [1.0, 2.0, 3.0, 4.0, 5.0]
+        time_points = [0.0, 1.0, 2.0, 3.0, 4.0]
 
         for time_point in time_points:
             result = analyzer.analyze_cross_section(time_point)
@@ -383,18 +477,16 @@ class TestLaserPlaneAnalyzer:
             assert len(result.data) == 50
             assert np.isfinite(result.moments['mean'])
 
-    def test_compare_distributions(self):
+    def test_compare_distributions(self, laser_model):
         """Test distribution comparison populates statistics, p-values and effect sizes."""
-        model = self.create_test_jump_rope()
-
-        analyzer = laserplane.LaserPlaneAnalyzer(model)
+        analyzer = laserplane.LaserPlaneAnalyzer(laser_model)
 
         # Create condition data for comparison: condition2 sits ~3 sd above
         # the reference cross-section at t=3, so it must come out significant.
-        np.random.seed(42)
+        rng = np.random.default_rng(42)
         condition_data = {
-            'condition1': np.random.normal(15.0, 2.0, 50),
-            'condition2': np.random.normal(21.0, 2.0, 50)
+            'condition1': rng.normal(15.0, 2.0, 50),
+            'condition2': rng.normal(21.0, 2.0, 50)
         }
 
         comparison = analyzer.compare_distributions(
@@ -422,17 +514,16 @@ class TestLaserPlaneAnalyzer:
         assert 'condition2' in comparison.significant_differences
         assert comparison.effect_sizes['condition2'] > 0  # shifted upward
 
-    def test_bootstrap_confidence_intervals(self):
+    def test_bootstrap_confidence_intervals(self, laser_model):
         """Test bootstrap confidence interval computation."""
-        model = self.create_test_jump_rope()
-
-        analyzer = laserplane.LaserPlaneAnalyzer(model)
+        analyzer = laserplane.LaserPlaneAnalyzer(laser_model)
 
         # Generate test data
-        np.random.seed(42)
-        data = np.random.normal(10.0, 2.0, 100)
+        rng = np.random.default_rng(42)
+        data = rng.normal(10.0, 2.0, 100)
 
-        ci = analyzer._bootstrap_confidence_intervals(data, n_bootstrap=200)
+        ci = analyzer._bootstrap_confidence_intervals(
+            data, n_bootstrap=200, rng=np.random.default_rng(7))
 
         assert 'mean_ci' in ci
         assert 'median_ci' in ci
@@ -443,15 +534,13 @@ class TestLaserPlaneAnalyzer:
         assert mean_ci[0] < mean_ci[1]
         assert mean_ci[0] <= 10.0 <= mean_ci[1]  # Mean should be within CI
 
-    def test_assess_goodness_of_fit(self):
+    def test_assess_goodness_of_fit(self, laser_model):
         """Test goodness of fit assessment."""
-        model = self.create_test_jump_rope()
-
-        analyzer = laserplane.LaserPlaneAnalyzer(model)
+        analyzer = laserplane.LaserPlaneAnalyzer(laser_model)
 
         # Generate normal data
-        np.random.seed(42)
-        data = np.random.normal(10.0, 2.0, 100)
+        rng = np.random.default_rng(42)
+        data = rng.normal(10.0, 2.0, 100)
 
         # Fit normal distribution (with aic)
         distribution_fit = {
@@ -469,14 +558,12 @@ class TestLaserPlaneAnalyzer:
         assert 'ks_p_value' in gof
         assert np.isfinite(gof['ks_statistic'])
 
-    def test_assess_goodness_of_fit_no_distribution(self):
+    def test_assess_goodness_of_fit_no_distribution(self, laser_model):
         """GOF sentinel values are returned when no distribution was fitted."""
-        model = self.create_test_jump_rope()
+        analyzer = laserplane.LaserPlaneAnalyzer(laser_model)
 
-        analyzer = laserplane.LaserPlaneAnalyzer(model)
-
-        np.random.seed(42)
-        data = np.random.normal(10.0, 2.0, 100)
+        rng = np.random.default_rng(42)
+        data = rng.normal(10.0, 2.0, 100)
 
         gof = analyzer._assess_goodness_of_fit(
             data, {'distribution': None, 'parameters': None, 'aic': np.inf})
@@ -484,13 +571,11 @@ class TestLaserPlaneAnalyzer:
         assert gof == {'aic': np.inf, 'bic': np.inf,
                        'ks_statistic': np.nan, 'ks_p_value': np.nan}
 
-    def test_generate_summary_report(self):
+    def test_generate_summary_report(self, laser_model):
         """Test summary report generation."""
-        model = self.create_test_jump_rope()
+        analyzer = laserplane.LaserPlaneAnalyzer(laser_model)
 
-        analyzer = laserplane.LaserPlaneAnalyzer(model)
-
-        time_points = [1.0, 3.0, 5.0]
+        time_points = [0.0, 2.0, 4.0]
 
         report = analyzer.generate_summary_report(time_points)
 
@@ -500,78 +585,62 @@ class TestLaserPlaneAnalyzer:
         assert 'mean' in report
         assert 'distribution' in report
 
-    def test_cross_section_analysis_with_different_distributions(self):
-        """Test cross-section analysis with different data distributions."""
-        # Create test data with different distributions
-        for dist_name in ['normal', 'lognormal', 'gamma']:
-            if dist_name == 'normal':
-                data = pd.DataFrame({
-                    'time': [1, 2, 3, 4, 5] * 10,
-                    'phenotype1': np.random.normal(10, 2, 50)
-                })
-            elif dist_name == 'lognormal':
-                data = pd.DataFrame({
-                    'time': [1, 2, 3, 4, 5] * 10,
-                    'phenotype1': np.random.lognormal(0, 0.5, 50)
-                })
-            elif dist_name == 'gamma':
-                data = pd.DataFrame({
-                    'time': [1, 2, 3, 4, 5] * 10,
-                    'phenotype1': np.random.gamma(2, 2, 50)
-                })
+    def test_generate_summary_report_writes_csv(self, laser_model, tmp_path):
+        """output_file must receive a CSV whose rows match the report."""
+        analyzer = laserplane.LaserPlaneAnalyzer(laser_model)
 
-            ts_data = datacore.TimeSeriesData(
-                data=data,
-                time_column='time',
-                phenotype_columns=['phenotype1']
-            )
+        out = tmp_path / "summary.csv"
+        report = analyzer.generate_summary_report([0.0, 2.0], output_file=out)
 
-            data_core = datacore.DataCore([ts_data])
+        assert out.exists()
+        df = pd.read_csv(out)
+        assert list(df['time_point']) == [0.0, 2.0]
+        assert (df['n_samples'] == 50).all()
+        assert np.isfinite(df['aic']).all()
+        expected_cols = {'time_point', 'n_samples', 'mean', 'std',
+                         'distribution', 'aic'}
+        assert expected_cols.issubset(df.columns)
+        assert all(col in report for col in expected_cols)
 
-            model = jumprope.JumpRope.fit(
-                data_core,
-                model_type='jump-diffusion',
-                time_points=np.array([1, 2, 3, 4, 5])
-            )
+    @pytest.mark.parametrize('dist_name', sorted(CROSS_SECTION_FRAME_BUILDERS))
+    def test_cross_section_analysis_with_different_distributions(self, dist_name):
+        """Cross-section analysis works for varied phenotype data shapes."""
+        rng = np.random.default_rng(51)
+        frame = pd.DataFrame({
+            'time': np.repeat(np.arange(1.0, 6.0), 10),
+            'phenotype1': CROSS_SECTION_FRAME_BUILDERS[dist_name](rng)
+        })
 
-            model.generate_trajectories(n_samples=30, x0=10.0)
-
-            analyzer = laserplane.LaserPlaneAnalyzer(model)
-
-            result = analyzer.analyze_cross_section(time_point=3.0)
-
-            assert result.distribution_fit is not None
-            assert result.goodness_of_fit['aic'] is not None
-            assert np.isfinite(result.moments['mean'])
-
-    def test_cross_section_analysis_edge_cases(self):
-        """Test cross-section analysis edge cases."""
-        model = self.create_test_jump_rope()
+        model = build_jump_rope(frame=frame, time_points=np.arange(1.0, 6.0),
+                                n_samples=30, seed=52)
 
         analyzer = laserplane.LaserPlaneAnalyzer(model)
 
-        # Test with small sample size
-        small_model = self.create_test_jump_rope()
-        small_model.trajectories = small_model.trajectories[:5]  # Reduce to 5 trajectories
+        result = analyzer.analyze_cross_section(time_point=3.0)
 
-        small_analyzer = laserplane.LaserPlaneAnalyzer(small_model)
+        assert result.distribution_fit is not None
+        assert result.goodness_of_fit['aic'] is not None
+        assert np.isfinite(result.moments['mean'])
 
-        result = small_analyzer.analyze_cross_section(time_point=3.0)
+    def test_cross_section_analysis_small_sample(self):
+        """Cross-section analysis works with only 5 trajectories."""
+        analyzer = laserplane.LaserPlaneAnalyzer(build_jump_rope(n_samples=5, seed=53))
 
-        assert result is not None
+        result = analyzer.analyze_cross_section(time_point=3.0)
+
+        assert isinstance(result, laserplane.CrossSectionResult)
         assert len(result.data) == 5
         assert np.isfinite(result.moments['mean'])
 
-    def test_bootstrap_with_small_sample(self):
+    def test_bootstrap_with_small_sample(self, laser_model):
         """Test bootstrap with small sample size."""
-        model = self.create_test_jump_rope()
-
-        analyzer = laserplane.LaserPlaneAnalyzer(model)
+        analyzer = laserplane.LaserPlaneAnalyzer(laser_model)
 
         # Small dataset
         data = np.array([1, 2, 3, 4, 5])
 
-        ci = analyzer._bootstrap_confidence_intervals(data, n_bootstrap=50)
+        ci = analyzer._bootstrap_confidence_intervals(
+            data, n_bootstrap=50, rng=np.random.default_rng(7))
 
         assert 'mean_ci' in ci
         assert 'median_ci' in ci
@@ -580,3 +649,86 @@ class TestLaserPlaneAnalyzer:
         # Should handle small data gracefully
         assert len(ci['mean_ci']) == 2
         assert ci['mean_ci'][0] <= ci['mean_ci'][1]
+
+    def test_analyze_cross_section_reproducible_with_seeded_rng(self):
+        """Same model and seed must give identical bootstrap intervals."""
+        analyzer1 = laserplane.LaserPlaneAnalyzer(build_jump_rope(seed=7))
+        analyzer2 = laserplane.LaserPlaneAnalyzer(build_jump_rope(seed=7))
+
+        result1 = analyzer1.analyze_cross_section(
+            2.0, n_bootstrap=200, rng=np.random.default_rng(99))
+        result2 = analyzer2.analyze_cross_section(
+            2.0, n_bootstrap=200, rng=np.random.default_rng(99))
+
+        assert result1.confidence_intervals == result2.confidence_intervals
+        mean_ci = result1.confidence_intervals['mean_ci']
+        assert mean_ci[0] < mean_ci[1]
+
+    def test_bootstrap_confidence_intervals_insufficient_data_returns_nan(self, laser_model):
+        """Fewer than four observations yield all-NaN bootstrap intervals."""
+        analyzer = laserplane.LaserPlaneAnalyzer(laser_model)
+
+        ci = analyzer._bootstrap_confidence_intervals(
+            np.array([1.0, 2.0, 3.0]), n_bootstrap=10, rng=np.random.default_rng(7))
+
+        assert set(ci) == {'mean_ci', 'median_ci', 'std_ci'}
+        for lo, hi in ci.values():
+            assert np.isnan(lo) and np.isnan(hi)
+
+    def test_assess_goodness_of_fit_bad_parameters_yield_nan_ks(self, laser_model):
+        """Parameters that cannot build a frozen CDF give NaN KS and finite BIC."""
+        analyzer = laserplane.LaserPlaneAnalyzer(laser_model)
+
+        rng = np.random.default_rng(70)
+        data = rng.normal(10.0, 2.0, 100)
+
+        gof = analyzer._assess_goodness_of_fit(
+            data,
+            {'distribution': 'uniform', 'parameters': ('bad',),
+             'aic': 1.0, 'log_likelihood': 0.0})
+
+        assert np.isnan(gof['ks_statistic']) and np.isnan(gof['ks_p_value'])
+        assert np.isfinite(gof['bic'])
+        assert gof['aic'] == 1.0
+
+    def test_compare_distributions_omits_tiny_condition_from_statistics(self, laser_model):
+        """A single-observation condition yields no p-value and no effect size."""
+        analyzer = laserplane.LaserPlaneAnalyzer(laser_model)
+
+        comparison = analyzer.compare_distributions(2.0, {'singleton': np.array([5.0])})
+
+        assert comparison.p_values == {}
+        assert comparison.effect_sizes == {}
+        assert comparison.significant_differences == []
+
+    def test_cohens_d_singleton_group_is_none(self):
+        """Cohen's d is undefined for a one-observation group."""
+        assert laserplane.LaserPlaneAnalyzer._cohens_d(
+            np.array([1.0, 2.0, 3.0]), np.array([7.0])) is None
+
+    def test_cohens_d_zero_pooled_variance_is_none(self):
+        """Cohen's d is undefined when the pooled variance is zero."""
+        same = np.full(5, 3.0)
+        assert laserplane.LaserPlaneAnalyzer._cohens_d(same, same.copy()) is None
+
+    def test_cohens_d_matches_pooled_sd_definition(self):
+        """Cohen's d equals the mean shift over the pooled standard deviation."""
+        rng = np.random.default_rng(71)
+        group1 = rng.normal(0.0, 1.0, 50)
+        group2 = rng.normal(1.2, 1.0, 50)
+
+        n1, n2 = len(group1), len(group2)
+        pooled = np.sqrt(((n1 - 1) * group1.var(ddof=1) + (n2 - 1) * group2.var(ddof=1))
+                         / (n1 + n2 - 2))
+
+        assert laserplane.LaserPlaneAnalyzer._cohens_d(group1, group2) == pytest.approx(
+            (group2.mean() - group1.mean()) / pooled)
+
+    def test_generate_summary_report_raises_when_every_time_point_fails(self):
+        """Without trajectories every cross-section fails; the reporter must
+        surface a RuntimeError instead of returning an empty report."""
+        model = build_jump_rope(generate=False)
+        analyzer = laserplane.LaserPlaneAnalyzer(model)
+
+        with pytest.raises(RuntimeError, match="no summary report"):
+            analyzer.generate_summary_report([0.0, 2.0])

@@ -5,16 +5,53 @@ This module tests the advanced visualization functionality of the TrajectoryVisu
 using real data and methods.
 """
 
+import importlib
 import pytest
 import numpy as np
 import pandas as pd
+import matplotlib as matplotlib_module
 import matplotlib.pyplot as plt
+import networkx as nx
 from pathlib import Path
+from types import SimpleNamespace
 import tempfile
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+from conftest import make_growth_frame
 from evojump import analytics_engine, datacore, jumprope, trajectory_visualizer
+
+
+def make_seeded_model(seed: int = 42, n_samples: int = 25, n_times: int = 10):
+    """Build a seeded JumpRope model with generated trajectories."""
+    rng = np.random.default_rng(seed)
+    rows = []
+    for i in range(n_samples):
+        for t in range(1, n_times + 1):
+            rows.append((float(t), 10.0 + 0.6 * t + 0.25 * i + rng.normal(0, 0.5)))
+    data = pd.DataFrame(rows, columns=['time', 'phenotype1'])
+    ts_data = datacore.TimeSeriesData(
+        data=data, time_column='time', phenotype_columns=['phenotype1'])
+    data_core = datacore.DataCore([ts_data])
+    model = jumprope.JumpRope.fit(
+        data_core, model_type='jump-diffusion',
+        time_points=np.arange(1, n_times + 1, dtype=float), seed=seed)
+    model.generate_trajectories(n_samples=n_samples, x0=10.0, seed=seed)
+    return model
+
+
+def make_jumped_trajectories(n_samples: int = 20, n_times: int = 10,
+                             seed: int = 3) -> np.ndarray:
+    """Synthetic cohort where trajectory 0 makes one large step at mid-run.
+
+    The single outsized increment exceeds the robust jump threshold of
+    ``estimate_jump_times``, so comparison panels have jumps to scatter.
+    """
+    rng = np.random.default_rng(seed)
+    trajs = (10.0 + 0.6 * np.arange(n_times)[None, :]
+             + rng.normal(0, 0.3, (n_samples, n_times)))
+    trajs[0, n_times // 2:] += 25.0
+    return trajs
 
 
 class TestPlotConfig:
@@ -56,13 +93,11 @@ class TestTrajectoryVisualizer:
 
     def create_test_model(self):
         """Create test JumpRope model for visualization tests."""
-        data = pd.DataFrame({
-            'time': [1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5],
-            'phenotype1': [10, 12, 14, 16, 18, 11, 13, 15, 17, 19, 9, 11, 13, 15, 17]
-        })
-
+        # Shared builder from tests/conftest.py: synthetic growth series.
+        frame = make_growth_frame(n_points=5, phenotype_cols=('phenotype1',),
+                                  seed=42)
         ts_data = datacore.TimeSeriesData(
-            data=data,
+            data=frame,
             time_column='time',
             phenotype_columns=['phenotype1']
         )
@@ -72,10 +107,11 @@ class TestTrajectoryVisualizer:
         model = jumprope.JumpRope.fit(
             data_core,
             model_type='jump-diffusion',
-            time_points=np.array([1, 2, 3, 4, 5])
+            time_points=np.arange(5, dtype=float),
+            seed=42
         )
 
-        model.generate_trajectories(n_samples=20, x0=10.0)
+        model.generate_trajectories(n_samples=20, x0=10.0, seed=42)
 
         return model
 
@@ -164,12 +200,11 @@ class TestTrajectoryVisualizer:
 
         config = trajectory_visualizer.PlotConfig()
         controller = trajectory_visualizer.AnimationController(model, config)
-
-        frames = controller.generate_frames(n_frames=5, time_range=(1.0, 5.0))
+        frames = controller.generate_frames(n_frames=5, time_range=(0.0, 4.0))
 
         assert len(frames) > 0
         assert all(isinstance(frame, trajectory_visualizer.AnimationFrame) for frame in frames)
-        assert all(frame.time_point >= 1.0 and frame.time_point <= 5.0 for frame in frames)
+        assert all(frame.time_point >= 0.0 and frame.time_point <= 4.0 for frame in frames)
 
     def test_animation_controller_empty_generation(self):
         """Test animation frame generation with no valid frames."""
@@ -306,21 +341,7 @@ class TestAnalyticsAndPanelLanes:
 
     def make_model(self, seed: int = 42, n_samples: int = 25):
         """Build a seeded JumpRope model with generated trajectories."""
-        rng = np.random.default_rng(seed)
-        n_times = 10
-        rows = []
-        for i in range(n_samples):
-            for t in range(1, n_times + 1):
-                rows.append((float(t), 10.0 + 0.6 * t + 0.25 * i + rng.normal(0, 0.5)))
-        data = pd.DataFrame(rows, columns=['time', 'phenotype1'])
-        ts_data = datacore.TimeSeriesData(
-            data=data, time_column='time', phenotype_columns=['phenotype1'])
-        data_core = datacore.DataCore([ts_data])
-        model = jumprope.JumpRope.fit(
-            data_core, model_type='jump-diffusion',
-            time_points=np.arange(1, n_times + 1, dtype=float), seed=seed)
-        model.generate_trajectories(n_samples=n_samples, x0=10.0, seed=seed)
-        return model
+        return make_seeded_model(seed=seed, n_samples=n_samples)
 
     def _save_and_check(self, fig, out_path: Path, min_bytes: int = 10000):
         fig.savefig(out_path, dpi=80, bbox_inches='tight')
@@ -530,3 +551,308 @@ class TestAnalyticsAndPanelLanes:
         assert (tmp_path / 'trajectories.png').exists()
         assert fig is not None
         assert plt.get_fignums() == before, "figure was not closed"
+
+
+class TestTrajectoryGuards:
+    """Every public plot method rejects a model without trajectories."""
+
+    @pytest.mark.parametrize("method_name", [
+        "plot_landscapes",
+        "create_animation",
+        "plot_heatmap",
+        "plot_violin",
+        "plot_ridge",
+        "plot_phase_portrait",
+        "plot_comprehensive_trajectories",
+    ])
+    def test_methods_require_generated_trajectories(self, method_name):
+        model = make_seeded_model()
+        model.trajectories = None
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        with pytest.raises(ValueError, match="No trajectories available"):
+            getattr(viz, method_name)(model)
+
+
+class TestComparisonEdgeCases:
+    """plot_model_comparison / plot_comparison input validation and skips."""
+
+    def test_model_comparison_mismatched_names_raise(self):
+        model = make_seeded_model()
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        with pytest.raises(ValueError, match="must match number of names"):
+            viz.plot_model_comparison([model], ['A', 'B'])
+
+    def test_plot_comparison_mismatched_names_raise(self):
+        model = make_seeded_model()
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        with pytest.raises(ValueError, match="must match number of names"):
+            viz.plot_comparison([model], ['A', 'B'])
+
+    def test_model_comparison_skips_models_without_trajectories(self):
+        empty = make_seeded_model()
+        empty.trajectories = None
+        good = make_seeded_model(seed=43)
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        fig = viz.plot_model_comparison([empty, good], ['Empty', 'Good'])
+        assert len(fig.axes) == 9
+        titles = [ax.get_title() for ax in fig.axes]
+        assert 'Mean Trajectories' in titles[0]
+        assert 'Final Distributions' in titles[1]
+        plt.close(fig)
+
+    def test_model_comparison_scatters_detected_jumps(self):
+        m1 = make_seeded_model(seed=42, n_samples=20)
+        m1.trajectories = make_jumped_trajectories(seed=3)
+        m2 = make_seeded_model(seed=43, n_samples=20)
+        m2.trajectories = make_jumped_trajectories(seed=4)
+        assert len(m1.estimate_jump_times()) > 0, (
+            "synthetic cohort must contain a detectable jump")
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        fig = viz.plot_model_comparison([m1, m2], ['Jumpy 1', 'Jumpy 2'])
+        ax3 = fig.axes[2]  # Jump Pattern Detection panel
+        offsets = np.concatenate(
+            [c.get_offsets() for c in ax3.collections]) \
+            if ax3.collections else np.empty((0, 2))
+        assert offsets.shape[0] > 0, "no jump markers were scattered"
+        assert 'Jump Pattern Detection' in ax3.get_title()
+        plt.close(fig)
+
+    def test_plot_comparison_skips_models_without_trajectories(self):
+        empty = make_seeded_model()
+        empty.trajectories = None
+        good = make_seeded_model(seed=43)
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        fig = viz.plot_comparison([empty, good], ['Empty', 'Good'])
+        titles = [ax.get_title() for ax in fig.get_axes()]
+        assert 'Mean Trajectories' in titles
+        assert 'Number of Jumps' in titles
+        plt.close(fig)
+
+
+class TestStatHelperFallbacks:
+    """_compute_skewness/_compute_kurtosis return 0.0 when scipy rejects data."""
+
+    @pytest.mark.parametrize("method", ["_compute_skewness", "_compute_kurtosis"])
+    def test_non_numeric_data_falls_back_to_zero(self, method):
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        bad = np.array(['a', 'b'])  # scipy.stats raises TypeError on strings
+        assert getattr(viz, method)(bad) == 0.0
+
+
+class TestResultPanelLanes:
+    """Analytics-result panels whose optional branches were never driven."""
+
+    def test_information_theory_plots_matrix_complexity_and_flow(self, tmp_path):
+        result = analytics_engine.InformationResult(
+            entropy_measures={'shannon_entropy': 1.5},
+            mutual_information=np.array([[0.0, 0.5], [0.5, 0.0]]),
+            transfer_entropy=np.array([]),
+            complexity_measures={'lempel_ziv': 3.0, 'approx_entropy': 0.4},
+            information_flow={'x_to_y': 0.25})
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        fig = viz.plot_information_theory(result)
+        titles = [ax.get_title() for ax in fig.get_axes()]
+        assert 'Mutual Information Matrix' in titles
+        assert 'Complexity Measures' in titles
+        assert 'Information Flow' in titles
+        fig.savefig(tmp_path / 'information_theory.png', dpi=80)
+        plt.close(fig)
+        assert (tmp_path / 'information_theory.png').stat().st_size > 10000
+
+    def test_robust_statistics_plots_outliers_and_efficiency(self, tmp_path):
+        result = analytics_engine.RobustResult(
+            robust_estimates={'median': 0.0, 'trimmed_mean': 0.1},
+            outlier_analysis={'iqr_count': 2.0, 'zscore_count': 1.0},
+            influence_measures={'lew': 0.2},
+            breakdown_properties={},
+            efficiency_comparison={'median': 0.95, 'mean': 1.0})
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        fig = viz.plot_robust_statistics(result)
+        titles = [ax.get_title() for ax in fig.get_axes()]
+        assert 'Outlier Analysis' in titles
+        assert 'Efficiency Comparison' in titles
+        fig.savefig(tmp_path / 'robust_statistics.png', dpi=80)
+        plt.close(fig)
+        assert (tmp_path / 'robust_statistics.png').stat().st_size > 10000
+
+    def test_network_analysis_scalar_centrality_branch(self, tmp_path):
+        result = analytics_engine.NetworkResult(
+            graph=nx.path_graph(4),
+            centrality_measures={'degree': 0.75},  # scalar, not per-node dict
+            community_structure={},
+            path_analysis={},
+            network_metrics={'density': 0.5})
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        fig = viz.plot_network_analysis(result)
+        titles = [ax.get_title() for ax in fig.get_axes()]
+        assert 'Centrality Measures' in titles
+        assert 'Network Metrics' in titles
+        fig.savefig(tmp_path / 'network_analysis.png', dpi=80)
+        plt.close(fig)
+        assert (tmp_path / 'network_analysis.png').stat().st_size > 10000
+
+
+class TestInteractiveLandscape:
+    """Interactive plotly landscape: unit-aware z label, traces, camera."""
+
+    def test_interactive_landscape_units_in_z_label(self):
+        model = make_seeded_model(n_samples=15)
+        config = trajectory_visualizer.PlotConfig(phenotype_units='mm')
+        viz = trajectory_visualizer.TrajectoryVisualizer(config)
+        fig = viz.plot_landscapes(model, interactive=True)
+        assert fig.layout.title.text == 'Phenotypic Landscape'
+        assert fig.layout.scene.zaxis.title.text == 'Phenotype Value (mm)'
+        assert fig.layout.scene.xaxis.title.text == 'Developmental Time'
+        assert len(fig.data) == 15
+        assert all(trace.type == 'scatter3d' for trace in fig.data)
+        eye = fig.layout.scene.camera.eye
+        assert eye.x is not None and eye.y is not None and eye.z is not None
+
+    def test_static_landscape_without_mpl_toolkits_raises(self, monkeypatch):
+        model = make_seeded_model()
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        monkeypatch.setitem(sys.modules, 'mpl_toolkits.mplot3d', None)
+        with pytest.raises(ImportError, match="mpl_toolkits.mplot3d"):
+            viz.plot_landscapes(model, interactive=False)
+
+
+class TestTrajectorySubsetting:
+    """plot_trajectories clamps oversized n_trajectories requests."""
+
+    def test_oversized_n_trajectories_is_clamped_to_population(self):
+        model = make_seeded_model(n_samples=20)
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        fig = viz.plot_trajectories(model, n_trajectories=10**6)
+        ax = fig.get_axes()[0]
+        # 20 individual lines + 1 mean line.
+        assert len(ax.get_lines()) == 21
+        plt.close(fig)
+
+
+class TestModelDiagnosticsPanels:
+    """_plot_model_diagnostics guards for missing/invalid parameters."""
+
+    def test_helper_without_fitted_parameters_draws_placeholder(self):
+        trajs = make_jumped_trajectories(n_samples=5, n_times=6)
+        payload = SimpleNamespace(trajectories=trajs,
+                                  time_points=np.arange(6.0))
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        fig, ax = plt.subplots()
+        viz._plot_model_diagnostics(payload, ax)
+        assert ax.get_title() == 'Model Diagnostics'
+        assert ax.texts, "expected a placeholder text"
+        plt.close(fig)
+
+    def test_helper_without_numeric_parameters_draws_placeholder(self):
+        params = SimpleNamespace(bounds=None, label='not-numeric')
+        payload = SimpleNamespace(fitted_parameters=params)
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        fig, ax = plt.subplots()
+        viz._plot_model_diagnostics(payload, ax)
+        assert ax.get_title() == 'Model Diagnostics'
+        assert ax.texts, "expected a placeholder text"
+        plt.close(fig)
+
+
+class TestComprehensiveTrajectories:
+    """plot_comprehensive_trajectories renders all nine panels."""
+
+    def test_all_nine_panels_render_and_save(self, tmp_path):
+        model = make_seeded_model(seed=42)
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        fig = viz.plot_comprehensive_trajectories(model, output_dir=tmp_path)
+        # Colorbar axes carry no title; the nine panels do.
+        panels = [ax for ax in fig.axes if ax.get_title()]
+        assert len(panels) == 9
+        titles = [ax.get_title() for ax in panels]
+        assert 'Individual Trajectories' in titles[0]
+        assert 'Density Heatmap' in titles[1]
+        assert 'Cross-Sectional' in titles[2]
+        assert 'Violin Plots' in titles[3]
+        assert 'Ridge Plot' in titles[4]
+        assert 'Phase Portrait' in titles[5]
+        assert 'Statistical Summary' in titles[6]
+        # Fitted numeric parameters -> parameter bar panel, not placeholder.
+        assert 'Fitted Parameters' in titles[7]
+        assert 'Evolutionary Change' in titles[8]
+        saved = tmp_path / 'comprehensive_trajectories.png'
+        assert saved.exists() and saved.stat().st_size > 10000
+        plt.close(fig)
+
+
+    def test_ridge_panel_survives_kde_failure(self):
+        # A constant column makes gaussian_kde raise inside the ridge
+        # panel; the comprehensive figure must still render all panels.
+        model = make_seeded_model(seed=42)
+        model.trajectories = model.trajectories.copy()
+        model.trajectories[:, 3] = 17.5  # within the 8 sampled indices
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        fig = viz.plot_comprehensive_trajectories(model)
+        titles = [ax.get_title() for ax in fig.axes if ax.get_title()]
+        assert len(titles) == 9
+        assert 'Ridge Plot' in titles[4]
+        plt.close(fig)
+
+
+class TestInteractiveTrajectoryAndCrossSections:
+    """Interactive plotly branches for trajectories and cross-sections."""
+
+    def test_interactive_trajectories_traces_and_layout(self):
+        model = make_seeded_model(n_samples=15)
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        fig = viz.plot_trajectories(model, interactive=True)
+        assert fig.layout.title.text == 'Developmental Trajectories'
+        assert fig.layout.hovermode == 'x unified'
+        # 15 individual lines + mean + CI band.
+        assert len(fig.data) == 17
+        types = [trace.type for trace in fig.data]
+        assert set(types) == {'scatter'}
+        assert fig.data[-2].name == 'Mean Trajectory'
+        assert fig.data[-1].name == '95% Confidence Interval'
+
+    def test_interactive_cross_sections_default_time_grid(self):
+        model = make_seeded_model(n_samples=20)
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        # time_points=None samples every len//5-th point of a 10-point grid.
+        fig = viz.plot_cross_sections(model, interactive=True)
+        assert fig.layout.title.text == 'Cross-Sectional Distributions'
+        assert fig.layout.height == 300 * 5
+        # One histogram plus one fitted-normal curve per subplot.
+        assert len(fig.data) == 10
+        assert all(trace.type == 'histogram' for trace in fig.data[::2])
+        assert all(trace.line.color == 'red' for trace in fig.data[1::2])
+
+    def test_interactive_cross_sections_explicit_time_points(self):
+        model = make_seeded_model(n_samples=20)
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        fig = viz.plot_cross_sections(model, time_points=[2.0, 8.0],
+                                      interactive=True)
+        assert fig.layout.height == 300 * 2
+        assert len(fig.data) == 4
+        assert all(trace.type == 'histogram' for trace in fig.data[::2])
+
+
+class TestModuleImportFallbacks:
+    """Module import guards: optional seaborn and headless backend default."""
+
+    def test_seaborn_missing_falls_back_and_backend_defaults_to_agg(self):
+        saved_seaborn = sys.modules.get('seaborn')
+        saved_env = os.environ.get('MPLBACKEND')
+        saved_get_backend = matplotlib_module.get_backend
+        try:
+            sys.modules['seaborn'] = None  # forces ImportError on import
+            os.environ.pop('MPLBACKEND', None)
+            matplotlib_module.get_backend = lambda: 'svg'
+            mod = importlib.reload(trajectory_visualizer)
+            assert mod.HAS_SEABORN is False
+            assert mod.sns is None
+        finally:
+            if saved_seaborn is not None:
+                sys.modules['seaborn'] = saved_seaborn
+            else:
+                sys.modules.pop('seaborn', None)
+            if saved_env is not None:
+                os.environ['MPLBACKEND'] = saved_env
+            matplotlib_module.get_backend = saved_get_backend
+            mod = importlib.reload(trajectory_visualizer)
+            assert mod.HAS_SEABORN is True

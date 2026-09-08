@@ -169,6 +169,94 @@ class TestPopulationModel:
 
         assert np.isnan(ne)
 
+    def test_estimate_heritability_rejects_unknown_method(self):
+        """An unsupported heritability method is a ValueError, not a guess."""
+        data = pd.DataFrame({'time': [1, 2], 'trait': [1.0, 2.0]})
+
+        model = evolution_sampler.PopulationModel(data, 'time')
+        with pytest.raises(ValueError, match="Unsupported heritability method"):
+            model.estimate_heritability('trait', method='twin-study')
+
+    @pytest.mark.parametrize(
+        "pheno, fitness",
+        [
+            pytest.param([1.0], [2.0], id="single-observation"),
+            pytest.param(
+                [1.0, np.nan, 3.0], [2.0, np.nan, np.nan],
+                id="fewer-than-two-finite-pairs"),
+        ],
+    )
+    def test_compute_selection_gradient_requires_two_finite_pairs(
+            self, pheno, fitness):
+        """Fewer than two finite paired observations yield NaN."""
+        data = pd.DataFrame({
+            'time': np.arange(len(pheno), dtype=float),
+            'phenotype1': pheno,
+            'fitness': fitness,
+        })
+
+        model = evolution_sampler.PopulationModel(data, 'time')
+        assert np.isnan(model.compute_selection_gradient('phenotype1', 'fitness'))
+
+    def test_temporal_ne_degenerate_allele_frequencies(self):
+        """Allele frequencies fixed at a boundary (p_bar outside (0, 1))
+        carry no temporal information even though freq_ columns exist."""
+        data = pd.DataFrame({
+            'time': [0, 0, 1, 1],
+            'freq_L1': [0.0, 0.0, 0.0, 0.0],
+        })
+
+        model = evolution_sampler.PopulationModel(data, 'time')
+        assert np.isnan(model.estimate_effective_population_size(method='temporal'))
+
+    def test_estimate_effective_population_size_rejects_unknown_method(self):
+        """An unsupported Ne estimation method is a ValueError."""
+        data = pd.DataFrame({'time': [1, 2], 'trait': [1.0, 2.0]})
+
+        model = evolution_sampler.PopulationModel(data, 'time')
+        with pytest.raises(ValueError, match="Unsupported method"):
+            model.estimate_effective_population_size(method='linkage-disequilibrium')
+
+    @pytest.mark.parametrize(
+        "data, phenotype",
+        [
+            pytest.param(
+                pd.DataFrame({'time': [1.0, 2.0], 'trait': [1.0, 2.0]}),
+                'missing', id="missing-phenotype-column"),
+            pytest.param(
+                pd.DataFrame({'time': [1.0, 2.0], 'trait': [np.nan, np.nan]}),
+                'trait', id="no-phenotype-values-at-endpoints"),
+        ],
+    )
+    def test_selection_differential_undefined_cases(self, data, phenotype):
+        """A missing column or fully missing endpoint values give NaN."""
+        model = evolution_sampler.PopulationModel(data, 'time')
+        assert np.isnan(model.compute_selection_differential(phenotype))
+
+    def test_selection_differential_without_time_axis_is_nan(self):
+        """Without a time axis there is no before/after contrast: NaN."""
+        data = pd.DataFrame({'trait': [1.0, 2.0, 3.0]})
+
+        model = evolution_sampler.PopulationModel(data)
+        assert np.isnan(model.compute_selection_differential('trait'))
+
+    @pytest.mark.parametrize("h2", [None, -0.1, 1.5])
+    def test_predict_phenotypic_response_validates_h2(self, h2):
+        """The Lande response requires a supplied h2 inside [0, 1]."""
+        data = pd.DataFrame({'time': [1.0, 2.0], 'trait': [1.0, 2.0]})
+
+        model = evolution_sampler.PopulationModel(data, 'time')
+        with pytest.raises(ValueError, match="h2 must be supplied"):
+            model.predict_phenotypic_response('trait', h2)
+
+    def test_predict_phenotypic_response_without_differential_is_nan(self):
+        """When the selection differential is unmeasurable, the response
+        is NaN rather than zero."""
+        data = pd.DataFrame({'time': [1.0, 2.0], 'trait': [1.0, 2.0]})
+
+        model = evolution_sampler.PopulationModel(data, 'time')
+        assert np.isnan(model.predict_phenotypic_response('missing', 0.5))
+
 
 class TestPhylogeneticAnalyzer:
     """Test PhylogeneticAnalyzer class."""
@@ -191,6 +279,87 @@ class TestPhylogeneticAnalyzer:
 
         assert isinstance(signal, (float, type(np.nan)))
         assert 0.0 <= signal <= 1.0
+
+    def test_morans_i_signal_sign_detects_clustering(self):
+        """Under inverse-squared-distance weights, trait values clustered
+        on close taxa give positive Moran's I while an outlier on a close
+        pair gives strongly negative I."""
+        distance = np.array([[0.0, 1.0, 10.0], [1.0, 0.0, 10.0], [10.0, 10.0, 0.0]])
+        analyzer = evolution_sampler.PhylogeneticAnalyzer(distance)
+
+        clustered = analyzer.compute_morans_i_signal(np.array([0.0, 0.1, 10.0]))
+        assert np.isfinite(clustered)
+        assert clustered > 0.0
+
+        outlier_mid = analyzer.compute_morans_i_signal(np.array([0.0, 10.0, 0.0]))
+        assert np.isfinite(outlier_mid)
+        assert outlier_mid < 0.0
+
+    @pytest.mark.parametrize(
+        "traits, distance_matrix",
+        [
+            pytest.param(
+                np.array([1.0, 2.0]), np.eye(3) * 2.0,
+                id="fewer-than-three-taxa"),
+            pytest.param(
+                np.array([1.0, 2.0, 3.0, 4.0]), np.eye(3) * 2.0,
+                id="trait-count-mismatches-matrix"),
+            pytest.param(
+                np.array([1.0, 2.0, 3.0]), np.full((3, 3), np.inf),
+                id="non-finite-distances-zero-weights"),
+            pytest.param(
+                np.array([1.0, 2.0, 3.0]), None,
+                id="no-distance-matrix"),
+            pytest.param(
+                np.array([5.0, 5.0, 5.0]),
+                np.array([[0.0, 1.0, 2.0], [1.0, 0.0, 1.5], [2.0, 1.5, 0.0]]),
+                id="zero-variance-traits"),
+        ],
+    )
+    def test_morans_i_signal_undefined_inputs(self, traits, distance_matrix):
+        """The statistic is NaN (not a fabricated value) when the trait
+        vector and matrix are incompatible or the weights/variance
+        degenerate."""
+        analyzer = evolution_sampler.PhylogeneticAnalyzer(distance_matrix)
+        assert np.isnan(analyzer.compute_morans_i_signal(traits))
+
+    def test_phylogenetic_signal_without_distance_matrix_is_zero(self):
+        """Lambda estimation with no phylogeny reports no signal (0.0)."""
+        analyzer = evolution_sampler.PhylogeneticAnalyzer()
+
+        assert analyzer.compute_phylogenetic_signal(np.array([1.0, 2.0, 3.0])) == 0.0
+
+    def test_phylogenetic_signal_requires_three_taxa(self):
+        """Lambda estimation with fewer than three taxa is undefined: NaN."""
+        distance = np.array([[0.0, 1.0, 2.0], [1.0, 0.0, 1.5], [2.0, 1.5, 0.0]])
+        analyzer = evolution_sampler.PhylogeneticAnalyzer(distance)
+
+        assert np.isnan(analyzer.compute_phylogenetic_signal(np.array([1.0, 2.0])))
+
+    def test_compute_phylogenetic_signal_rejects_unknown_method(self):
+        """An unsupported phylogenetic-signal method is a ValueError."""
+        analyzer = evolution_sampler.PhylogeneticAnalyzer()
+
+        with pytest.raises(ValueError, match="Unsupported method"):
+            analyzer.compute_phylogenetic_signal(
+                np.array([1.0, 2.0, 3.0]), method='mantel')
+
+    def test_gaussian_loglikelihood_rejects_non_positive_definite_covariance(self):
+        """A negative-definite covariance has no Gaussian likelihood: -inf."""
+        analyzer = evolution_sampler.PhylogeneticAnalyzer()
+
+        ll = analyzer._compute_gaussian_loglikelihood(
+            np.array([1.0, 2.0, 3.0]), -np.eye(3))
+        assert ll == -np.inf
+
+    def test_gaussian_loglikelihood_handles_mismatched_shapes(self):
+        """Trait/covariance dimension mismatch degrades to -inf, not a crash."""
+        analyzer = evolution_sampler.PhylogeneticAnalyzer()
+
+        ll = analyzer._compute_gaussian_loglikelihood(
+            np.array([1.0, 2.0]), np.eye(3))
+        assert ll == -np.inf
+
 
 
 class TestQuantitativeGenetics:
@@ -229,6 +398,45 @@ class TestQuantitativeGenetics:
         valid_diag = diag_elements[~np.isnan(diag_elements)]
         if len(valid_diag) > 0:
             assert np.allclose(valid_diag, 1.0)
+
+    def test_estimate_breeding_values_sparse_trait_is_nan(self):
+        """A trait with fewer than three observations has no estimable
+        breeding value: the column is all NaN while dense traits are
+        demeaned."""
+        data = pd.DataFrame({
+            'rich': [10.0, 12.0, 14.0, 16.0],
+            'sparse': [1.0, np.nan, 2.0, np.nan],
+        })
+
+        genetics = evolution_sampler.QuantitativeGenetics()
+        breeding_values = genetics.estimate_breeding_values(data, method='blup')
+
+        assert np.allclose(breeding_values['rich'], data['rich'] - 13.0)
+        assert breeding_values['sparse'].isna().all()
+
+    def test_estimate_breeding_values_rejects_unknown_method(self):
+        """An unsupported breeding-value method is a ValueError."""
+        data = pd.DataFrame({'trait': [1.0, 2.0, 3.0]})
+
+        genetics = evolution_sampler.QuantitativeGenetics()
+        with pytest.raises(ValueError, match="Unsupported method"):
+            genetics.estimate_breeding_values(data, method='gwas')
+
+    def test_compute_genetic_correlations_skips_missing_cells(self):
+        """Time points with missing measurements are skipped; a scalar
+        time-series carries no within-time-point correlation, so the
+        result is NaN rather than a fabricated value."""
+        data = pd.DataFrame({
+            'trait1': [1.0, np.nan, 3.0],
+            'trait2': [2.0, 3.0, 4.0],
+        }, index=[0.0, 1.0, 2.0])
+
+        genetics = evolution_sampler.QuantitativeGenetics()
+        correlations = genetics.compute_genetic_correlations(
+            data, [0.0, 1.0, 2.0])
+
+        assert np.isnan(correlations).all()
+
 
 
 class TestEvolutionSampler:
@@ -554,3 +762,131 @@ class TestEvolutionSampler:
             signal = analyzer.compute_phylogenetic_signal(np.array([1.0, 2.0, 3.0]))
 
         assert 0.0 <= signal <= 1.0
+
+    def _cross_sectional_frame(self) -> pd.DataFrame:
+        """Small cross-sectional frame (no time column) for sampler paths."""
+        return pd.DataFrame({
+            'a': [10.0, 12.0, 14.0, 16.0, 18.0, 20.0],
+            'b': [20.0, 19.0, 22.0, 21.0, 24.0, 23.0],
+        })
+
+    def test_importance_sampling_cross_sectional(self):
+        """Importance sampling on cross-sectional data resamples actual
+        population rows and records the effective sample size."""
+        data = self._cross_sectional_frame()
+        sampler = evolution_sampler.EvolutionSampler(data)
+        sampler.seed(123)
+
+        result = sampler.sample(
+            n_samples=6, method='importance-sampling',
+            parameters={'temperature': 1.0})
+
+        assert result.samples.ndim == 2
+        assert result.samples.shape == (6, 2)
+        assert 0.0 < result.parameters['ess'] <= 6
+        population_rows = {tuple(row) for row in data.to_numpy()}
+        sampled_rows = {tuple(row) for row in result.samples}
+        assert sampled_rows.issubset(population_rows)
+
+    def test_mcmc_sampling_cross_sectional(self):
+        """MCMC on cross-sectional data uses all numeric columns as the
+        pool, records an acceptance rate, and yields actual pool rows."""
+        data = self._cross_sectional_frame()
+        sampler = evolution_sampler.EvolutionSampler(data)
+        sampler.seed(456)
+
+        result = sampler.sample(
+            n_samples=50, method='mcmc', parameters={'step_size': 0.2})
+
+        assert result.samples.ndim == 2
+        assert result.samples.shape == (50, 2)
+        assert 0.0 <= result.parameters['acceptance_rate'] <= 1.0
+        population_rows = {tuple(row) for row in data.to_numpy()}
+        for row in result.samples:
+            assert tuple(row) in population_rows
+
+    def test_analyze_selection_single_time_point_not_measurable(self):
+        """One time point carries no selection information: every component
+        is reported as not measurable."""
+        data = pd.DataFrame({'time': [7.0, 7.0, 7.0], 'trait': [1.0, 2.0, 3.0]})
+        sampler = evolution_sampler.EvolutionSampler(data, time_column='time')
+
+        selection = sampler._analyze_selection()
+
+        assert np.isnan(selection['directional_selection'])
+        assert np.isnan(selection['stabilizing_selection'])
+        assert np.isnan(selection['disruptive_selection'])
+        assert selection['selection_differential'] == {}
+        assert selection['selection_response'] == {}
+
+    def test_analyze_selection_with_pedigree_computes_lande_response(self):
+        """With a pedigree the per-trait response is R = h2 * S."""
+        data = pd.DataFrame({
+            'time': [1, 1, 2, 2],
+            'trait': [10.0, 12.0, 13.0, 15.0],
+            'parent': [10.0, 12.0, 14.0, 16.0],
+            'offspring': [5.0, 5.6, 6.2, 6.8],  # slope 0.3 -> h2 0.6
+        })
+        sampler = evolution_sampler.EvolutionSampler(data, time_column='time')
+
+        selection = sampler._analyze_selection()
+
+        assert selection['selection_differential']['trait'] == pytest.approx(3.0)
+        assert selection['selection_response']['trait'] == pytest.approx(0.6 * 3.0)
+
+    def test_analyze_selection_detects_variance_changes(self):
+        """A variance collapse counts as stabilizing, a variance expansion
+        as disruptive, with the proportional changes averaged per trait."""
+        data = pd.DataFrame({
+            'time': [1, 1, 2, 2],
+            # variance 50 -> 0.02 (collapse); 2 -> 72 (expansion)
+            'stabilized': [0.0, 10.0, 4.9, 5.1],
+            'disrupted': [4.0, 6.0, 0.0, 12.0],
+        })
+        sampler = evolution_sampler.EvolutionSampler(data, time_column='time')
+
+        selection = sampler._analyze_selection()
+
+        assert selection['stabilizing_selection'] == pytest.approx(0.9996)
+        assert selection['disruptive_selection'] == pytest.approx(35.0)
+        # Directional: S/SD(first) per trait = 0/7.071 and 1/1.414.
+        assert selection['directional_selection'] == pytest.approx(
+            0.5 * (0.0 + 1.0 / np.sqrt(2.0)))
+
+    def test_cluster_individuals_requires_time_series(self):
+        """Clustering without a time column is a ValueError, not a silent
+        cross-sectional cluster."""
+        data = pd.DataFrame({'a': [1.0, 2.0, 3.0]})
+        sampler = evolution_sampler.EvolutionSampler(data)
+
+        with pytest.raises(ValueError, match="requires time series data"):
+            sampler.cluster_individuals()
+
+    def test_population_statistics_cross_sectional(self):
+        """Cross-sectional data yields one-row summaries and an effective
+        population size equal to the number of rows."""
+        data = self._cross_sectional_frame()
+        sampler = evolution_sampler.EvolutionSampler(data)
+
+        stats = sampler._compute_population_statistics()
+
+        assert stats.mean_trajectory.shape == (1, 2)
+        assert stats.variance_trajectory.shape == (1, 2)
+        assert stats.covariance_matrix.shape == (2, 2)
+        assert stats.effective_population_size == len(data)
+        assert np.allclose(
+            stats.mean_trajectory[0], data.mean(numeric_only=True).values)
+
+    def test_analyze_selection_without_time_axis_not_measurable(self):
+        """Cross-sectional data has no before/after contrast: selection
+        components are reported as not measurable."""
+        data = self._cross_sectional_frame()
+        sampler = evolution_sampler.EvolutionSampler(data)
+
+        selection = sampler._analyze_selection()
+
+        assert np.isnan(selection['directional_selection'])
+        assert np.isnan(selection['stabilizing_selection'])
+        assert np.isnan(selection['disruptive_selection'])
+        assert selection['selection_differential'] == {}
+        assert selection['selection_response'] == {}

@@ -34,7 +34,7 @@ Examples:
     >>> fig = viz.plot_trajectories(model)
 """
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 __author__ = "Daniel Ari Friedman"
 
 # Import main modules for easy access

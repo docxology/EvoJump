@@ -145,8 +145,8 @@ Follow PEP 8 and project-specific conventions:
 
 **Test-Driven Development**
   * Write tests before implementing features
-  * Keep coverage above the enforced 68% floor (``--cov-fail-under=68`` in
-    pyproject.toml; 95%+ on new code is a stretch goal, not a gate)
+  * Keep coverage above the enforced 95% floor (``coverage report
+    --fail-under=95`` over ``src/evojump`` via direct ``coverage run``)
   * Use real data in tests (no mocks)
   * Test both success and failure cases
 
@@ -198,8 +198,9 @@ Follow PEP 8 and project-specific conventions:
    # Run all tests
    pytest
 
-   # Run with coverage
-   pytest --cov=evojump --cov-report=html
+   # Run with the 95% coverage gate
+   coverage run --source=src/evojump -m pytest tests/ -q
+   coverage report --fail-under=95
 
    # Run specific test file
    pytest tests/test_datacore.py
@@ -331,8 +332,8 @@ Pull Request Guidelines
 
    - Added comprehensive test suite for Bayesian methods
    - All existing tests still pass
-   - Test coverage meets the enforced 68% floor
-     (``--cov-fail-under=68`` in pyproject.toml)
+   - Test coverage meets the enforced 95% floor
+     (``coverage report --fail-under=95`` over src/evojump)
 
 **Code Changes**
   * Keep PRs focused and atomic

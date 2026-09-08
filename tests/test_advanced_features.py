@@ -92,35 +92,35 @@ class TestFractionalBrownianMotion:
         fgn *= diffusion * dt ** hurst / np.std(fgn)
         return np.concatenate([[0.0], np.cumsum(fgn)])
 
-    def test_fbm_recovers_hurst_exponent(self):
+    @pytest.mark.parametrize("true_hurst,seed", [(0.3, 1), (0.7, 2)])
+    def test_fbm_recovers_hurst_exponent(self, true_hurst, seed):
         """Hurst estimation on genuine fBM data (Davies-Harte)."""
         dt = 0.1
-        for true_hurst, seed in [(0.3, 1), (0.7, 2)]:
-            path = self._davies_harte_fbm(1024, true_hurst, dt, seed)
-            fbm = jumprope.FractionalBrownianMotion(
-                jumprope.ModelParameters(drift=0.0, diffusion=1.0), hurst=0.5
-            )
-            estimated = fbm.estimate_parameters(path, dt)
+        path = self._davies_harte_fbm(1024, true_hurst, dt, seed)
+        fbm = jumprope.FractionalBrownianMotion(
+            jumprope.ModelParameters(drift=0.0, diffusion=1.0), hurst=0.5
+        )
+        estimated = fbm.estimate_parameters(path, dt)
 
-            assert abs(fbm.hurst - true_hurst) < 0.15
-            assert np.isfinite(estimated.diffusion)
-            assert estimated.diffusion > 0
+        assert abs(fbm.hurst - true_hurst) < 0.15
+        assert np.isfinite(estimated.diffusion)
+        assert estimated.diffusion > 0
 
-    def test_fbm_diffusion_std_scale_convention(self):
+    @pytest.mark.parametrize("diffusion_true", [1.0, 2.0])
+    def test_fbm_diffusion_std_scale_convention(self, diffusion_true):
         """diffusion is in std-deviation units: Var[increment]
         = diffusion^2 * dt^(2H), not diffusion * dt^(2H)."""
         t = np.linspace(0, 20, 801)
         dt = t[1] - t[0]
-        for diffusion_true in (1.0, 2.0):
-            fbm = jumprope.FractionalBrownianMotion(
-                jumprope.ModelParameters(drift=0.0, diffusion=diffusion_true),
-                hurst=0.7, rng=np.random.default_rng(17)
-            )
-            data = fbm.simulate(x0=0.0, t=t, n_paths=1)[0]
+        fbm = jumprope.FractionalBrownianMotion(
+            jumprope.ModelParameters(drift=0.0, diffusion=diffusion_true),
+            hurst=0.7, rng=np.random.default_rng(17)
+        )
+        data = fbm.simulate(x0=0.0, t=t, n_paths=1)[0]
 
-            expected_var = diffusion_true ** 2 * dt ** (2 * 0.7)
-            observed_var = np.var(np.diff(data))
-            assert 0.6 * expected_var < observed_var < 1.5 * expected_var
+        expected_var = diffusion_true ** 2 * dt ** (2 * 0.7)
+        observed_var = np.var(np.diff(data))
+        assert 0.6 * expected_var < observed_var < 1.5 * expected_var
 
     def test_fbm_estimate_diffusion_is_std_scale(self):
         """estimate_parameters must report diffusion in std-deviation units:
@@ -142,6 +142,29 @@ class TestFractionalBrownianMotion:
         )
         data = np.zeros(21)
         assert fbm.log_likelihood(data, 0.1) == -np.inf
+
+    def test_fbm_log_likelihood_is_finite_and_scale_sensitive(self):
+        """On a regular series the multivariate-normal likelihood is finite
+        and falls off in both directions away from the data's own scale."""
+        fbm = jumprope.FractionalBrownianMotion(
+            jumprope.ModelParameters(drift=0.0, diffusion=1.0),
+            hurst=0.7, rng=np.random.default_rng(9)
+        )
+        t = np.linspace(0, 3.0, 31)
+        data = fbm.simulate(x0=0.0, t=t, n_paths=1)[0]
+        dt = t[1] - t[0]
+
+        ll_truth = fbm.log_likelihood(data, dt)
+        ll_tiny = jumprope.FractionalBrownianMotion(
+            jumprope.ModelParameters(drift=0.0, diffusion=1e-6), hurst=0.7
+        ).log_likelihood(data, dt)
+        ll_huge = jumprope.FractionalBrownianMotion(
+            jumprope.ModelParameters(drift=0.0, diffusion=1e6), hurst=0.7
+        ).log_likelihood(data, dt)
+
+        assert np.isfinite(ll_truth)
+        assert ll_truth > ll_tiny
+        assert ll_truth > ll_huge
 
 
 class TestCoxIngersollRoss:
@@ -205,6 +228,20 @@ class TestCoxIngersollRoss:
         assert abs(estimated.equilibrium - 10.0) < 0.5
         assert abs(estimated.reversion_speed - 1.0) < 0.5
         assert np.isfinite(estimated.diffusion)
+        assert estimated.diffusion > 0
+
+    def test_cir_estimate_short_series_defaults_reversion(self):
+        """With only two observations the autocorrelation is undefined: the
+        estimator falls back to unit reversion speed while still recovering
+        the level."""
+        cir = jumprope.CoxIngersollRoss(
+            jumprope.ModelParameters(equilibrium=1.0, reversion_speed=2.0, diffusion=0.5)
+        )
+
+        estimated = cir.estimate_parameters(np.array([1.0, 1.5]), dt=0.5)
+
+        assert estimated.reversion_speed == 1.0
+        assert abs(estimated.equilibrium - 1.25) < 1e-12
         assert estimated.diffusion > 0
 
     def test_cir_log_likelihood_prefers_true_parameters(self):
@@ -280,6 +317,20 @@ class TestLevyProcess:
         assert abs(levy.levy_alpha - 1.4) < 0.3
         assert np.isfinite(estimated.diffusion)
         assert estimated.diffusion > 0
+
+    def test_levy_cauchy_case_simulates_finite_paths(self):
+        """The alpha == 1 branch of the Chambers-Mallows-Stuck generator
+        (pure Cauchy) produces finite trajectories with the given start."""
+        levy = jumprope.LevyProcess(
+            jumprope.ModelParameters(drift=0.0, diffusion=1.0),
+            levy_alpha=1.0, rng=np.random.default_rng(3)
+        )
+
+        paths = levy.simulate(x0=0.0, t=np.linspace(0, 10, 101), n_paths=3)
+
+        assert paths.shape == (3, 101)
+        assert np.all(paths[:, 0] == 0.0)
+        assert np.isfinite(paths).all()
 
     def test_levy_log_likelihood_prefers_true_parameters(self):
         params = jumprope.ModelParameters(drift=0.1, diffusion=1.0)

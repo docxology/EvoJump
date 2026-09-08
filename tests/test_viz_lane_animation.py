@@ -127,3 +127,58 @@ class TestTrailingWindowAnimation:
         assert gif.exists(), "GIF not saved"
         assert gif.stat().st_size > 5000, gif.stat().st_size
         plt.close(anim._fig)
+
+
+class TestFrameGenerationEdges:
+    """AnimationController.generate_frames defaults, degenerate inputs, errors."""
+
+    def test_generate_frames_defaults_to_all_model_time_points(self):
+        model = make_model(n_times=6)
+        controller = trajectory_visualizer.AnimationController(
+            model, trajectory_visualizer.PlotConfig())
+        frames = controller.generate_frames()
+        assert len(frames) == len(model.time_points)
+        assert [f.time_point for f in frames] == list(
+            float(t) for t in model.time_points)
+
+    def test_empty_population_falls_back_to_ci_as_quantiles(self):
+        model = make_model(n_samples=6, n_times=6)
+        model.trajectories = np.zeros((0, model.trajectories.shape[1]))
+        controller = trajectory_visualizer.AnimationController(
+            model, trajectory_visualizer.PlotConfig())
+        frames = controller.generate_frames(n_frames=2)
+        assert frames, "empty cross-sections must still yield frames"
+        for frame in frames:
+            # percentile branch is skipped, so quantiles alias the CI tuple
+            assert frame.metadata['distribution_quantiles'] \
+                is frame.confidence_interval
+
+    def test_broken_trajectories_warn_and_yield_no_frames(self):
+        model = make_model(n_samples=6, n_times=6)
+        model.trajectories = np.array([1.0, 2.0, 3.0])  # 1-D: slicing raises
+        controller = trajectory_visualizer.AnimationController(
+            model, trajectory_visualizer.PlotConfig())
+        frames = controller.generate_frames(n_frames=2)
+        assert frames == [], "failed frames must be skipped, not propagated"
+
+
+class TestAnimationCreationEdges:
+    """create_animation guard branches and the close flag."""
+
+    def test_create_animation_without_generatable_frames_raises(self):
+        model = make_model(n_samples=6, n_times=6)
+        model.trajectories = np.array([1.0, 2.0, 3.0])  # 1-D: no frames
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        with pytest.raises(ValueError, match="No frames generated"):
+            viz.create_animation(model, n_frames=2)
+
+    def test_close_flag_saves_gif_and_closes_figure(self, tmp_path):
+        model = make_model(n_samples=6, n_times=6)
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        before = plt.get_fignums()
+        anim = viz.create_animation(model, n_frames=2, output_dir=tmp_path,
+                                    close=True)
+        gif = tmp_path / 'animation.gif'
+        assert gif.exists() and gif.stat().st_size > 0
+        assert plt.get_fignums() == before, "figure was not closed"
+        plt.close(anim._fig)

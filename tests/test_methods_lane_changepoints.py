@@ -152,3 +152,65 @@ class TestInformationCriterionDetection:
         detector = analytics_engine.ChangePointDetector(df, 'time')
         cps = detector.detect_changes(method='bayesian')
         assert all(c['method'] == 'bocpd' for c in cps)
+
+
+class TestChangePointDetectorVariants:
+    """dispatch/guard branches of ChangePointDetector.detect_changes."""
+
+    def test_unsupported_method_raises(self):
+        df = _make_trajectory(with_jump=False, seed=10)
+        detector = analytics_engine.ChangePointDetector(df, 'time')
+        with pytest.raises(ValueError, match='Unsupported detection method'):
+            detector.detect_changes(method='wavelet')
+
+    def test_statistical_short_series_returns_empty(self):
+        df = pd.DataFrame({'time': np.arange(9.0), 'signal': np.arange(9.0)})
+        detector = analytics_engine.ChangePointDetector(df, 'time')
+        assert detector.detect_changes(method='statistical') == []
+
+    def test_bayesian_skips_non_numeric_columns(self):
+        df = pd.DataFrame({'time': np.arange(30.0), 'label': ['a'] * 30})
+        detector = analytics_engine.ChangePointDetector(df, 'time')
+        assert detector.detect_changes(method='bayesian') == []
+
+    def test_information_skips_non_numeric_columns(self):
+        df = pd.DataFrame({'time': np.arange(30.0), 'label': ['a'] * 30})
+        detector = analytics_engine.ChangePointDetector(df, 'time')
+        assert detector.detect_changes(method='information') == []
+
+    def test_bocpd_survives_degenerate_observation(self):
+        # An inf observation underflows every predictive likelihood to -inf;
+        # the normalizer must reset the run-length table instead of producing
+        # NaN posteriors, and the changepoint probability stays a valid prob.
+        rng = np.random.default_rng(11)
+        signal = rng.normal(0, 1, 20)
+        signal[10] = np.inf
+        df = pd.DataFrame({'time': np.arange(20.0), 'signal': signal})
+        detector = analytics_engine.ChangePointDetector(df, 'time')
+        with np.errstate(over='ignore', invalid='ignore'):
+            cps = detector.detect_changes(method='bayesian')
+
+        assert all(0.0 <= c['changepoint_probability'] <= 1.0 for c in cps)
+        assert any(c['time_index'] == 10 for c in cps)
+
+    def test_information_min_segment_one_finds_planted_shift(self):
+        # min_segment=1 proposes length-1 segments whose one-point Gaussian
+        # BIC is +inf, so they can never win; the planted mean shift must
+        # still be recovered at the exact boundary.
+        df = pd.DataFrame({
+            'time': np.arange(20.0),
+            'signal': np.concatenate([np.zeros(10), np.full(10, 3.0)]),
+        })
+        detector = analytics_engine.ChangePointDetector(df, 'time')
+        cps = detector._information_criterion_change_detection(min_segment=1)
+
+        assert len(cps) == 1
+        assert cps[0]['time_index'] == 10
+        assert cps[0]['bic_improvement'] > 0
+
+    def test_information_constant_series_returns_empty(self):
+        # A constant series has identical BIC with or without a split, so
+        # no candidate can improve on the single-segment model.
+        df = pd.DataFrame({'time': np.arange(30.0), 'signal': np.ones(30)})
+        detector = analytics_engine.ChangePointDetector(df, 'time')
+        assert detector.detect_changes(method='information') == []

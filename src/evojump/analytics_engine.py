@@ -1285,7 +1285,7 @@ class CausalInference:
                 return {'error': 'Insufficient data for Granger causality test'}
 
             # Perform Granger causality test
-            gc_results = grangercausalitytests(data[[effect_var, cause_var]], maxlag=max_lag, verbose=False)
+            gc_results = grangercausalitytests(data[[effect_var, cause_var]], maxlag=max_lag)
 
             # Extract results
             f_tests = []

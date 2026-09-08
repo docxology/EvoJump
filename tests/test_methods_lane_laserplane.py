@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 from evojump import laserplane
+from scipy.stats import norm
 
 
 class TestDistributionFitterAICcBIC:
@@ -33,8 +34,8 @@ class TestDistributionFitterAICcBIC:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             result = laserplane.DistributionFitter().fit_distribution(data, 'normal')
-        if result['distribution'] is not None:
-            assert result['aicc'] > result['aic']
+        assert result['distribution'] == 'normal'
+        assert result['aicc'] > result['aic']
 
 
 class TestVuongSelection:
@@ -193,3 +194,70 @@ class TestComparerAllTests:
             warnings.simplefilter("ignore")
             result = laserplane.DistributionComparer().compare_distributions(a, b, test)
         assert result == {'test': None, 'statistic': None, 'p_value': None}
+
+
+class TestFitterDefensiveBranches:
+    def test_compute_log_likelihood_returns_neg_inf_when_params_invalid(self):
+        """Parameters that cannot even unpack must map to -inf log-likelihood."""
+        fitter = laserplane.DistributionFitter()
+
+        assert fitter._compute_log_likelihood(np.arange(5.0), norm, None) == -np.inf
+
+    def test_pointwise_loglik_beta_requires_scale_record(self):
+        """A beta fit without its min-max scaling record must fail loudly."""
+        fitter = laserplane.DistributionFitter()
+
+        with pytest.raises(ValueError, match="min-max scaling"):
+            fitter._pointwise_loglik(np.array([0.2, 0.5, 0.8]), 'beta',
+                                     {'parameters': (2.0, 2.0, 0.0, 1.0)})
+
+    def test_vuong_insufficient_fits_verdict(self):
+        """With no successfully fitted candidate the check reports it."""
+        fitter = laserplane.DistributionFitter()
+        results = {name: {'distribution': None, 'parameters': None, 'aic': np.inf}
+                   for name in fitter.supported_distributions}
+
+        vuong = fitter._vuong_check(np.linspace(-2.0, 2.0, 20), results, 'normal')
+
+        assert vuong['verdict'] == 'insufficient_fits'
+        assert np.isnan(vuong['lr_statistic'])
+        assert np.isnan(vuong['p_value'])
+
+    def test_vuong_non_finite_likelihood_verdict(self):
+        """A candidate with non-finite likelihood aborts the comparison."""
+        fitter = laserplane.DistributionFitter()
+        data = np.linspace(-2.0, 2.0, 30)
+        results = {
+            'normal': {'distribution': 'normal', 'parameters': (0.0, 1.0),
+                       'log_likelihood': -np.inf, 'n_params': 2, 'aicc': np.inf},
+            'uniform': {'distribution': 'uniform', 'parameters': (-2.0, 4.0),
+                        'log_likelihood': -45.0, 'n_params': 2, 'aicc': 94.0},
+        }
+
+        vuong = fitter._vuong_check(data, results, 'uniform')
+
+        assert vuong['verdict'] == 'non_finite_likelihood'
+        assert np.isnan(vuong['p_value'])
+
+    def test_ad_ksample_statistic_separates_shifted_samples(self):
+        """The Scholz-Stephens statistic grows with distributional shift."""
+        comparer = laserplane.DistributionComparer
+        rng = np.random.default_rng(33)
+        a = rng.normal(0.0, 1.0, 100)
+        b = rng.normal(0.0, 1.0, 100)
+
+        null_stat = comparer._ad_ksample_statistic([a, b])
+        shifted_stat = comparer._ad_ksample_statistic([a, b + 1.5])
+
+        assert np.isfinite(null_stat) and np.isfinite(shifted_stat)
+        assert shifted_stat > null_stat
+        # Under the null the raw statistic stays O(1) while genuine
+        # separation at these sample sizes grows by more than an order of
+        # magnitude.
+        assert shifted_stat > 5.0 * null_stat
+
+    def test_ad_ksample_statistic_floor_for_identical_observations(self):
+        """All-identical observations sit at the statistic's floor."""
+        stat = laserplane.DistributionComparer._ad_ksample_statistic(
+            [np.full(10, 2.5), np.full(10, 2.5)])
+        assert stat == 0.0

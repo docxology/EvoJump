@@ -9,7 +9,7 @@ This document outlines the comprehensive testing framework for the EvoJump proje
 EvoJump follows a strict test-driven development approach with the following core principles:
 
 - **Real Data Testing**: All tests use real biological and synthetic data, never mocks
-- **Comprehensive Coverage**: coverage floor of 68% enforced via `--cov-fail-under=68` in `pyproject.toml` `[tool.pytest.ini_options]` (measured over `src/evojump`; verified full-suite result 412 passed / 86.96% on 2026-09-08 — re-check with `tail -5 coverage.xml` after a fresh full run)
+- **Comprehensive Coverage**: 95% floor enforced via `coverage report --fail-under=95` over `src/evojump` (gate is direct `coverage run`, not pytest-cov — see pyproject note; verified full-suite result 667 passed / 99% on 2026-09-08 — re-check with `tail -5 coverage.xml` after a fresh full run)
 - **Integration Testing**: Tests validate interactions between all major components
 - **Edge Case Validation**: Extensive testing of error conditions and boundary cases
 - **Performance Validation**: Tests ensure computational efficiency for large datasets

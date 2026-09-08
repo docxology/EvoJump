@@ -8,6 +8,7 @@ non-trivial file sizes plus deterministic axis properties.
 import os
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import matplotlib
 matplotlib.use('Agg')
@@ -70,15 +71,16 @@ class TestHeatmapRowSorting:
         assert 'sorted' not in ax.get_title()
         _save_and_check(fig, tmp_path / "heatmap_unsorted.png")
 
-    def test_sort_statistics_supported(self, tmp_path):
+    @pytest.mark.parametrize("stat", [
+        'final_value', 'mean_value', 'max_value', 'min_value'])
+    def test_sort_statistics_supported(self, tmp_path, stat):
         model = make_model()
         viz = trajectory_visualizer.TrajectoryVisualizer()
-        for stat in ('final_value', 'mean_value', 'max_value', 'min_value'):
-            fig = viz.plot_heatmap(model, time_resolution=10,
-                                   phenotype_resolution=10, interactive=False,
-                                   row_sort_statistic=stat)
-            assert stat.replace('_', ' ') in fig.get_axes()[0].get_title()
-            _save_and_check(fig, tmp_path / f"heatmap_{stat}.png")
+        fig = viz.plot_heatmap(model, time_resolution=10,
+                               phenotype_resolution=10, interactive=False,
+                               row_sort_statistic=stat)
+        assert stat.replace('_', ' ') in fig.get_axes()[0].get_title()
+        _save_and_check(fig, tmp_path / f"heatmap_{stat}.png")
 
     def test_invalid_statistic_rejected(self):
         model = make_model()
@@ -152,3 +154,80 @@ class TestLandscapeDeterminism:
         if hasattr(ax1, 'elev'):
             assert abs(ax1.elev - 30.0) < 1e-6
             assert abs(ax1.azim - (-60.0)) < 1e-6
+
+
+class TestHeatmapEdges:
+    """plot_heatmap: html output, label discovery, degenerate inputs."""
+
+    def test_interactive_heatmap_writes_html(self, tmp_path):
+        model = make_model()
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        fig = viz.plot_heatmap(model, time_resolution=10,
+                               phenotype_resolution=10, interactive=True,
+                               output_dir=tmp_path)
+        html = tmp_path / 'density_heatmap.html'
+        assert html.exists() and html.stat().st_size > 0
+        assert fig.layout.title.text == 'Trajectory Density Heatmap'
+        assert fig.layout.xaxis.title.text is not None
+        assert fig.layout.yaxis.title.text is not None
+
+    def test_time_label_discovered_from_source_time_series(self):
+        model = make_model()
+        model._source_time_series = [SimpleNamespace(time_column='age_weeks')]
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        fig = viz.plot_heatmap(model, time_resolution=10,
+                               phenotype_resolution=10, interactive=False)
+        assert fig.get_axes()[0].get_xlabel() == 'age_weeks'
+        plt.close(fig)
+
+    def test_all_nan_trajectories_raise(self):
+        model = make_model()
+        model.trajectories = np.full((3, model.trajectories.shape[1]), np.nan)
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        with pytest.raises(ValueError, match="No finite phenotype values"):
+            viz.plot_heatmap(model, interactive=False)
+
+    def test_constant_phenotype_expands_extent(self, tmp_path):
+        # All-equal values must widen the phenotype range instead of
+        # producing a degenerate zero-width histogram axis.
+        model = make_model()
+        model.trajectories = np.full(model.trajectories.shape, 12.0)
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        fig = viz.plot_heatmap(model, time_resolution=8,
+                               phenotype_resolution=8, interactive=False,
+                               sort_rows=False)
+        extent = fig.get_axes()[0].images[0].get_extent()
+        assert extent[2] == pytest.approx(11.0)
+        assert extent[3] == pytest.approx(13.0)
+        _save_and_check(fig, tmp_path / "heatmap_constant.png")
+
+    def test_plot_heatmap_requires_trajectories(self):
+        model = make_model()
+        model.trajectories = None
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        with pytest.raises(ValueError, match="No trajectories available"):
+            viz.plot_heatmap(model, interactive=False)
+
+    def test_sort_order_helper_rejects_unknown_statistic(self):
+        trajs = make_model().trajectories
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        with pytest.raises(ValueError, match="Unknown row_sort_statistic"):
+            viz._trajectory_sort_order(trajs, 'median')
+
+
+class TestLandscapeEdges:
+    """plot_landscapes guard branches."""
+
+    def test_plot_landscapes_requires_trajectories(self):
+        model = make_model()
+        model.trajectories = None
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        with pytest.raises(ValueError, match="No trajectories available"):
+            viz.plot_landscapes(model, interactive=False)
+
+    def test_static_landscape_without_mpl_toolkits_raises(self, monkeypatch):
+        model = make_model()
+        viz = trajectory_visualizer.TrajectoryVisualizer()
+        monkeypatch.setitem(sys.modules, 'mpl_toolkits.mplot3d', None)
+        with pytest.raises(ImportError, match="mpl_toolkits.mplot3d"):
+            viz.plot_landscapes(model, interactive=False)

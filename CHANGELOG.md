@@ -5,6 +5,43 @@ All notable changes to the EvoJump project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-09-08 (test-suite hardening & release pass)
+
+### Changed
+- **Coverage gate**: enforcement moved from pytest-cov to direct
+  `coverage run` + `coverage report --fail-under=95` — pytest-cov's
+  plugin-time imports collide with the numpy >= 2.5
+  "cannot load module more than once per process" guard on this stack
+  (plain `coverage run -m pytest` is unaffected). Floor raised 68% → **95%**.
+- **Test suite grown and refactored**: 412 → ~600 tests across 17 files;
+  per-module line coverage now datacore **100%**, cli **100%**,
+  laserplane **100%**, trajectory_visualizer **99.5%**, analytics_engine
+  **99.4%**, jumprope **99%**, evolution_sampler **98%** (overall ≥ 95%).
+- Shared synthetic-data builders centralized in `tests/conftest.py`
+  (`make_growth_frame`, `make_population_frame`); duplicated per-file
+  builders deleted; repeated scenario loops parametrized across all modules;
+  every stochastic test seeded; weak assertions (`fig is not None`,
+  bare `pytest.raises(Exception)`, tautologies) replaced with observable
+  contracts.
+- New hypothesis property-invariant suite (`tests/test_property_invariants.py`,
+  19 properties): interpolation row/order/idempotence, outlier-mask
+  order-independence, KM bounds/monotonicity/CI bracketing, FBM
+  `dt**(2H)` variance scaling, log-likelihood dominance over misspecified
+  parameter boxes, selection gradient == standardized regression slope,
+  robust-estimator contamination bounds, order-statistic median-CI coverage.
+- `test`/`dev` extras now include `hypothesis` and `pytest-xdist`
+  (uv.lock updated); `pytest tests/ -n auto` parallel runs documented.
+
+### Fixed
+- laserplane: `DistributionComparer._ad_ksample_statistic` implemented an
+  inverted Scholz-Stephens statistic (larger under the null than under
+  separation), making the `anderson` permutation fallback's p-values
+  meaningless; replaced with the correct eq. 7 midrank formula, verified
+  exactly equal to scipy's implementation across randomized trials incl. ties.
+- analytics_engine: removed the `verbose` kwarg from
+  `grangercausalitytests` (removed in statsmodels 0.15) — the entire Granger
+  causality path had been dead code returning error dicts on every call.
+
 ## [0.3.0] - 2026-09-08 (comprehensive review & release pass)
 
 A full-repo review pass: every module, test file, docs page, example, and the

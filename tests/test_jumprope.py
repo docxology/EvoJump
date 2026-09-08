@@ -7,13 +7,13 @@ using real data and methods.
 
 import pytest
 import numpy as np
-import pandas as pd
 from pathlib import Path
 import tempfile
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from evojump import datacore, jumprope
+from conftest import make_growth_frame
 
 
 class TestModelParameters:
@@ -108,9 +108,9 @@ class TestOrnsteinUhlenbeckJump:
 
         process = jumprope.OrnsteinUhlenbeckJump(params)
 
-        # Generate test data
-        np.random.seed(42)
-        data = np.random.normal(10.0, 2.0, 50)
+        # Generate test data (seeded for determinism)
+        rng = np.random.default_rng(42)
+        data = rng.normal(10.0, 2.0, 50)
         dt = 0.1
 
         log_likelihood = process.log_likelihood(data, dt)
@@ -129,10 +129,9 @@ class TestOrnsteinUhlenbeckJump:
             jump_std=1.0
         )
 
-        process = jumprope.OrnsteinUhlenbeckJump(params)
+        process = jumprope.OrnsteinUhlenbeckJump(params, rng=np.random.default_rng(42))
 
         # Generate synthetic data
-        np.random.seed(42)
         time_points = np.linspace(0, 10, 101)
         true_trajectories = process.simulate(x0=5.0, t=time_points, n_paths=1)
         synthetic_data = true_trajectories[0, :]
@@ -198,8 +197,8 @@ class TestGeometricJumpDiffusion:
         process = jumprope.GeometricJumpDiffusion(params)
 
         # Generate positive test data
-        np.random.seed(42)
-        data = np.random.lognormal(0, 0.5, 50) * 100  # Positive values
+        rng = np.random.default_rng(42)
+        data = rng.lognormal(0, 0.5, 50) * 100  # Positive values
         dt = 0.1
 
         log_likelihood = process.log_likelihood(data, dt)
@@ -213,13 +212,9 @@ class TestJumpRope:
 
     def create_test_data_core(self):
         """Create test DataCore for JumpRope tests."""
-        data = pd.DataFrame({
-            'time': [1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5],
-            'phenotype1': [10, 12, 14, 16, 18, 11, 13, 15, 17, 19, 9, 11, 13, 15, 17]
-        })
-
+        frame = make_growth_frame(n_points=5, phenotype_cols=("phenotype1",), seed=42)
         ts_data = datacore.TimeSeriesData(
-            data=data,
+            data=frame,
             time_column='time',
             phenotype_columns=['phenotype1']
         )
@@ -245,7 +240,7 @@ class TestJumpRope:
         model = jumprope.JumpRope.fit(
             data_core,
             model_type='jump-diffusion',
-            time_points=np.array([1, 2, 3, 4, 5])
+            time_points=np.array([0, 1, 2, 3, 4]),
         )
 
         assert model.fitted_parameters is not None
@@ -260,7 +255,7 @@ class TestJumpRope:
         model = jumprope.JumpRope.fit(
             data_core,
             model_type='ornstein-uhlenbeck',
-            time_points=np.array([1, 2, 3, 4, 5])
+            time_points=np.array([0, 1, 2, 3, 4]),
         )
 
         assert model.fitted_parameters is not None
@@ -273,7 +268,7 @@ class TestJumpRope:
         model = jumprope.JumpRope.fit(
             data_core,
             model_type='geometric-jump-diffusion',
-            time_points=np.array([1, 2, 3, 4, 5])
+            time_points=np.array([0, 1, 2, 3, 4]),
         )
 
         assert model.fitted_parameters is not None
@@ -286,7 +281,8 @@ class TestJumpRope:
         model = jumprope.JumpRope.fit(
             data_core,
             model_type='jump-diffusion',
-            time_points=np.array([1, 2, 3, 4, 5])
+            time_points=np.array([0, 1, 2, 3, 4]),
+            seed=42,
         )
 
         trajectories = model.generate_trajectories(n_samples=10, x0=10.0)
@@ -301,7 +297,8 @@ class TestJumpRope:
         model = jumprope.JumpRope.fit(
             data_core,
             model_type='jump-diffusion',
-            time_points=np.array([1, 2, 3, 4, 5])
+            time_points=np.array([0, 1, 2, 3, 4]),
+            seed=42,
         )
 
         model.generate_trajectories(n_samples=10, x0=10.0)
@@ -318,7 +315,8 @@ class TestJumpRope:
         model = jumprope.JumpRope.fit(
             data_core,
             model_type='jump-diffusion',
-            time_points=np.array([1, 2, 3, 4, 5])
+            time_points=np.array([0, 1, 2, 3, 4]),
+            seed=42,
         )
 
         model.generate_trajectories(n_samples=20, x0=10.0)
@@ -354,7 +352,8 @@ class TestJumpRope:
         model = jumprope.JumpRope.fit(
             data_core,
             model_type='jump-diffusion',
-            time_points=np.array([1, 2, 3, 4, 5])
+            time_points=np.array([0, 1, 2, 3, 4]),
+            seed=42,
         )
 
         with tempfile.NamedTemporaryFile(suffix='.pkl', delete=False) as f:
@@ -374,13 +373,10 @@ class TestJumpRope:
     def test_fit_with_insufficient_data(self):
         """Test model fitting with insufficient data."""
         # Create minimal data
-        data = pd.DataFrame({
-            'time': [1, 2],
-            'phenotype1': [10, 12]
-        })
+        frame = make_growth_frame(n_points=2, phenotype_cols=("phenotype1",), seed=42)
 
         ts_data = datacore.TimeSeriesData(
-            data=data,
+            data=frame,
             time_column='time',
             phenotype_columns=['phenotype1']
         )
@@ -391,34 +387,37 @@ class TestJumpRope:
         model = jumprope.JumpRope.fit(
             data_core,
             model_type='jump-diffusion',
-            time_points=np.array([1, 2])
+            time_points=np.array([0, 1])
         )
 
         assert model.fitted_parameters is not None
 
-    def test_trajectory_generation_with_different_models(self):
-        """Test trajectory generation with different model types."""
+    @pytest.mark.parametrize("model_type", [
+        'jump-diffusion', 'ornstein-uhlenbeck',
+        'geometric-jump-diffusion', 'compound-poisson',
+    ])
+    def test_trajectory_generation_with_different_models(self, model_type):
+        """Trajectory generation works for every supported model type."""
         data_core = self.create_test_data_core()
 
-        # Test with different model types
-        for model_type in ['jump-diffusion', 'ornstein-uhlenbeck', 'geometric-jump-diffusion', 'compound-poisson']:
-            model = jumprope.JumpRope.fit(
-                data_core,
-                model_type=model_type,
-                time_points=np.array([1, 2, 3, 4, 5])
-            )
+        model = jumprope.JumpRope.fit(
+            data_core,
+            model_type=model_type,
+            time_points=np.array([0, 1, 2, 3, 4]),
+            seed=42,
+        )
 
-            trajectories = model.generate_trajectories(n_samples=5, x0=10.0)
+        trajectories = model.generate_trajectories(n_samples=5, x0=10.0)
 
-            assert trajectories.shape == (5, 5)
-            assert trajectories[0, 0] == 10.0
-            assert np.isfinite(trajectories).all()
+        assert trajectories.shape == (5, 5)
+        assert trajectories[0, 0] == 10.0
+        assert np.isfinite(trajectories).all()
 
     def test_parameter_estimation_bounds(self):
         """Test that parameter estimation respects bounds."""
         # Create data with known characteristics
-        np.random.seed(42)
-        data = np.random.normal(10.0, 2.0, 100)
+        rng = np.random.default_rng(42)
+        data = rng.normal(10.0, 2.0, 100)
 
         params = jumprope.ModelParameters()
         process = jumprope.OrnsteinUhlenbeckJump(params)
@@ -431,24 +430,24 @@ class TestJumpRope:
         assert estimated_params.diffusion > 0
         assert estimated_params.jump_intensity >= 0
 
-    def test_cross_section_at_different_times(self):
-        """Test cross-section computation at different time indices."""
+    @pytest.mark.parametrize("time_idx", [0, 2, 4])
+    def test_cross_section_at_different_times(self, time_idx):
+        """Cross-sections are one value per sample at any time index."""
         data_core = self.create_test_data_core()
 
         model = jumprope.JumpRope.fit(
             data_core,
             model_type='jump-diffusion',
-            time_points=np.array([1, 2, 3, 4, 5])
+            time_points=np.array([0, 1, 2, 3, 4]),
+            seed=42,
         )
 
         model.generate_trajectories(n_samples=20, x0=10.0)
 
-        # Test cross-sections at different time points
-        for time_idx in [0, 2, 4]:
-            cross_section = model.compute_cross_sections(time_idx)
-            assert len(cross_section) == 20
-            assert cross_section.ndim == 1
-            assert np.isfinite(cross_section).all()
+        cross_section = model.compute_cross_sections(time_idx)
+        assert len(cross_section) == 20
+        assert cross_section.ndim == 1
+        assert np.isfinite(cross_section).all()
 
 
 class TestLikelihoodDiscrimination:
@@ -520,20 +519,17 @@ class TestLikelihoodDiscrimination:
 
     def test_fit_end_to_end_compound_poisson(self):
         """The fit loop runs end-to-end for model_type='compound-poisson'."""
-        data = pd.DataFrame({
-            'time': [1, 2, 3, 4, 5] * 4,
-            'phenotype1': np.random.default_rng(21).normal(10, 1.0, 20)
-        })
+        frame = make_growth_frame(n_points=5, phenotype_cols=("phenotype1",), seed=21)
         ts_data = datacore.TimeSeriesData(
-            data=data, time_column='time', phenotype_columns=['phenotype1']
+            data=frame, time_column='time', phenotype_columns=['phenotype1']
         )
         data_core = datacore.DataCore([ts_data])
 
         model = jumprope.JumpRope.fit(
             data_core,
             model_type='compound-poisson',
-            time_points=np.array([1, 2, 3, 4, 5]),
-            seed=42
+            time_points=np.array([0, 1, 2, 3, 4]),
+            seed=42,
         )
 
         assert model.fitted_parameters is not None
@@ -583,12 +579,9 @@ class TestReproducibility:
     """Seeding contract: same seed -> bitwise identical trajectories."""
 
     def create_test_data_core(self):
-        data = pd.DataFrame({
-            'time': [1, 2, 3, 4, 5] * 4,
-            'phenotype1': np.random.default_rng(3).normal(10, 1.0, 20)
-        })
+        frame = make_growth_frame(n_points=5, phenotype_cols=("phenotype1",), seed=3)
         ts_data = datacore.TimeSeriesData(
-            data=data, time_column='time', phenotype_columns=['phenotype1']
+            data=frame, time_column='time', phenotype_columns=['phenotype1']
         )
         return datacore.DataCore([ts_data])
 
@@ -596,7 +589,7 @@ class TestReproducibility:
         data_core = self.create_test_data_core()
         model = jumprope.JumpRope.fit(
             data_core, model_type='jump-diffusion',
-            time_points=np.array([1, 2, 3, 4, 5]), seed=42
+            time_points=np.array([0, 1, 2, 3, 4]), seed=42
         )
 
         first = model.generate_trajectories(n_samples=5, x0=10.0, seed=42)
@@ -608,7 +601,7 @@ class TestReproducibility:
         data_core = self.create_test_data_core()
         model = jumprope.JumpRope.fit(
             data_core, model_type='jump-diffusion',
-            time_points=np.array([1, 2, 3, 4, 5]), seed=42
+            time_points=np.array([0, 1, 2, 3, 4]), seed=42
         )
 
         first = model.generate_trajectories(n_samples=5, x0=10.0, seed=42)
@@ -621,12 +614,12 @@ class TestReproducibility:
         data_core = self.create_test_data_core()
         model_a = jumprope.JumpRope.fit(
             data_core, model_type='jump-diffusion',
-            time_points=np.array([1, 2, 3, 4, 5]),
+            time_points=np.array([0, 1, 2, 3, 4]),
             rng=np.random.default_rng(42)
         )
         model_b = jumprope.JumpRope.fit(
             data_core, model_type='jump-diffusion',
-            time_points=np.array([1, 2, 3, 4, 5]),
+            time_points=np.array([0, 1, 2, 3, 4]),
             rng=np.random.default_rng(42)
         )
 
@@ -651,6 +644,7 @@ class TestJumpTimeDetection:
         model.generate_trajectories(n_samples=50, x0=10.0)
         return model
 
+
     def test_pure_diffusion_yields_fewer_flags_than_jumped_paths(self):
         clean = self._model_with(jump_intensity=0.0, jump_mean=0.0, seed=11)
         jumped = self._model_with(jump_intensity=0.5, jump_mean=6.0, seed=11)
@@ -663,3 +657,243 @@ class TestJumpTimeDetection:
         assert len(clean_times) < 25
         assert len(jumped_times) > 100
         assert len(jumped_times) > len(clean_times)
+
+
+class TestDegenerateInputContracts:
+    """Degenerate-input behavior of each stochastic process."""
+
+    @pytest.mark.parametrize("model_type", [
+        'ornstein-uhlenbeck', 'geometric-jump-diffusion', 'compound-poisson',
+    ])
+    def test_log_likelihood_of_single_observation_is_zero(self, model_type):
+        """Fewer than two observations carry no increment information: the
+        log-likelihood is exactly 0.0, not nan or an exception."""
+        process = {
+            'ornstein-uhlenbeck': jumprope.OrnsteinUhlenbeckJump,
+            'geometric-jump-diffusion': jumprope.GeometricJumpDiffusion,
+            'compound-poisson': jumprope.CompoundPoisson,
+        }[model_type](jumprope.ModelParameters())
+        assert process.log_likelihood(np.array([5.0]), dt=0.1) == 0.0
+
+    def test_ou_estimate_unconverged_returns_initial_parameters(self):
+        """NaN observations make the optimizer abort without success: the
+        pre-fit parameters are returned unchanged under a warning."""
+        params = jumprope.ModelParameters(
+            equilibrium=10.0, reversion_speed=0.5, diffusion=1.0,
+            jump_intensity=0.1, jump_mean=0.0, jump_std=1.0
+        )
+        process = jumprope.OrnsteinUhlenbeckJump(params)
+        data = np.array([10.0, np.nan, 12.0, 13.0] * 5)
+
+        with pytest.warns(UserWarning, match="estimation failed"):
+            estimated = process.estimate_parameters(data, dt=0.1)
+
+        assert estimated.equilibrium == params.equilibrium
+        assert estimated.reversion_speed == params.reversion_speed
+
+    def test_ou_estimate_on_constant_series_returns_initial_parameters(self):
+        """Zero-variance data makes the optimizer bounds invalid: the error
+        is caught, warned about, and the pre-fit parameters survive."""
+        params = jumprope.ModelParameters(
+            equilibrium=10.0, reversion_speed=0.5, diffusion=1.0,
+            jump_intensity=0.1, jump_mean=0.0, jump_std=1.0
+        )
+        process = jumprope.OrnsteinUhlenbeckJump(params)
+
+        with pytest.warns(UserWarning, match="estimation error"):
+            estimated = process.estimate_parameters(np.full(20, 10.0), dt=0.1)
+
+        assert estimated.equilibrium == params.equilibrium
+        assert estimated.reversion_speed == params.reversion_speed
+
+    def test_gjd_log_likelihood_skips_nonpositive_observations(self):
+        """A non-positive observation is skipped, so the likelihood over the
+        remaining positive steps stays finite instead of becoming nan."""
+        params = jumprope.ModelParameters(
+            drift=0.05, diffusion=0.2, jump_intensity=0.1,
+            jump_mean=0.0, jump_std=0.3
+        )
+        process = jumprope.GeometricJumpDiffusion(params)
+
+        ll = process.log_likelihood(np.array([100.0, 0.0, 110.0, 120.0]), dt=0.1)
+
+        assert np.isfinite(ll)
+
+    def test_gjd_estimate_without_positive_observations_returns_own_parameters(self):
+        """With no valid log-return (all observations non-positive) there is
+        nothing to optimize: the process keeps its own parameters."""
+        params = jumprope.ModelParameters(
+            drift=0.1, diffusion=0.2, jump_intensity=0.1,
+            jump_mean=0.0, jump_std=0.3
+        )
+        process = jumprope.GeometricJumpDiffusion(params)
+
+        estimated = process.estimate_parameters(
+            np.array([-1.0, -2.0, -3.0, -4.0]), dt=0.1
+        )
+
+        assert estimated.drift == params.drift
+        assert estimated.diffusion == params.diffusion
+
+    def test_gjd_estimate_unconverged_returns_initial_parameters(self):
+        """NaN observations abort the optimizer without success: pre-fit
+        parameters come back under a warning."""
+        params = jumprope.ModelParameters(
+            drift=0.1, diffusion=0.2, jump_intensity=0.1,
+            jump_mean=0.0, jump_std=0.3
+        )
+        process = jumprope.GeometricJumpDiffusion(params)
+        data = np.array([100.0, np.nan, 110.0, 120.0] * 5)
+
+        with pytest.warns(UserWarning, match="estimation failed"):
+            estimated = process.estimate_parameters(data, dt=0.1)
+
+        assert estimated.drift == params.drift
+        assert estimated.diffusion == params.diffusion
+
+    def test_gjd_estimate_on_constant_series_returns_initial_parameters(self):
+        """Constant positive data has zero log-return spread, making the
+        optimizer bounds invalid: the error is warned about and the pre-fit
+        parameters are returned."""
+        params = jumprope.ModelParameters(
+            drift=0.1, diffusion=0.2, jump_intensity=0.1,
+            jump_mean=0.0, jump_std=0.3
+        )
+        process = jumprope.GeometricJumpDiffusion(params)
+
+        with pytest.warns(UserWarning, match="estimation error"):
+            estimated = process.estimate_parameters(np.full(20, 100.0), dt=0.1)
+
+        assert estimated.drift == params.drift
+        assert estimated.diffusion == params.diffusion
+
+    def test_compound_poisson_zero_intensity_rejects_nonzero_increments(self):
+        """With jump_intensity=0 the pmf mass sits entirely at k=0: a flat
+        series scores 0.0 while any nonzero increment is impossible (-inf)."""
+        process = jumprope.CompoundPoisson(
+            jumprope.ModelParameters(jump_intensity=0.0, jump_mean=1.0, jump_std=0.5)
+        )
+
+        flat = np.full(6, 2.0)
+        assert process.log_likelihood(flat, dt=1.0) == 0.0
+
+        jumped = flat.copy()
+        jumped[3] += 1.5
+        assert process.log_likelihood(jumped, dt=1.0) == -np.inf
+
+    def test_compound_poisson_estimate_on_constant_series(self):
+        """A constant series shows no jumps: zero intensity and zero mean,
+        with the unit fallback for the undefined jump-size spread."""
+        process = jumprope.CompoundPoisson(
+            jumprope.ModelParameters(jump_intensity=0.5, jump_mean=2.0, jump_std=1.0)
+        )
+
+        estimated = process.estimate_parameters(np.full(10, 5.0), dt=1.0)
+
+        assert estimated.jump_intensity == 0.0
+        assert estimated.jump_mean == 0.0
+        assert estimated.jump_std == 1.0
+
+
+class TestJumpRopeErrorPaths:
+    """Error and fallback contracts of the JumpRope facade."""
+
+    def test_fit_without_overlapping_timepoints_keeps_initial_parameters(self):
+        """When no requested time point occurs in the data, no series can be
+        fit: the initial parameters are kept as the fitted result."""
+        frame = make_growth_frame(n_points=5, phenotype_cols=("phenotype1",), seed=42)
+        ts_data = datacore.TimeSeriesData(
+            data=frame, time_column='time', phenotype_columns=['phenotype1']
+        )
+        data_core = datacore.DataCore([ts_data])
+
+        model = jumprope.JumpRope.fit(
+            data_core,
+            model_type='compound-poisson',
+            time_points=np.array([100.0, 200.0]),
+            jump_intensity=0.3,
+            jump_mean=1.5,
+        )
+
+        assert model.fitted_parameters is not None
+        assert model.fitted_parameters.jump_intensity == 0.3
+        assert model.fitted_parameters.jump_mean == 1.5
+
+    def test_generate_trajectories_without_any_parameters_raises(self):
+        """A process carrying neither fitted nor own parameters cannot
+        simulate: ValueError points at fit()."""
+
+        class BareProcess(jumprope.StochasticProcess):
+            """Minimal process that deliberately sets no ``parameters``."""
+
+            def __init__(self):
+                self.process_name = "Bare"
+
+            def simulate(self, x0, t, n_paths=1):
+                return np.zeros((n_paths, len(t)))
+
+            def log_likelihood(self, data, dt):
+                return 0.0
+
+            def estimate_parameters(self, data, dt):
+                return jumprope.ModelParameters()
+
+        model = jumprope.JumpRope(BareProcess(), np.array([0.0, 1.0]))
+
+        with pytest.raises(ValueError, match="not fitted"):
+            model.generate_trajectories(n_samples=2)
+
+    @pytest.mark.parametrize("action", ["cross_sections", "jump_times"])
+    def test_analysis_without_trajectories_raises(self, action):
+        """Both downstream analyses require generated trajectories first."""
+        process = jumprope.OrnsteinUhlenbeckJump(jumprope.ModelParameters())
+        model = jumprope.JumpRope(process, np.array([0.0, 1.0, 2.0]))
+
+        with pytest.raises(ValueError, match="generate_trajectories"):
+            if action == "cross_sections":
+                model.compute_cross_sections(0)
+            else:
+                model.estimate_jump_times()
+
+    def test_jump_time_detection_falls_back_to_std_scale(self):
+        """When MAD is zero (more than half the increments identical) the
+        detector falls back to the standard deviation, so a large injected
+        jump against a uniform ramp is still flagged at its time point."""
+        process = jumprope.OrnsteinUhlenbeckJump(jumprope.ModelParameters())
+        time_points = np.arange(31.0)
+        model = jumprope.JumpRope(process, time_points)
+        ramp = np.concatenate([np.zeros(1), np.cumsum([1.0] * 25 + [6.0] + [1.0] * 4)])
+        model.trajectories = ramp.reshape(1, -1)
+
+        jump_times = model.estimate_jump_times()
+
+        assert jump_times == [25.0]
+
+    def test_unfitted_model_simulates_from_process_parameters(self):
+        """An unfitted model falls back to the stochastic process's own
+        parameters instead of requiring fit() first."""
+        params = jumprope.ModelParameters(
+            equilibrium=10.0, reversion_speed=0.5, diffusion=1.0,
+            jump_intensity=0.0, jump_mean=0.0, jump_std=1.0
+        )
+        process = jumprope.OrnsteinUhlenbeckJump(params, rng=np.random.default_rng(5))
+        model = jumprope.JumpRope(
+            process, np.array([0.0, 1.0, 2.0]), initial_conditions={'x0': 10.0}
+        )
+
+        trajectories = model.generate_trajectories(n_samples=3, seed=5)
+
+        assert trajectories.shape == (3, 3)
+        assert np.all(trajectories[:, 0] == 10.0)
+        assert np.isfinite(trajectories).all()
+        # The fallback adopted the process's parameters as fitted parameters.
+        assert model.fitted_parameters == params
+
+    def test_jump_time_detection_degenerate_constant_increment_returns_empty(self):
+        """All-identical increments carry no jump evidence: the detector
+        reports an empty list instead of flagging the ramp."""
+        process = jumprope.OrnsteinUhlenbeckJump(jumprope.ModelParameters())
+        model = jumprope.JumpRope(process, np.arange(31.0))
+        model.trajectories = np.arange(31.0).reshape(1, -1)
+
+        assert model.estimate_jump_times() == []

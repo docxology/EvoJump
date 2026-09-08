@@ -5,7 +5,7 @@
     "population_size": 100,
     "generations": 100,
     "initial_red_eyed": 10,
-    "analysis_timestamp": "2026-09-08T10:31:51.156017"
+    "analysis_timestamp": "2026-09-08T12:05:56.574854"
   },
   "population_dynamics": {
     "final_allele_frequency": 0.97,

@@ -46,7 +46,7 @@ Test and documentation tooling (also declared in ``pyproject.toml``):
 .. code-block::
 
    pytest>=7.0.0          # Testing framework
-   pytest-cov>=3.0.0      # Coverage reporting
+   coverage>=7.0          # Coverage gate (direct coverage run)
    sphinx>=5.0.0          # Documentation
    sphinx-rtd-theme>=1.0.0 # Documentation theme
 

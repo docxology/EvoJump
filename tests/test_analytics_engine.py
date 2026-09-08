@@ -12,6 +12,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from evojump import datacore, analytics_engine
+from conftest import make_growth_frame
 
 
 class TestTimeSeriesAnalyzer:
@@ -74,12 +75,13 @@ class TestTimeSeriesAnalyzer:
         analyzer = analytics_engine.TimeSeriesAnalyzer(data, 'time')
         change_points = analyzer.detect_change_points(method='cusum')
 
-        # Check that change points are detected or at least the method works
-        assert isinstance(change_points, list)
-        if len(change_points) > 0:
-            assert change_points[0]['variable'] == 'phenotype1'
-            assert 'time_index' in change_points[0]
-            assert 'method' in change_points[0]
+        # The single 9-unit jump has z = 8.485 > 2 against the other diffs
+        assert len(change_points) == 1
+        assert change_points[0]['variable'] == 'phenotype1'
+        assert change_points[0]['time_index'] == 3
+        assert change_points[0]['time_value'] == 4
+        assert change_points[0]['change_magnitude'] == 9.0
+        assert change_points[0]['method'] == 'statistical'
 
     def test_forecast_arima(self):
         """Test ARIMA forecasting."""
@@ -93,6 +95,9 @@ class TestTimeSeriesAnalyzer:
 
         assert 'phenotype1' in forecasts
         assert len(forecasts['phenotype1']) == 5
+        # Perfect linear series: ARIMA(1,1,1) must extrapolate the trend
+        assert np.isfinite(forecasts['phenotype1']).all()
+        assert (forecasts['phenotype1'] > 28.0).all()
 
     def test_forecast_exponential_smoothing(self):
         """Test exponential smoothing forecasting."""
@@ -106,6 +111,9 @@ class TestTimeSeriesAnalyzer:
 
         assert 'phenotype1' in forecasts
         assert len(forecasts['phenotype1']) == 3
+        # alpha=0.3 smoothing anchored at the last value of a flat tail: every
+        # step equals alpha*28 + (1-alpha)*28 = 28
+        assert (forecasts['phenotype1'] == 28.0).all()
 
 
 class TestMultivariateAnalyzer:
@@ -143,9 +151,14 @@ class TestMultivariateAnalyzer:
         analyzer = analytics_engine.MultivariateAnalyzer(data1)
         cca_results = analyzer.canonical_correlation_analysis(data1, data2)
 
-        assert 'canonical_correlations' in cca_results
+        ccs = cca_results['canonical_correlations']
+        assert len(ccs) == 2
+        # Seeded independent gaussians share no canonical channel: both
+        # sample correlations stay well below the dependence bar
+        assert np.all(np.isfinite(ccs))
+        assert np.all(ccs < 0.6)
         assert 'canonical_variables_1' in cca_results
-        assert len(cca_results['canonical_correlations']) <= 2
+        assert 'canonical_variables_2' in cca_results
 
     def test_cluster_analysis(self):
         """Test cluster analysis."""
@@ -186,10 +199,15 @@ class TestPredictiveModeler:
         )
 
         assert result.model_name == 'random_forest'
-        assert len(result.predictions) > 0
-        assert 'train_r2' in result.performance_metrics
-        assert 'test_r2' in result.performance_metrics
-        assert result.performance_metrics['test_r2'] is not None
+        assert len(result.predictions) == 20  # test_size=0.2 of 100 rows
+        metrics = result.performance_metrics
+        assert np.isfinite(metrics['train_mse']) and metrics['train_mse'] >= 0
+        assert np.isfinite(metrics['test_mse']) and metrics['test_mse'] >= 0
+        assert np.isfinite(metrics['train_r2'])
+        assert np.isfinite(metrics['test_r2'])
+        # In-sample fit beats held-out fit on pure noise
+        assert metrics['train_r2'] > metrics['test_r2']
+        assert set(result.feature_importance) == {'feature1', 'feature2'}
 
     def test_cross_validate_model(self):
         """Test model cross-validation."""
@@ -212,7 +230,10 @@ class TestPredictiveModeler:
         assert 'std_r2' in cv_results
         assert 'mean_mse' in cv_results
         assert 'std_mse' in cv_results
-        assert cv_results['mean_r2'] is not None
+        assert np.isfinite(cv_results['mean_mse']) and cv_results['mean_mse'] > 0
+        assert np.isfinite(cv_results['std_mse']) and cv_results['std_mse'] >= 0
+        assert np.isfinite(cv_results['mean_r2'])
+        assert np.isfinite(cv_results['std_r2'])
 
 
 class TestChangePointDetector:
@@ -261,18 +282,10 @@ class TestAnalyticsEngine:
     """Test AnalyticsEngine class."""
 
     def create_test_data(self):
-        """Create test data for AnalyticsEngine."""
-        np.random.seed(42)
-        time_points = np.arange(1, 21)
-        trend = 2 * time_points
-        noise = np.random.normal(0, 1, len(time_points))
-
-        data = pd.DataFrame({
-            'time': time_points,
-            'phenotype1': trend + noise,
-            'phenotype2': trend * 1.5 + noise * 2
-        })
-        return data
+        """Shared synthetic growth frame from tests/conftest.py."""
+        return make_growth_frame(
+            n_points=20, phenotype_cols=("phenotype1", "phenotype2"), seed=42
+        )
 
     def test_analytics_engine_initialization(self):
         """Test AnalyticsEngine initialization."""
@@ -439,9 +452,14 @@ class TestNetworkAnalyzer:
         analyzer = analytics_engine.NetworkAnalyzer(data)
         network_result = analyzer.construct_correlation_network(threshold=0.9)
 
-        if len(network_result.network_metrics) > 0:
-            path_analysis = analyzer.shortest_path_analysis('var1', 'var3')
-            assert isinstance(path_analysis, dict)
+        # Perfectly correlated triple: complete graph at threshold 0.9
+        assert network_result.network_metrics['num_edges'] == 3
+        path_analysis = analyzer.shortest_path_analysis('var1', 'var3')
+        assert path_analysis['path'] == ['var1', 'var3']
+        assert path_analysis['path_length'] == 1
+        assert path_analysis['weighted_path'] == ['var1', 'var3']
+        assert path_analysis['weighted_path_length'] > 0
+        assert ['var1', 'var3'] in path_analysis['all_shortest_paths']
 
 
 class TestCausalInference:
@@ -459,27 +477,28 @@ class TestCausalInference:
         result = analyzer.granger_causality_test('cause', 'effect', max_lag=3)
 
         assert isinstance(result, dict)
-        assert 'granger_causality' in result or 'error' in result
+        # Independent seeded gaussians: the test runs and reports one
+        # F-test per lag; significance must exactly match the p-values.
+        assert 'error' not in result, result
+        gc = result['granger_causality']
+        assert len(gc['f_statistics']) == 3
+        assert len(gc['p_values']) == 3
+        assert gc['lags_tested'] == [1, 2, 3]
+        assert all(np.isfinite(f) for f in gc['f_statistics'])
+        assert all(0.0 <= p <= 1.0 for p in gc['p_values'])
+        assert result['significant_causality'] == any(p < 0.05 for p in gc['p_values'])
 
 
 class TestAdvancedAnalyticsEngine:
     """Test advanced AnalyticsEngine methods."""
 
     def create_test_data(self):
-        """Create comprehensive test data."""
-        np.random.seed(42)
-        time_points = np.arange(1, 51)
-        trend = 2 * time_points
-        seasonality = 5 * np.sin(2 * np.pi * time_points / 12)
-        noise = np.random.normal(0, 1, len(time_points))
-
-        data = pd.DataFrame({
-            'time': time_points,
-            'phenotype1': trend + seasonality + noise,
-            'phenotype2': trend * 1.5 + seasonality * 0.5 + noise * 2,
-            'phenotype3': trend * 0.8 + seasonality * 1.2 + noise * 0.5
-        })
-        return data
+        """Shared synthetic growth frame from tests/conftest.py."""
+        return make_growth_frame(
+            n_points=50,
+            phenotype_cols=("phenotype1", "phenotype2", "phenotype3"),
+            seed=42,
+        )
 
     def test_bayesian_analysis(self):
         """Test Bayesian analysis method."""
@@ -512,7 +531,16 @@ class TestAdvancedAnalyticsEngine:
         result = engine.causal_inference('phenotype1', 'phenotype2', max_lag=3)
 
         assert isinstance(result, dict)
-        assert 'granger_causality' in result or 'error' in result
+        assert 'granger_causality' in result, result
+        gc = result['granger_causality']
+        assert len(gc['f_statistics']) == 3
+        assert len(gc['p_values']) == 3
+        assert all(0.0 <= p <= 1.0 for p in gc['p_values'])
+        assert result['causal_direction'] == 'phenotype1 -> phenotype2'
+        # Logistic growth curves are deterministic in time: phenotype1
+        # Granger-causes phenotype2 overwhelmingly.
+        assert result['significant_causality'] is True
+        assert 1 <= result['best_lag'] <= 3
 
     def test_advanced_dimensionality_reduction_fastica(self):
         """Test FastICA dimensionality reduction."""
@@ -549,7 +577,9 @@ class TestAdvancedAnalyticsEngine:
         result = engine.spectral_analysis('phenotype1', sampling_frequency=1.0)
 
         assert isinstance(result, analytics_engine.SpectralResult)
-        assert isinstance(result.power_spectrum, np.ndarray) or isinstance(result.power_spectrum, list)
+        ps = np.asarray(result.power_spectrum)
+        assert ps.ndim == 2 and ps.shape[1] == 2 and len(ps) > 0
+        assert result.spectral_entropy > 0.0
 
     def test_nonlinear_dynamics_analysis(self):
         """Test nonlinear dynamics analysis."""
@@ -559,7 +589,11 @@ class TestAdvancedAnalyticsEngine:
         result = engine.nonlinear_dynamics_analysis('phenotype1', embedding_dim=3, tau=1)
 
         assert isinstance(result, dict)
-        assert 'largest_lyapunov_exponent' in result or 'error' in result
+        assert 'error' not in result, result
+        lyap = result['largest_lyapunov_exponent']
+        assert np.isfinite(lyap)
+        assert len(result['correlation_dimensions']) > 0
+        assert result['attractor_properties'] == {'embedding_dim': 3, 'tau': 1}
 
     def test_information_theory_analysis(self):
         """Test information theory analysis."""
@@ -569,7 +603,9 @@ class TestAdvancedAnalyticsEngine:
         result = engine.information_theory_analysis('phenotype1')
 
         assert isinstance(result, dict)
-        assert 'shannon_entropy' in result or 'error' in result
+        assert result['shannon_entropy'] >= 0.0
+        assert 0.0 <= result['normalized_entropy'] <= 1.0
+
 
     def test_robust_statistical_analysis(self):
         """Test robust statistical analysis."""
@@ -608,7 +644,8 @@ class TestAdvancedAnalyticsEngine:
         result = engine.spatial_analysis('phenotype1')
 
         assert isinstance(result, dict)
-        assert 'morans_i' in result or 'error' in result
+        assert result['weights_kind'] == 'linear_adjacency'
+        assert np.isfinite(result['morans_i'])
 
     def test_survival_analysis(self):
         """Test survival analysis method."""
@@ -621,7 +658,12 @@ class TestAdvancedAnalyticsEngine:
         result = engine.survival_analysis('time', 'event')
 
         assert isinstance(result, analytics_engine.SurvivalResult)
-        assert isinstance(result.survival_function, np.ndarray) or isinstance(result.survival_function, list)
+        # Hand-checkable KM: no event at t=1, then 1/8, 1/6, 2/4, 2/2
+        np.testing.assert_allclose(
+            result.survival_function, [1.0, 0.875, 0.875 * 5 / 6, 0.875 * 5 / 12, 0.0]
+        )
+        assert result.median_survival_time == 4.0
+        assert np.all(np.diff(result.survival_function) <= 1e-12)
 
 
 class TestCCARecovery:
@@ -1057,4 +1099,538 @@ class TestComprehensiveReportExplicitColumns:
             causal_columns=('phenotype1', 'phenotype2'),
         )
         assert isinstance(report['bayesian'], analytics_engine.BayesianResult)
-        assert 'granger_causality' in report['causal'] or 'error' in report['causal']
+        assert 'error' not in report['causal'], report['causal']
+        # Independent columns: significance must match the reported p-values.
+        assert (report['causal']['significant_causality']
+                == any(p < 0.05 for p in report['causal']['granger_causality']['p_values']))
+
+
+class TestMultivariateAnalyzerEdgeCases:
+    """Validation branches of MultivariateAnalyzer (PCA/CCA guards)."""
+
+    def test_pca_needs_three_samples(self):
+        data = pd.DataFrame({'a': [1.0, 2.0], 'b': [3.0, 4.0]})
+        with pytest.raises(ValueError, match='Insufficient data for PCA'):
+            analytics_engine.MultivariateAnalyzer(data).principal_component_analysis()
+
+    def test_cca_requires_equal_sample_counts(self):
+        rng = np.random.default_rng(6)
+        d1 = pd.DataFrame({'x': rng.normal(size=20)})
+        d2 = pd.DataFrame({'y': rng.normal(size=19)})
+        with pytest.raises(ValueError, match='same number of samples'):
+            analytics_engine.MultivariateAnalyzer(d1).canonical_correlation_analysis(d1, d2)
+
+    def test_cca_returns_error_dict_on_overflowing_covariance(self):
+        # 1e200-scale values: squared products overflow to inf inside the
+        # canonical-correlation eigenproblem; the analyzer must degrade to
+        # an error dict instead of crashing.
+        d1 = pd.DataFrame({'x1': [1e200, -2e200, 3e200, -4e200],
+                           'x2': [1.0, 2.0, 3.0, 4.0]})
+        d2 = pd.DataFrame({'y1': [2.0, 3.0, 5.0, 7.0], 'y2': [1.0, 3.0, 2.0, 5.0]})
+        result = analytics_engine.MultivariateAnalyzer(d1).canonical_correlation_analysis(d1, d2)
+        assert 'error' in result
+
+    def test_cluster_analysis_rejects_unsupported_method(self):
+        data = pd.DataFrame({'a': np.arange(10.0), 'b': np.arange(10.0)})
+        with pytest.raises(ValueError, match='Unsupported clustering method'):
+            analytics_engine.MultivariateAnalyzer(data).cluster_analysis(method='dbscan')
+
+
+class TestPredictiveModelerValidation:
+    """Input validation of PredictiveModeler train/cross-validate paths."""
+
+    @pytest.fixture
+    def modeler(self):
+        rng = np.random.default_rng(7)
+        frame = pd.DataFrame({
+            'f1': rng.normal(0, 1, 40),
+            'f2': rng.normal(0, 1, 40),
+            'target': rng.normal(0, 1, 40),
+        })
+        return analytics_engine.PredictiveModeler(frame)
+
+    def test_missing_target_raises(self, modeler):
+        with pytest.raises(ValueError, match='Target variable nope not found'):
+            modeler.train_predictive_model('nope', ['f1'])
+
+    def test_missing_feature_raises(self, modeler):
+        with pytest.raises(ValueError, match='Feature variables not found'):
+            modeler.train_predictive_model('target', ['f1', 'nope'])
+
+    def test_insufficient_rows_raises(self):
+        frame = pd.DataFrame({'f1': np.arange(8.0), 'target': np.arange(8.0)})
+        modeler = analytics_engine.PredictiveModeler(frame)
+        with pytest.raises(ValueError, match='Insufficient data for model training'):
+            modeler.train_predictive_model('target', ['f1'])
+
+    @pytest.mark.parametrize('call', ['train', 'cross_validate'])
+    def test_unknown_model_raises(self, modeler, call):
+        if call == 'train':
+            with pytest.raises(ValueError, match='Unknown model'):
+                modeler.train_predictive_model('target', ['f1'], model_name='bogus')
+        else:
+            with pytest.raises(ValueError, match='Unknown model'):
+                modeler.cross_validate_model('target', ['f1'], model_name='bogus')
+
+
+class TestNetworkAnalyzerEdgeCases:
+    """Guard branches of the network analyzer and shortest-path API."""
+
+    def test_unsupported_correlation_method_raises(self):
+        data = pd.DataFrame({'a': np.arange(10.0), 'b': np.arange(10.0) * 2})
+        with pytest.raises(ValueError, match='Unsupported correlation method'):
+            analytics_engine.NetworkAnalyzer(data).construct_correlation_network(method='spearman')
+
+    def test_shortest_path_requires_constructed_graph(self):
+        analyzer = analytics_engine.NetworkAnalyzer(pd.DataFrame({'a': [1.0, 2.0]}))
+        with pytest.raises(ValueError, match='No graph available'):
+            analyzer.shortest_path_analysis('a', 'b')
+
+    def test_shortest_path_unknown_node_raises(self):
+        data = pd.DataFrame({'a': [1.0, 2, 3, 4, 5], 'b': [1.0, 2, 3, 4, 5]})
+        analyzer = analytics_engine.NetworkAnalyzer(data)
+        analyzer.construct_correlation_network(threshold=0.9)
+        with pytest.raises(ValueError, match='not in graph'):
+            analyzer.shortest_path_analysis('a', 'missing')
+
+    def test_shortest_path_across_components_raises(self):
+        # Two internally-correlated pairs, no cross-correlation: the
+        # thresholded graph is disconnected between the pairs.
+        rng = np.random.default_rng(8)
+        a = rng.normal(0, 1, 30)
+        c = rng.normal(0, 1, 30)
+        data = pd.DataFrame({
+            'v1': a,
+            'v2': a + 0.01 * rng.normal(0, 1, 30),
+            'v3': c,
+            'v4': c + 0.01 * rng.normal(0, 1, 30),
+        })
+        analyzer = analytics_engine.NetworkAnalyzer(data)
+        analyzer.construct_correlation_network(threshold=0.9)
+        with pytest.raises(ValueError, match='No path'):
+            analyzer.shortest_path_analysis('v1', 'v3')
+
+
+class TestCausalInferenceGranger:
+    """Granger causality must return real per-lag F-tests after the
+    statsmodels-0.15 `verbose` fix, and degrade gracefully on short data."""
+
+    def test_planted_causality_is_detected(self):
+        rng = np.random.default_rng(0)
+        cause = rng.normal(0, 1, 200)
+        effect = np.zeros(200)
+        for t in range(1, 200):
+            effect[t] = 0.6 * cause[t - 1] + 0.3 * rng.normal(0, 1)
+        result = analytics_engine.CausalInference(
+            pd.DataFrame({'cause': cause, 'effect': effect})
+        ).granger_causality_test('cause', 'effect', max_lag=3)
+
+        assert 'error' not in result, result
+        gc = result['granger_causality']
+        assert len(gc['f_statistics']) == 3
+        assert gc['lags_tested'] == [1, 2, 3]
+        assert result['significant_causality'] is True
+        assert 1 <= result['best_lag'] <= 3
+
+    def test_insufficient_data_returns_error(self):
+        data = pd.DataFrame({'cause': [1.0, 2, 3, 4], 'effect': [2.0, 3, 4, 5]})
+        result = analytics_engine.CausalInference(data).granger_causality_test(
+            'cause', 'effect', max_lag=5
+        )
+        assert result == {'error': 'Insufficient data for Granger causality test'}
+
+
+class TestDimensionalityReducerEdgeCases:
+    """Degradation contract of FastICA/t-SNE/intrinsic-dimension helpers."""
+
+    def test_fast_ica_returns_error_result_on_constant_columns(self):
+        data = pd.DataFrame({'time': np.arange(30.0), 'a': [5.0] * 30, 'b': [7.0] * 30})
+        result = analytics_engine.AnalyticsEngine(
+            data, time_column='time'
+        ).advanced_dimensionality_reduction(method='fastica')
+
+        assert result.embeddings.size == 0
+        assert result.reconstruction_error == 1.0
+        assert 'error' in result.manifold_structure
+
+    def test_tsne_returns_error_result_when_perplexity_exceeds_samples(self):
+        data = pd.DataFrame({'time': np.arange(12.0),
+                             'a': np.random.default_rng(9).normal(0, 1, 12)})
+        result = analytics_engine.AnalyticsEngine(
+            data, time_column='time'
+        ).advanced_dimensionality_reduction(method='tsne', perplexity=50.0)
+
+        assert result.embeddings.size == 0
+        assert 'error' in result.manifold_structure
+
+    def test_intrinsic_dimension_of_identical_points_is_feature_count(self):
+        from evojump.analytics_engine import DimensionalityReducer
+        reducer = DimensionalityReducer(pd.DataFrame({'a': np.zeros(12)}))
+        assert reducer._estimate_intrinsic_dimension(np.zeros((12, 3))) == 3
+
+    def test_intrinsic_dimension_falls_back_when_neighbors_exceed_samples(self):
+        from evojump.analytics_engine import DimensionalityReducer
+        reducer = DimensionalityReducer(pd.DataFrame({'a': np.zeros(3)}))
+        assert reducer._estimate_intrinsic_dimension(np.zeros((3, 4))) == 4
+
+
+class TestAnalyticsEngineGuardBranches:
+    """Missing-column / too-few-observations contracts of engine methods."""
+
+    def test_predictive_modeling_auto_selects_all_non_time_columns(self):
+        data = make_growth_frame(
+            n_points=30, phenotype_cols=("phenotype1", "phenotype2"), seed=11
+        )
+        engine = analytics_engine.AnalyticsEngine(data, time_column='time')
+        results = engine.predictive_modeling('phenotype2', models=['random_forest'])
+
+        assert set(results) == {'random_forest'}
+        # Auto-selected features must include the other phenotype but
+        # exclude the time column.
+        assert set(results['random_forest'].feature_importance) == {'phenotype1'}
+
+    def test_predictive_modeling_skips_failing_models(self):
+        data = make_growth_frame(
+            n_points=30, phenotype_cols=("phenotype1", "phenotype2"), seed=11
+        )
+        engine = analytics_engine.AnalyticsEngine(data, time_column='time')
+        results = engine.predictive_modeling(
+            'phenotype2', feature_variables=['phenotype1'],
+            models=['random_forest', 'bogus'],
+        )
+        assert set(results) == {'random_forest'}
+
+    def test_bayesian_analysis_insufficient_pair_returns_empty_result(self):
+        data = pd.DataFrame({'time': np.arange(5.0), 'x': np.arange(5.0), 'y': np.arange(5.0)})
+        result = analytics_engine.AnalyticsEngine(
+            data, time_column='time'
+        ).bayesian_analysis('x', 'y')
+
+        assert result.posterior_samples.size == 0
+        assert result.credible_intervals == {}
+        assert result.model_evidence == 0.0
+
+    def test_unsupported_dimensionality_method_falls_back_to_fastica(self):
+        data = make_growth_frame(n_points=30, phenotype_cols=("a", "b", "c"), seed=12)
+        result = analytics_engine.AnalyticsEngine(
+            data, time_column='time'
+        ).advanced_dimensionality_reduction(method='nonexistent')
+        assert result.manifold_structure['algorithm'] == 'FastICA'
+
+    def test_survival_missing_columns_returns_empty_result(self):
+        engine = analytics_engine.AnalyticsEngine(
+            pd.DataFrame({'time': [1.0, 2.0], 'event': [1.0, 0.0]}), time_column='time'
+        )
+        result = engine.survival_analysis('missing_time', 'event')
+        assert result.survival_function.size == 0
+        assert np.isnan(result.median_survival_time)
+
+    def test_survival_single_valid_pair_returns_empty_result(self):
+        data = pd.DataFrame({'time': [1.0, np.nan, np.nan], 'event': [1.0, 1.0, 1.0]})
+        result = analytics_engine.AnalyticsEngine(
+            data, time_column='time'
+        ).survival_analysis('time', 'event')
+        assert result.survival_function.size == 0
+
+    def test_spectral_missing_column_returns_empty_result(self):
+        engine = analytics_engine.AnalyticsEngine(
+            pd.DataFrame({'time': np.arange(30.0), 'a': np.arange(30.0)}), time_column='time'
+        )
+        result = engine.spectral_analysis('missing')
+        assert result.power_spectrum.size == 0
+        assert result.spectral_entropy == 0.0
+
+    def test_spectral_too_short_signal_returns_empty_result(self):
+        engine = analytics_engine.AnalyticsEngine(
+            pd.DataFrame({'time': np.arange(9.0), 'a': np.arange(9.0)}), time_column='time'
+        )
+        result = engine.spectral_analysis('a')
+        assert result.power_spectrum.size == 0
+
+    @pytest.mark.parametrize('n_points', [9, 29])
+    def test_nonlinear_short_series_reports_insufficient_data(self, n_points):
+        data = pd.DataFrame({'time': np.arange(float(n_points)),
+                             'a': np.arange(float(n_points))})
+        result = analytics_engine.AnalyticsEngine(
+            data, time_column='time'
+        ).nonlinear_dynamics_analysis('a', embedding_dim=3)
+        assert result == {'error': 'Insufficient data for nonlinear dynamics analysis'}
+
+    def test_nonlinear_missing_column_reports_error(self):
+        engine = analytics_engine.AnalyticsEngine(
+            pd.DataFrame({'time': np.arange(30.0), 'a': np.arange(30.0)}), time_column='time'
+        )
+        assert engine.nonlinear_dynamics_analysis('missing') == {
+            'error': 'Column missing not found'
+        }
+
+    def test_nonlinear_degenerate_duplicate_states_yield_nan_lyapunov(self):
+        # Strictly periodic series: every embedded vector has an exact
+        # duplicate as nearest neighbor -> zero initial distance -> no
+        # divergence pairs -> Lyapunov exponent must be NaN, not garbage.
+        data = pd.DataFrame({'time': np.arange(40.0), 's': np.tile([0.0, 1.0], 20)})
+        result = analytics_engine.AnalyticsEngine(
+            data, time_column='time'
+        ).nonlinear_dynamics_analysis('s')
+        assert np.isnan(result['largest_lyapunov_exponent'])
+        assert np.isfinite(result['correlation_dimensions']).all()
+
+    @pytest.mark.parametrize('values', [[], [3.0]])
+    def test_information_theory_degenerate_inputs_return_zero_entropy(self, values):
+        col = 'a' if values else 'missing'
+        frame = {'a': values} if values else {}
+        engine = analytics_engine.AnalyticsEngine(pd.DataFrame(frame))
+        result = engine.information_theory_analysis(col)
+        assert result == {'shannon_entropy': 0.0, 'normalized_entropy': 0.0}
+
+    @pytest.mark.parametrize('values', [[], [1.0, 2.0, 3.0]])
+    def test_robust_analysis_degenerate_inputs_return_nan_prefs(self, values):
+        col = 'a' if values else 'missing'
+        frame = {'a': values} if values else {}
+        engine = analytics_engine.AnalyticsEngine(pd.DataFrame(frame))
+        result = engine.robust_statistical_analysis(col)
+        assert result['location_estimates'] == {}
+        assert np.isnan(result['robust_location_preferred'])
+
+    @pytest.mark.parametrize('method', ['huber', 'tukey'])
+    def test_m_estimators_on_constant_data_return_median(self, method):
+        engine = analytics_engine.AnalyticsEngine(pd.DataFrame({'x': [1.0]}))
+        data = np.full(20, 4.5)
+        estimator = (engine._huber_estimate if method == 'huber'
+                     else engine._tukey_biweight_estimate)
+        assert estimator(data) == 4.5
+
+    def test_tukey_with_tiny_tuning_constant_falls_back_to_median(self):
+        # c -> 0 pushes every weight to zero: the IRLS loop must break out
+        # and return the initial median rather than divide by zero.
+        rng = np.random.default_rng(13)
+        data = rng.normal(0, 1, 50)
+        engine = analytics_engine.AnalyticsEngine(pd.DataFrame({'x': data}))
+        assert engine._tukey_biweight_estimate(data, c=1e-9) == float(np.median(data))
+
+    def test_sn_scale_needs_two_points(self):
+        engine = analytics_engine.AnalyticsEngine(pd.DataFrame({'x': [1.0]}))
+        assert engine._sn_scale_estimate(np.array([7.0])) == 0.0
+
+    def test_spatial_missing_column_returns_nan_morans_i(self):
+        engine = analytics_engine.AnalyticsEngine(pd.DataFrame({'a': [1.0, 2.0, 3.0, 4.0]}))
+        result = engine.spatial_analysis('missing')
+        assert np.isnan(result['morans_i'])
+
+    def test_spatial_too_few_values_returns_nan_morans_i(self):
+        engine = analytics_engine.AnalyticsEngine(pd.DataFrame({'a': [1.0, 2.0, 3.0]}))
+        result = engine.spatial_analysis('a')
+        assert np.isnan(result['morans_i'])
+
+    def test_spatial_wrong_weight_shape_raises(self):
+        engine = analytics_engine.AnalyticsEngine(
+            pd.DataFrame({'a': [1.0, 2.0, 3.0, 4.0, 5.0]})
+        )
+        with pytest.raises(ValueError, match='spatial_weights must be'):
+            engine.spatial_analysis('a', spatial_weights=np.eye(4))
+
+    def test_spatial_zero_weights_yield_nan_morans_i(self):
+        engine = analytics_engine.AnalyticsEngine(
+            pd.DataFrame({'a': [1.0, 2.0, 3.0, 4.0]})
+        )
+        result = engine.spatial_analysis('a', spatial_weights=np.zeros((4, 4)))
+        assert np.isnan(result['morans_i'])
+
+    @pytest.mark.parametrize('method', ['wavelet_analysis', 'extreme_value_analysis',
+                                        'regime_switching_analysis'])
+    def test_missing_column_raises_value_error(self, method):
+        engine = analytics_engine.AnalyticsEngine(
+            pd.DataFrame({'time': np.arange(40.0), 'a': np.arange(40.0)}), time_column='time'
+        )
+        with pytest.raises(ValueError, match='not found in data'):
+            getattr(engine, method)('missing')
+
+    def test_copula_missing_column_raises(self):
+        engine = analytics_engine.AnalyticsEngine(
+            pd.DataFrame({'x': np.arange(10.0), 'y': np.arange(10.0)}), time_column='time'
+        )
+        with pytest.raises(ValueError, match='Columns not found'):
+            engine.copula_analysis('x', 'missing')
+
+    def test_copula_clayton_positive_dependence_matches_tau_inversion(self):
+        rng = np.random.default_rng(14)
+        x = rng.normal(0, 1, 200)
+        y = 0.9 * x + 0.5 * rng.normal(0, 1, 200)
+        result = analytics_engine.AnalyticsEngine(
+            pd.DataFrame({'x': x, 'y': y}), time_column='time'
+        ).copula_analysis('x', 'y', copula_type='clayton')
+
+        expected = 2 * result['kendall_tau'] / (1 - result['kendall_tau'])
+        assert abs(result['copula_parameter'] - expected) < 1e-9
+        assert result['copula_parameter'] > 0
+        assert result['dependence_class'] == 'positive'
+
+    def test_copula_frank_positive_dependence_returns_positive_theta(self):
+        rng = np.random.default_rng(15)
+        x = rng.normal(0, 1, 300)
+        y = 0.8 * x + 0.6 * rng.normal(0, 1, 300)
+        result = analytics_engine.AnalyticsEngine(
+            pd.DataFrame({'x': x, 'y': y}), time_column='time'
+        ).copula_analysis('x', 'y', copula_type='frank')
+        assert result['copula_parameter'] > 0
+        assert result['dependence_class'] == 'positive'
+
+    @pytest.mark.parametrize('tau, expected', [(0.0, 0.0)])
+    def test_frank_theta_zero_tau_returns_zero(self, tau, expected):
+        assert analytics_engine.AnalyticsEngine._frank_theta_from_tau(tau) == expected
+
+    def test_frank_theta_nonfinite_tau_raises(self):
+        with pytest.raises(ValueError, match='not finite'):
+            analytics_engine.AnalyticsEngine._frank_theta_from_tau(np.nan)
+
+
+class TestComprehensiveReportErrorSections:
+    """The report must isolate section failures into {'error': ...} dicts."""
+
+    def test_multivariate_section_reports_error_on_two_row_data(self):
+        data = pd.DataFrame({'time': [0.0, 1.0], 'x': [1.0, 2.0]})
+        report = analytics_engine.AnalyticsEngine(
+            data, time_column='time'
+        ).comprehensive_analysis_report()
+        assert 'error' in report['multivariate']
+        assert 'Insufficient data for PCA' in report['multivariate']['error']
+
+    def test_time_series_section_reports_error_on_complex_column(self):
+        # complex dtype passes the is_numeric gate but breaks the trend
+        # regression; the section must record the failure, not crash.
+        data = pd.DataFrame({'time': np.arange(12.0),
+                             'c': np.exp(1j * np.arange(12.0))})
+        report = analytics_engine.AnalyticsEngine(
+            data, time_column='time'
+        ).comprehensive_analysis_report()
+        assert 'error' in report['time_series']
+
+    def test_string_only_data_yields_network_error_and_no_numeric_sections(self):
+        data = pd.DataFrame({'time': [str(i) for i in range(30)], 's': ['a'] * 30})
+        report = analytics_engine.AnalyticsEngine(
+            data, time_column='time'
+        ).comprehensive_analysis_report()
+
+        assert 'error' in report['network']
+        assert report['information_theory'] == {'error': 'No numeric columns'}
+        assert report['robust_statistics'] == {'error': 'No numeric columns'}
+        assert 'error' in report['multivariate']
+
+    def test_bayesian_section_reports_error_on_non_numeric_pair(self):
+        rng = np.random.default_rng(16)
+        data = pd.DataFrame({'time': np.arange(30.0), 'x': rng.normal(0, 1, 30),
+                             'lab': ['z'] * 30})
+        report = analytics_engine.AnalyticsEngine(
+            data, time_column='time'
+        ).comprehensive_analysis_report(bayesian_columns=('x', 'lab'))
+        assert 'error' in report['bayesian']
+
+
+class TestTimeSeriesAnalyzerErrorPaths:
+    """Guard branches of TimeSeriesAnalyzer seasonality/variance/forecast."""
+
+    def test_seasonality_with_period_too_long_reports_decomposition_error(self):
+        # period=10 on a 12-point series passes the len gate but
+        # seasonal_decompose needs two full cycles -> 'error' contract.
+        t = np.arange(12.0)
+        data = pd.DataFrame({'time': t, 's': np.sin(t)})
+        result = analytics_engine.TimeSeriesAnalyzer(data, 'time').detect_seasonality(period=10)
+        assert result['s']['seasonal_detected'] is False
+        assert result['s']['error'] == 'Decomposition failed'
+
+    def test_variance_detection_skips_non_numeric_columns(self):
+        data = pd.DataFrame({'time': np.arange(6.0), 'text': ['a'] * 6})
+        analyzer = analytics_engine.TimeSeriesAnalyzer(data, 'time')
+        assert analyzer.detect_change_points(method='variance') == []
+
+    def test_variance_detection_skips_short_series(self):
+        # min_segment=5 needs at least 10 observations to propose a split.
+        data = pd.DataFrame({'time': np.arange(9.0), 's': np.arange(9.0)})
+        analyzer = analytics_engine.TimeSeriesAnalyzer(data, 'time')
+        assert analyzer.detect_change_points(method='variance') == []
+
+    def test_variance_detection_ignores_zero_variance_split(self):
+        # Exactly constant leading segment: the first candidate split has a
+        # zero-variance side and must be skipped rather than reported as an
+        # infinite F-ratio; the variance increase is still detected later.
+        rng = np.random.default_rng(4)
+        x = np.concatenate([np.zeros(5), rng.normal(0, 3.0, 15)])
+        data = pd.DataFrame({'time': np.arange(20.0), 's': x})
+        analyzer = analytics_engine.TimeSeriesAnalyzer(data, 'time')
+
+        cps = analyzer.detect_change_points(method='variance')
+
+        assert len(cps) >= 1
+        assert all(np.isfinite(cp['variance_ratio']) for cp in cps)
+        assert all(cp['p_value'] < 0.05 for cp in cps)
+
+    def test_forecast_unknown_method_persists_last_value(self):
+        data = pd.DataFrame({'time': np.arange(12.0), 's': np.linspace(1.0, 12.0, 12)})
+        fc = analytics_engine.TimeSeriesAnalyzer(data, 'time').forecast(
+            forecast_steps=3, method='bogus'
+        )
+        np.testing.assert_array_equal(fc['s'], [12.0, 12.0, 12.0])
+
+
+class TestEngineDataCoreInput:
+    """AnalyticsEngine must flatten DataCore time-series datasets."""
+
+    def test_engine_accepts_datacore_input(self):
+        frame = make_growth_frame(n_points=20, phenotype_cols=("x",), seed=18)
+        tsd = datacore.TimeSeriesData(
+            data=frame, time_column='time', phenotype_columns=['x']
+        )
+        engine = analytics_engine.AnalyticsEngine(datacore.DataCore(tsd), time_column='time')
+
+        assert engine.data.shape == frame.shape
+        assert list(engine.data.columns) == ['time', 'x']
+
+
+class TestExtremeValuePotFallback:
+    def test_pot_falls_back_when_exceedances_are_too_few(self):
+        rng = np.random.default_rng(20)
+        data = pd.DataFrame({'time': np.arange(50.0), 'v': rng.uniform(0, 10, 50)})
+        result = analytics_engine.AnalyticsEngine(
+            data, time_column='time'
+        ).extreme_value_analysis('v')
+
+        pot = result['pot_method']
+        assert pot['n_exceedances'] <= 10
+        assert pot['shape_parameter'] == 0.0
+        # Without a GPD fit every return level collapses to the threshold.
+        assert len(set(pot['return_levels'].values())) == 1
+        assert result['block_maxima_method']['n_blocks'] == 10
+
+
+class TestCopulaMinimumObservations:
+    def test_copula_needs_three_observations(self):
+        engine = analytics_engine.AnalyticsEngine(
+            pd.DataFrame({'x': [1.0, 2.0], 'y': [2.0, 1.0]}), time_column='time'
+        )
+        with pytest.raises(ValueError, match='Insufficient variation'):
+            engine.copula_analysis('x', 'y')
+
+
+class TestGrangerDegradation:
+    def test_granger_degrades_to_error_when_statsmodels_cannot_fit(self):
+        # 11 observations pass the >= 2*max_lag gate but statsmodels can
+        # only support lag 2 on them; the failure must surface as an
+        # error dict rather than an exception.
+        rng = np.random.default_rng(19)
+        data = pd.DataFrame({'cause': rng.normal(0, 1, 11),
+                             'effect': rng.normal(0, 1, 11)})
+        result = analytics_engine.CausalInference(data).granger_causality_test(
+            'cause', 'effect', max_lag=5
+        )
+        assert 'error' in result
+        assert 'failed' in result['error']
+
+
+class TestRobustSectionComplexFailure:
+    def test_robust_section_reports_error_on_complex_column(self):
+        # complex dtype passes the numeric-column gate but breaks the
+        # real-valued robust estimators; the report must isolate it.
+        data = pd.DataFrame({'c': np.exp(1j * np.arange(12.0))})
+        report = analytics_engine.AnalyticsEngine(data).comprehensive_analysis_report()
+        assert 'error' in report['robust_statistics']
+        assert 'error' in report['multivariate']

@@ -13,14 +13,15 @@ Verified 2026-08-31 on this checkout — re-verify with the commands shown.
 
 - **What this is:** a Python framework for evolutionary ontogenetic analysis
   (jump-diffusion models over developmental trajectories). Details: [Features](#-features)
-  and [Architecture](#-architecture) below.
-- **Current state:** v0.3.0 (comprehensive review & release pass — every module,
-  test file, doc, example, and the manuscript audited and fixed). Test roster:
-  `ls tests/test_*.py` (16 files). Coverage floor is enforced in `pyproject.toml`
-  (`--cov-fail-under=68`); verified full-suite result 412 passed / 86.96%
-  coverage (2026-09-08; re-check with `tail -5 coverage.xml` after a fresh run).
-- **Verify (primary command):** `MPLBACKEND=Agg .venv/bin/python -m pytest tests/ -q --no-cov`
-  (do NOT use `uv run` — stalls under heavy load; see Installation note below).
+- **Current state:** v0.4.0 (test-suite hardening pass — 95% coverage floor
+  enforced, hypothesis property suite, conftest-shared fixtures). Test roster:
+  `ls tests/test_*.py` (17 files incl. property invariants). Verified
+  full-suite result **667 passed / 99% coverage** (2026-09-08; re-check with
+  `tail -5 coverage.xml` after a fresh run).
+- **Verify (primary command):**
+  `MPLBACKEND=Agg .venv/bin/coverage run --source=src/evojump -m pytest tests/ -q && .venv/bin/coverage report --fail-under=95`
+  (plain `.venv/bin/python -m pytest tests/ -q` for fast feedback; do NOT use
+  `uv run` — stalls under heavy load; see Installation note below).
 - **What to do next:** the single authoritative backlog is [`TODO.md`](TODO.md);
   change history: [`CHANGELOG.md`](CHANGELOG.md).
 ## 📑 Table of Contents
@@ -275,24 +276,29 @@ verbatim (see its usage line); the canonical invocation is pytest itself.
 Invoke the venv python directly — `uv run` can stall under heavy load.
 
 ```bash
-# Run all tests quickly (no coverage, fast feedback)
-.venv/bin/python -m pytest tests/ -q --no-cov
+# Fast feedback (no coverage)
+.venv/bin/python -m pytest tests/ -q
 
-# Run with coverage (pyproject enforces the coverage floor)
-.venv/bin/python -m pytest tests/
+# Full suite with the 95% coverage gate (floor enforced by coverage report)
+MPLBACKEND=Agg .venv/bin/coverage run --source=src/evojump -m pytest tests/ -q
+.venv/bin/coverage report --fail-under=95
+
+# Coverage artifacts (optional)
+.venv/bin/coverage xml && .venv/bin/coverage html
 
 # Run a specific module
 .venv/bin/python -m pytest tests/test_datacore.py -q
 
-# Run in parallel (requires pytest-xdist)
+# Run in parallel (pytest-xdist, now a test extra)
 .venv/bin/python -m pytest tests/ -n auto
 ```
 
 ### Detailed Test Options
 
 ```bash
-# Run tests with coverage and HTML/XML reports
-.venv/bin/python -m pytest tests/ --cov=evojump --cov-report=html --cov-report=xml
+# Coverage runs go through direct `coverage`, not pytest-cov: the pytest-cov
+# plugin's init collides with the numpy >= 2.5 module guard on this stack
+# (numpy "cannot load module more than once per process" at conftest import).
 
 # Run specific test modules
 .venv/bin/python -m pytest tests/test_datacore.py
@@ -311,7 +317,7 @@ Invoke the venv python directly — `uv run` can stall under heavy load.
 
 ### Test Coverage
 
-- **Coverage floor enforced via pyproject** (68% aggregate; see pyproject.toml for the live number)
+- **Coverage floor: 95% enforced** via `coverage report --fail-under=95` (v0.4.0; measured full-suite: 667 tests, 99% — see coverage.xml/htmlcov after a run)
 - **Real data testing** - no mocks, all tests use biological/synthetic data
 - **Integration testing** - cross-module interaction validation
 - **Performance validation** - large dataset and efficiency testing
@@ -336,6 +342,7 @@ Invoke the venv python directly — `uv run` can stall under heavy load.
 | `test_viz_lane_animation.py` | Visualization lane: animation |
 | `test_viz_lane_heatmap.py` | Visualization lane: heatmap |
 | `test_viz_lane_kde.py` | Visualization lane: KDE |
+| `test_property_invariants.py` | Hypothesis property invariants (conftest builders) |
 
 ### Performance Testing
 
@@ -509,8 +516,7 @@ If you use EvoJump in your research, please cite:
 EvoJump is now a fully functional, production-ready framework with:
 
 - **7 Core Modules** - Complete data management, modeling, analysis, and visualization (`ls src/evojump/*.py`; verified 2026-08-31)
-- **Comprehensive test suite** - 16 test files covering all components (`ls tests/test_*.py`; verified 2026-08-31)
-- **Examples** - see `examples/` for demonstrating features and use cases
+- **Comprehensive test suite** - 17 test files covering all components plus property invariants (`ls tests/test_*.py`; verified 2026-09-08)
 - **Multiple Testing Modes** - Quick, full, benchmark, CI/CD ready
 - **Complete Documentation** - User guides, API reference, scientific context
 - **Advanced Analytics** - Bayesian, network, causal, dimensionality reduction

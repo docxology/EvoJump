@@ -698,7 +698,7 @@ When reporting bugs or issues:
   * On a busy machine (load average in the double digits from concurrent
     builds), ``uv run`` can hang before launching the interpreter.
   * Invoke the venv python directly:
-    ``.venv/bin/python -m pytest tests/ -q --no-cov`` (verified working during
+    ``.venv/bin/python -m pytest tests/ -q`` (verified working during
     the v0.2.0 audit pass; the full suite ran this way in ~38 min under load).
 
 **pandas 3.x dtype changes**

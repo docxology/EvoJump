@@ -403,18 +403,35 @@ class DistributionComparer:
 
     @staticmethod
     def _ad_ksample_statistic(samples: List[np.ndarray]) -> float:
-        """Anderson-Darling k-sample statistic on pooled ranks (Scholz-Stephens)."""
-        pooled = np.concatenate(samples)
-        n = len(pooled)
-        ranks = stats.rankdata(pooled)
+        """Anderson-Darling k-sample statistic (Scholz-Stephens eq. 7, midrank).
+
+        Matches the statistic computed by ``scipy.stats.anderson_ksamp`` for
+        the midrank variant, so the permutation fallback (taken when
+        anderson_ksamp itself refuses degenerate input) tests the same
+        quantity as the asymptotic path. It grows with distributional
+        separation and is minimal when all samples share one distribution.
+        """
         k = len(samples)
-        offsets = np.cumsum([0] + [len(s) for s in samples])[:-1]
-        h = (1.0 / n) * sum(
-            np.sum((ranks[offsets[i]:offsets[i] + len(samples[i])] - (offsets[i] + 1)) ** 2
-                   / (len(samples[i]) * (n - len(samples[i]))))
-            for i in range(k)
-        )
-        return float((n - 1) * h / k - (k - 1))
+        Z = np.sort(np.concatenate(samples))
+        N = Z.size
+        Zstar = np.unique(Z)
+        if Zstar.size < 2:
+            # Every observation identical: no label split is distinguishable
+            # and the statistic attains its floor.
+            return 0.0
+        Z_left = Z.searchsorted(Zstar, 'left')
+        lj = 1.0 if N == Zstar.size else Z.searchsorted(Zstar, 'right') - Z_left
+        Bj = Z_left + lj / 2.0
+        A2akN = 0.0
+        for sample in samples:
+            s = np.sort(sample)
+            s_right = s.searchsorted(Zstar, side='right').astype(float)
+            fij = s_right - s.searchsorted(Zstar, side='left')
+            Mij = s_right - fij / 2.0
+            inner = lj / float(N) * (N * Mij - Bj * len(s)) ** 2 \
+                / (Bj * (N - Bj) - N * lj / 4.0)
+            A2akN += inner.sum() / len(s)
+        return float(A2akN * (N - 1.0) / N)
 
     @staticmethod
     def _permutation_p_value(samples: List[np.ndarray], statistic_fn,
