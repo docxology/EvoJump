@@ -12,12 +12,16 @@ src/evojump (pytest-cov args crash on numpy>=2.5 — see the pyproject note).
 Usage:
     python run_tests.py [--quick] [--coverage] [pytest args...]
 """
+from __future__ import annotations
+
 import subprocess
 import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 DEFAULT_FAIL_UNDER = 95  # coverage report gate over src/evojump (see pyproject note)
+# Direct coverage (not pytest-cov args): see the pyproject note on numpy >= 2.5.
+COVERAGE_RUN = [".venv/bin/coverage", "run", "--source=src/evojump"]
 
 
 def build_cmds(argv: list[str]) -> list[list[str]]:

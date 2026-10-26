@@ -5,6 +5,51 @@ All notable changes to the EvoJump project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - 2026-10-25 (maintenance pass)
+
+### Fixed
+- `run_tests.py --coverage` crashed with `NameError: COVERAGE_RUN`: the
+  constant introduced by the v0.5.1 rework was never defined. It is now the
+  documented direct-coverage command (`coverage run --source=src/evojump`).
+- `run_tests.py` and `run_all_examples.py` used PEP 604 annotations without
+  `from __future__ import annotations`, so both scripts failed on Python 3.9
+  (the declared floor).
+- `uv.lock` still recorded the project itself as v0.3.0; regenerated with
+  `uv lock` (no locked package version changed — `uv lock --check` passes).
+- Dead links and wrong install instructions: removed the
+  `evojump.readthedocs.io` badge/links (the Read the Docs project returns
+  404), the 404 Discussions link, and the unresolvable
+  `support@evojump.org` address; docs no longer instruct
+  `pip install evojump` / `uv add evojump` / `pip install -r requirements.txt`
+  (the package is not on PyPI — 404 — and there is no requirements file);
+  `uv sync --group dev` → `--extra dev` (dev is an extra, not a dependency
+  group); CONTRIBUTING's release process no longer says to upload to PyPI
+  (releases are tagged and deposited to Zenodo); README status block, test
+  coverage entry and technical-specifications note moved from v0.5.0 to
+  v0.5.2; README docs tree listing completed (`index.rst`, `changelog.rst`);
+  `paper/build_paper.sh` and `paper/author_info.tex` no longer stamp the
+  wrong DOI (10.5281/zenodo.17229925 → 10.5281/zenodo.22664675) or the
+  September 2025 date; `docs/README.md` no longer claims a Read the Docs
+  publication.
+- `docs/advanced_usage.rst` and `docs/troubleshooting.rst` code examples
+  rewritten against the real API: `bayesian_analysis` (no `priors=`),
+  `causal_inference` (no `method=`/mediation), dimensionality reduction
+  (only `fastica`/`tsne` exist), `detect_changes` (single `method` argument),
+  `robust_statistical_analysis` (single column argument),
+  `predictive_modeling(models=[...])`, `visualizer.create_animation` (no
+  `fps`), and `JumpRope.fit` kwargs (forwarded to `ModelParameters` fields —
+  `max_iter`, `tolerance`, `memory_efficient`, `method` do not exist).
+
+### Changed
+- CI: `actions/checkout` v4 → v7 and `actions/setup-python` v5 → v7 (current
+  majors; no workflow inputs changed). Test matrix unchanged (3.9-3.12).
+
+### Notes
+- Dependency floors were deliberately left unchanged in this pass: bumping
+  them could not be verified here (the required environment sync exceeded the
+  maintenance budget on this checkout), so no unverified version bump was
+  committed.
+
 ## [0.5.2] - 2026-09-08 (Zenodo paper-PDF deposit)
 
 ### Fixed

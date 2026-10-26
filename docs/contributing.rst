@@ -14,12 +14,12 @@ Getting Started
 
 **Development Setup**
 
-1. **Fork the Repository**
+1. **Clone the Repository**
 
    .. code-block:: bash
 
-      git clone https://github.com/your-username/evojump.git
-      cd evojump
+      git clone https://github.com/docxology/EvoJump.git
+      cd EvoJump
 
 2. **Create Development Environment**
 
@@ -47,11 +47,13 @@ Development Workflow
 
 **Branch Strategy**
 
-* **main**: Stable release branch (protected)
-* **develop**: Integration branch for new features
+* **main**: Stable release branch (the only branch in the repository)
 * **feature/***: Feature development branches
 * **bugfix/***: Bug fix branches
 * **hotfix/***: Critical bug fix branches
+
+There is no ``develop`` branch: create feature/bugfix/hotfix branches from
+``main`` and open pull requests back against ``main``.
 
 **Creating Feature Branches**
 
@@ -208,9 +210,6 @@ Follow PEP 8 and project-specific conventions:
    # Run with verbose output
    pytest -v
 
-   # Run performance tests
-   pytest tests/ -k "performance" --benchmark-only
-
 **Code Quality Tools**
 
 **Linting**
@@ -259,12 +258,12 @@ Contributing Process
 
 **2. Create Feature Branch**
   * Create a descriptive branch name
-  * Base your branch on the develop branch
+  * Base your branch on ``main``
 
 .. code-block:: bash
 
-   git checkout develop
-   git pull origin develop
+   git checkout main
+   git pull origin main
    git checkout -b feature/your-feature-name
 
 **3. Implement Changes**
@@ -275,8 +274,7 @@ Contributing Process
 
 **4. Submit Pull Request**
   * Push your branch to GitHub
-  * Create a pull request against the develop branch
-  * Fill out the pull request template
+  * Create a pull request against ``main``
 
 **5. Code Review**
   * Address reviewer feedback
@@ -454,7 +452,7 @@ Code Review Process
   * Address all reviewer comments
   * Update code as requested
   * Ensure CI/CD passes
-  * Keep PR updated with develop branch
+  * Keep PR updated with ``main``
 
 **Review Checklist**
   * [ ] Code follows style guidelines
@@ -508,7 +506,6 @@ Recognition and Rewards
 -----------------------
 
 **Contributor Recognition**
-  * Contributors are listed in README
   * Special recognition for major contributions
   * Feature naming opportunities for significant contributions
   * Conference presentation opportunities
@@ -536,9 +533,8 @@ Getting Help
 
 **Development Questions**
   * Check existing documentation
-  * Search GitHub issues and discussions
-  * Ask in GitHub discussions
-  * Create new issue if needed
+  * Search existing GitHub issues
+  * Create a new issue if needed
 
 **Technical Issues**
   * Provide minimal reproducible example
@@ -547,7 +543,8 @@ Getting Help
   * Reference related issues/PRs
 
 **Community Support**
-  * GitHub Discussions for questions and help
+  * GitHub issues (``https://github.com/docxology/EvoJump/issues``) for
+    questions and help
   * Stack Overflow with "evojump" tag
   * Scientific Python community resources
   * Domain-specific forums and mailing lists
@@ -563,14 +560,10 @@ Success Stories
 
 **Example Contributions**
 
-*"Added GPU acceleration support for trajectory simulation, improving performance by 10x for large datasets."*
-
 *"Implemented robust statistical methods for handling outliers in developmental data analysis."*
 
 *"Created comprehensive documentation with tutorials and examples, helping new users get started quickly."*
 
 *"Fixed memory leak in animation generation, preventing crashes during long-running analyses."*
-
-*"Added support for real-time data streaming, enabling live developmental monitoring."*
 
 Your contributions help make EvoJump better for everyone! Thank you for being part of the community. 🎉

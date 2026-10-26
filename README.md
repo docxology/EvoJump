@@ -13,8 +13,9 @@ Verified 2026-09-08 on this checkout — re-verify with the commands shown.
 
 - **What this is:** a Python framework for evolutionary ontogenetic analysis
   (jump-diffusion models over developmental trajectories). Details: [Features](#-features)
-- **Current state:** v0.5.0 (release polish — Gallery figures embedded below;
-  author identity resolved to **Daniel Ari Friedman** / Active Inference
+- **Current state:** v0.5.2 (v0.5.0 release polish plus the v0.5.1/v0.5.2
+  documentation-accuracy and Zenodo metadata passes — Gallery figures embedded
+  below; author identity resolved to **Daniel Ari Friedman** / Active Inference
   Institute, ORCID 0000-0001-6232-9096; citation DOI
   10.5281/zenodo.22664675). Test roster: `ls tests/test_*.py` (17 files,
   incl. the hypothesis property suite and pytest-xdist support). Verified
@@ -93,8 +94,10 @@ Verified 2026-09-08 on this checkout — re-verify with the commands shown.
 
 ### Quick Install
 ```bash
-# Install using UV
-uv add evojump
+# Not published on PyPI — install straight from the repository
+uv add "git+https://github.com/docxology/EvoJump.git"
+# or, in a plain environment
+python -m pip install "git+https://github.com/docxology/EvoJump.git"
 ```
 
 ### Development Install
@@ -124,8 +127,10 @@ data = pd.DataFrame({
     'phenotype2': [20, 22, 24, 26, 28, 21, 23, 25, 27, 29]
 })
 
-# Create DataCore instance
-data_core = ej.DataCore.load_from_csv("data.csv", time_column='time')
+# Create DataCore instance (from the DataFrame above; load_from_csv also
+# accepts a file path or an open file object)
+data_core = ej.DataCore.load_from_csv(pd.io.common.StringIO(data.to_csv()),
+                                     time_column='time')
 
 # Fit jump-diffusion model
 model = ej.JumpRope.fit(data_core, model_type='jump-diffusion')
@@ -360,7 +365,7 @@ MPLBACKEND=Agg .venv/bin/coverage run --source=src/evojump -m pytest tests/ -q
 
 ### Test Coverage
 
-- **Coverage floor: 95% enforced** via `coverage report --fail-under=95` (v0.5.0; measured full-suite: 684 tests, 99% — see coverage.xml/htmlcov after a run)
+- **Coverage floor: 95% enforced** via `coverage report --fail-under=95` (v0.5.2; measured full-suite: 684 tests, 99% — see coverage.xml/htmlcov after a run)
 - **Real data testing** - no mocks, all tests use biological/synthetic data
 - **Integration testing** - cross-module interaction validation
 - **Performance validation** - large dataset and efficiency testing
@@ -446,6 +451,7 @@ EvoJump provides comprehensive documentation across multiple formats and levels:
 
 ```bash
 docs/
+├── index.rst             # Documentation landing page and toctree
 ├── installation.rst      # Installation and setup instructions
 ├── quickstart.rst        # Quick start guide
 ├── examples.rst          # Usage examples and tutorials
@@ -454,7 +460,8 @@ docs/
 ├── advanced_methods.rst  # Technical details and algorithms
 ├── troubleshooting.rst   # Common issues and solutions
 ├── contributing.rst      # Development guidelines
-└── architecture.rst      # System design and architecture
+├── architecture.rst      # System design and architecture
+└── changelog.rst         # Change history
 ```
 
 ### Building Documentation
@@ -560,9 +567,8 @@ For a machine-readable citation, see [`CITATION.cff`](CITATION.cff).
 ## 🔗 Links
 
 - **Homepage**: https://github.com/docxology/EvoJump
-- **Documentation**: https://evojump.readthedocs.io/
+- **Documentation**: https://github.com/docxology/EvoJump/tree/main/docs
 - **Issues**: https://github.com/docxology/EvoJump/issues
-- **Discussions**: https://github.com/docxology/EvoJump/discussions
 
 ## 🎯 Project Status & Achievements
 
@@ -581,7 +587,7 @@ EvoJump is now a fully functional, production-ready framework with:
 
 The per-component numbers below are **historical, unverified prose values**
 (v0.1.0-era, unstated provenance) — not a current measurement. The verified
-v0.5.0 aggregate is **99% coverage, 684 tests passed (2026-09-08)** at the
+v0.5.2 aggregate is **99% coverage, 684 tests passed (2026-09-08)** at the
 95% floor. The executable truth is `coverage.xml` / `htmlcov/` after a fresh
 full-suite run; re-measure before relying on any per-module number.
 

@@ -5,8 +5,8 @@ already present but outside the standard `manuscript/` layout.
 
 **Evidence checked:** `paper/` contains modular section files
 (`paper/sections/01_abstract.md` … `12_code.md`, matching the section map in
-`paper/paper.md` (assembled manuscript with YAML
-metadata), `paper/build_paper.sh`, `paper/figures/`, and
+`paper/paper.md` (manuscript shell: YAML metadata plus section placeholders,
+assembled by `paper/build_paper.sh` into `paper/output/combined_paper.md`), `paper/build_paper.sh`, `paper/figures/`, and
 `paper/paper_verification_report.md` (build report:
 85-page PDF, marked PASS). The root ships research outputs
 (`drosophila_case_study_outputs/`, `simple_animation_outputs/`,
@@ -21,9 +21,7 @@ repo — that is a structural deviation, recorded here rather than papered over.
 
 **What would trigger standardizing:** migrating `paper/sections/` into
 `manuscript/NN_*.md` with a `manuscript/config.yaml` (title/author metadata
-from `paper/paper.md` — note `paper/README.md` credits Daniel Ari Friedman
-while `paper/paper.md` lists "EvoJump Development Team"; an owner should
-reconcile that discrepancy) and `references.bib`. Needs owner input before
+from `paper/paper.md`) and `references.bib`. Needs owner input before
 any migration; no content was rewritten in this audit.
 
 **Author-identity resolution (2026-09-08):** the owner decided the author
@@ -32,4 +30,4 @@ Institute**, ORCID 0000-0001-6232-9096. The discrepancy noted above is
 resolved: `paper/paper.md` YAML now credits Daniel Ari Friedman / Active
 Inference Institute with the ORCID (pandoc-valid author fields), matching
 the author block in `paper/README.md`. Manuscript dated September 2026,
-aligned with the v0.5.0 release.
+aligned with the v0.5.2 release.

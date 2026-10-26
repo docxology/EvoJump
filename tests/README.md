@@ -33,7 +33,7 @@ MPLBACKEND=Agg .venv/bin/coverage run --source=src/evojump -m pytest tests/ -q
 ```
 
 Do NOT route through `uv run` — it stalls under heavy machine load on this
-checkout (documented in root README and CHANGELOG v0.2.0 notes).
+checkout (documented in root README and the CHANGELOG v0.3.0 notes).
 
 ## Layout
 - `test_*.py` — the suite. `__pycache__/` is generated; never document inside it.

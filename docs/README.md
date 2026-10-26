@@ -1,7 +1,8 @@
 # EvoJump documentation (Sphinx)
 
-Sphinx sources for the EvoJump documentation site (also published on
-Read the Docs per the root `README.md` badge). EvoJump is a framework for
+Sphinx sources for the EvoJump documentation (built from this directory —
+there is no hosted Read the Docs project; the repository `docs/` tree is the
+published documentation). EvoJump is a framework for
 evolutionary ontogenetic analysis treating development as a "cross-sectional
 laser" sweep of phenotypic distributions — see root `README.md`.
 

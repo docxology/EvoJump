@@ -80,7 +80,7 @@ r-integration = [
 
 [project.urls]
 Homepage = "https://github.com/docxology/EvoJump"
-Documentation = "https://evojump.readthedocs.io/"
+Documentation = "https://github.com/docxology/EvoJump/tree/main/docs"
 Repository = "https://github.com/docxology/EvoJump"
 Issues = "https://github.com/docxology/EvoJump/issues"
 Changelog = "https://github.com/docxology/EvoJump/blob/main/CHANGELOG.md"

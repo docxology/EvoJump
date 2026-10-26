@@ -2,7 +2,7 @@
 
 Single authoritative backlog. Entries: one line + path(s). Completed items get
 moved to the "Done (verified)" section with date. Agent-ergonomics pass
-2026-08-31: log in `REVIEW_LOG_2026-08-31.md`.
+2026-08-31 (its log file was not committed to the repo).
 
 ## Minor
 
@@ -38,4 +38,16 @@ moved to the "Done (verified)" section with date. Agent-ergonomics pass
   `CITATION.cff`, and README citation blocks (verified in all three files).
 - [x] 2026-08-31 (second doc pass): Minor items 1 fixed; items 2-5 found already-fixed/stale and closed with evidence; items 6-7 fixed.
 
-- [x] 2026-08-31: agent-ergonomics pass — see `REVIEW_LOG_2026-08-31.md` for the cold-start audit and every change made.
+- [x] 2026-08-31: agent-ergonomics pass — cold-start audit (its log file was
+  not committed to the repo).
+
+- [x] 2026-10-25 (maintenance pass): `run_tests.py --coverage` NameError
+  (undefined `COVERAGE_RUN`) FIXED; py3.9 PEP 604 breakage in `run_tests.py`
+  / `run_all_examples.py` FIXED; stale `uv.lock` project version (v0.3.0)
+  FIXED via `uv lock`; CI actions bumped (`actions/checkout` v4→v7,
+  `actions/setup-python` v5→v7); dead links (Read the Docs, Discussions,
+  support@evojump.org) and unpublished-PyPI/`requirements.txt` install
+  instructions removed across README/docs/CONTRIBUTING; paper build DOI/date
+  corrected; `docs/advanced_usage.rst` + `docs/troubleshooting.rst` examples
+  rewritten against real signatures. Dependency floors intentionally
+  unchanged (unverified bumps not committed). See `CHANGELOG.md` [Unreleased].

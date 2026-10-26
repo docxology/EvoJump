@@ -19,7 +19,7 @@ cd EvoJump
 2. **Create a virtual environment and install dependencies**:
 ```bash
 # Using uv (recommended)
-uv sync --group dev
+uv sync --extra dev
 
 # Or using traditional pip
 python -m venv evojump_env
@@ -32,8 +32,9 @@ pip install -e ".[dev]"
 # Run all tests
 .venv/bin/python -m pytest tests/ -q --no-cov
 
-# Run with coverage (pyproject enforces the coverage floor)
-.venv/bin/python -m pytest tests/
+# Run with the 95% coverage gate (direct coverage run, not pytest-cov)
+MPLBACKEND=Agg .venv/bin/coverage run --source=src/evojump -m pytest tests/ -q
+.venv/bin/coverage report --fail-under=95
 ```
 
 ## Development Workflow
@@ -302,8 +303,9 @@ class TestFeatureName:
 # Quick test run (no coverage, fast feedback)
 .venv/bin/python -m pytest tests/ -q --no-cov
 
-# Full test with coverage (enforced floor from pyproject.toml)
-.venv/bin/python -m pytest tests/
+# Full test run with the 95% coverage gate (direct coverage run, not pytest-cov)
+MPLBACKEND=Agg .venv/bin/coverage run --source=src/evojump -m pytest tests/ -q
+.venv/bin/coverage report --fail-under=95
 
 # Or via the thin wrapper (applies its --quick/--coverage conveniences, then forwards to pytest)
 python run_tests.py --quick
@@ -323,14 +325,14 @@ Releases are managed by project maintainers:
 2. Update `CHANGELOG.md`
 3. Run full test suite
 4. Create release tag
-5. Build and upload to PyPI
+5. Deposit the source archive (plus the compiled paper PDF) to the Zenodo
+   record for the release — the package is not published on PyPI
 6. Update documentation
 
 ## Getting Help
 
 - **GitHub Issues**: Bug reports and feature requests
-- **GitHub Discussions**: General questions and discussions
-- **Documentation**: https://github.com/docxology/EvoJump
+- **Documentation**: https://github.com/docxology/EvoJump/tree/main/docs
 - **Examples**: See `examples/` directory
 
 ## Recognition

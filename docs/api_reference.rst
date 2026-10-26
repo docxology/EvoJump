@@ -552,9 +552,10 @@ Performance Notes
   * Use appropriate data types (float32 vs float64) for memory efficiency
 
 **GPU Acceleration**
-  * Enable GPU support with ``evojump[gpu]`` installation
-  * GPU acceleration available for: trajectory simulation, matrix operations, neural networks
-  * Automatic GPU detection and fallback to CPU
+  * Not available: the optional ``gpu`` extra only installs ``cupy-cuda12``
+    (Linux x86_64, Python < 3.14); no code path in the package imports or
+    uses CuPy
+  * Trajectory simulation and all other analysis run on the CPU
 
 Version Compatibility
 ---------------------
@@ -565,7 +566,7 @@ Version Compatibility
 **Dependency Versions**
   * Minimum versions (``pyproject.toml``): NumPy >= 1.21.0, SciPy >= 1.7.0,
     Pandas >= 1.3.0, Matplotlib >= 3.5.0
-  * Reference stack (v0.5.0 tested): NumPy 2.5.2, SciPy 1.18.1, Pandas 3.0.5,
+  * Reference stack (v0.5.2 tested): NumPy 2.5.2, SciPy 1.18.1, Pandas 3.0.5,
     Matplotlib 3.11.1, Plotly 7.0.0, Scikit-learn 1.9.0
   * Note: ``pytest-cov`` cannot be used on the NumPy >= 2.5 stack; the
     coverage gate runs ``coverage run --source=src/evojump -m pytest`` and
@@ -639,7 +640,6 @@ API Stability
 
 **Experimental APIs** (subject to change)
   * Advanced analytics methods (``bayesian_analysis``, ``network_analysis``, etc.)
-  * GPU acceleration features
   * Web interface components
   * R integration features
 

@@ -117,8 +117,8 @@ author: "Daniel Ari Friedman"
 institute: "Active Inference Institute"
 orcid: "0000-0001-6232-9096"
 email: "daniel@activeinference.institute"
-doi: "10.5281/zenodo.17229925"
-date: "September 2025"
+doi: "10.5281/zenodo.22664675"
+date: "September 2026"
 geometry: margin=1in
 fontsize: 11pt
 linestretch: 1.05

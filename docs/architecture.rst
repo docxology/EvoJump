@@ -24,7 +24,6 @@ EvoJump is built on several core design principles:
   * Optimized for large biological datasets
   * Parallel processing support
   * Memory-efficient algorithms
-  * GPU acceleration capabilities
 
 **User Experience**
   * Intuitive API design
@@ -147,7 +146,8 @@ Core Technologies
 **Programming Language**
   * Python 3.9+ (primary implementation; ``requires-python >=3.9,<3.15``)
   * Type hints throughout the codebase
-  * Async/await support for I/O operations
+  * Synchronous API: no ``async``/``await``/``asyncio`` usage anywhere in
+    ``src/evojump``
 
 **Scientific Computing Stack**
   * NumPy: Array operations and numerical computing
@@ -168,11 +168,13 @@ Core Technologies
   * Pickle: Python object serialization
   * YAML/JSON: Configuration and metadata
 
-**Optional Dependencies**
-  * CuPy: GPU-accelerated NumPy operations
-  * JAX: High-performance ML and automatic differentiation
-  * PyTorch/TensorFlow: Deep learning integration
-  * RPy2: R language integration
+**Optional Dependencies** (declared extras in ``pyproject.toml``)
+  * ``gpu``: CuPy (``cupy-cuda12``) install marker — no GPU code path exists
+    in the package
+  * ``web``: Flask, Dash, Streamlit
+  * ``r-integration``: RPy2
+  * ``test`` / ``dev``: pytest, pytest-cov, pytest-xdist, hypothesis,
+    coverage, black, isort, flake8, mypy
 
 Software Architecture Patterns
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -215,12 +217,20 @@ Module Dependencies
    evojump/
    ├── __init__.py          # Package initialization and exports
    ├── datacore.py          # Data management (core)
-   ├── jumprope.py          # Stochastic modeling (depends: datacore)
-   ├── laserplane.py        # Cross-sectional analysis (depends: jumprope)
-   ├── trajectory_visualizer.py # Visualization (depends: all)
-   ├── evolution_sampler.py # Population analysis (depends: datacore)
-   ├── analytics_engine.py  # Advanced analytics (depends: datacore)
-   └── cli.py              # Command line interface (depends: all)
+   ├── jumprope.py          # Stochastic modeling
+   ├── laserplane.py        # Cross-sectional analysis
+   ├── trajectory_visualizer.py # Visualization
+   ├── evolution_sampler.py # Population analysis (imports datacore lazily)
+   ├── analytics_engine.py  # Advanced analytics (imports datacore lazily)
+   └── cli.py              # Command line interface (imports all six modules)
+
+The modules are otherwise independent: ``jumprope``, ``laserplane`` and
+``trajectory_visualizer`` import no sibling module, and the only
+``datacore`` references outside ``cli.py`` are function-local
+``from . import datacore`` statements inside ``EvolutionSampler.__init__``
+(``evolution_sampler.py``) and ``AnalyticsEngine.__init__``
+(``analytics_engine.py``). ``__init__.py`` imports and re-exports the six
+public modules and their main classes.
 
 **Dependency Matrix**
 
@@ -245,7 +255,7 @@ Module Dependencies
      -
      -
    * - jumprope
-     - ✓
+     -
      -
      -
      -
@@ -253,17 +263,17 @@ Module Dependencies
      -
      -
    * - laserplane
-     - ✓
-     - ✓
+     -
+     -
      -
      -
      -
      -
      -
    * - trajectory_visualizer
-     - ✓
-     - ✓
-     - ✓
+     -
+     -
+     -
      -
      -
      -
@@ -293,6 +303,10 @@ Module Dependencies
      - ✓
      -
 
+``✓`` marks an import of the column module by the row module. The
+``evolution_sampler`` and ``analytics_engine`` marks are the function-local
+``from . import datacore`` statements described above.
+
 Performance Architecture
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -305,7 +319,6 @@ Performance Architecture
 **Parallel Processing**
   * Thread pool for I/O operations
   * Process pool for CPU-intensive tasks
-  * GPU acceleration for numerical computations
   * Distributed computing support via Dask
 
 **Caching Strategy**
@@ -386,20 +399,18 @@ Testing Architecture
   * Comprehensive test suite
   * Real data testing (no mocks)
   * Integration testing
-  * Performance benchmarking
 
 **Test Categories**
   * Unit tests (individual components)
   * Integration tests (component interactions)
   * System tests (end-to-end workflows)
-  * Performance tests (speed and memory)
   * Regression tests (preventing bugs)
 
 **Continuous Integration**
-  * Automated test execution
-  * Code coverage reporting
-  * Performance regression detection
-  * Multi-platform testing
+  * Automated test execution on every push to ``main`` and every pull request
+  * Code coverage reporting with a 95% gate (``coverage report
+    --fail-under=95`` over ``src/evojump``)
+  * Single platform (``ubuntu-latest``) across Python 3.9-3.12
 
 Deployment Architecture
 ~~~~~~~~~~~~~~~~~~~~~~~

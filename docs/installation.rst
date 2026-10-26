@@ -8,7 +8,7 @@ Requirements
 
 **Python Version**
   * Python 3.9 or higher required (packaging bounds ``requires-python`` to ``>=3.9,<3.15``)
-  * Tested primarily on Python 3.12 (project venv)
+  * Tested primarily on Python 3.12 (project venv; CI matrix is 3.9-3.12)
 
 **System Requirements**
   * Operating System: Linux, macOS, Windows
@@ -53,27 +53,29 @@ Test and documentation tooling (also declared in ``pyproject.toml``):
 Quick Installation
 ------------------
 
-Install the latest stable version using UV:
+EvoJump is not published on PyPI; install it from the repository:
 
 .. code-block:: bash
 
-   uv add evojump
+   git clone https://github.com/docxology/EvoJump.git
+   cd EvoJump
+   uv sync
 
 Install with optional dependencies:
 
 .. code-block:: bash
 
    # Development dependencies
-   uv sync --group dev
+   uv sync --extra dev
 
-   # GPU acceleration (Linux/macOS)
-   uv add evojump --extra gpu
+   # GPU acceleration (Linux x86_64, Python < 3.14 — cupy-cuda12 extra)
+   uv sync --extra gpu
 
    # Web interface
-   uv add evojump --extra web
+   uv sync --extra web
 
    # R integration
-   uv add evojump --extra r-integration
+   uv sync --extra r-integration
 
 Development Installation
 ------------------------
@@ -90,13 +92,13 @@ For contributors and advanced users:
    uv sync
 
    # Include development dependencies
-   uv sync --group dev
+   uv sync --extra dev
 
-   # Run tests
-   pytest
+   # Run tests (do not use `uv run` — it can stall under heavy load)
+   .venv/bin/python -m pytest tests/ -q --no-cov
 
    # Build documentation
-   sphinx-build docs/ docs/_build/html
+   .venv/bin/python -m sphinx -b html docs/ docs/_build/html
 
 Verifying Installation
 ----------------------
@@ -146,8 +148,8 @@ Solution: Ensure the package is installed and the Python path includes the insta
    # Check installation
    uv tree | grep evojump
 
-   # If not found, reinstall
-   uv add evojump
+   # If not found, reinstall from the repository root
+   uv sync
 
 **ModuleNotFoundError: Specific dependency missing**
 
@@ -168,7 +170,7 @@ Solution: Use virtual environment with uv (recommended):
    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
    # Install in virtual environment
-   uv add evojump
+   uv sync
 
 **Memory errors during installation**
 
@@ -193,7 +195,7 @@ Advanced Configuration
 ----------------------
 
 .. note::
-   EvoJump (as of v0.5.0) supports no environment variables (no ``EVOJUMP_*``
+   EvoJump (as of v0.5.2) supports no environment variables (no ``EVOJUMP_*``
    variables), no configuration file (no ``~/.evojump/config.yaml``), and
    no global configuration API (no ``evojump.config`` module). All
    behavior is controlled through function and method parameters.
@@ -207,13 +209,9 @@ and parallelize independent fits with worker processes — see
 Getting Help
 ------------
 
-**Documentation**: https://evojump.readthedocs.io/
+**Documentation**: https://github.com/docxology/EvoJump/tree/main/docs
 
 **GitHub Issues**: https://github.com/docxology/EvoJump/issues
-
-**Discussions**: https://github.com/docxology/EvoJump/discussions
-
-**Email Support**: support@evojump.org
 
 .. note::
    For the most up-to-date installation instructions, check the GitHub repository.

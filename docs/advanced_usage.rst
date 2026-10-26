@@ -9,7 +9,7 @@ High-Performance Computing
 .. note::
    EvoJump has no configuration API: there is no ``evojump.config``
    module and no global knobs for thread counts, caching, GPU toggles, or
-   memory limits (as of v0.5.0). Parallelism and memory efficiency come from
+   memory limits (as of v0.5.2). Parallelism and memory efficiency come from
    standard Python tooling, as shown below.
 
 Parallel Processing
@@ -37,7 +37,7 @@ dependency) can partition the raw data before it reaches ``DataCore``.
 GPU Acceleration
 ~~~~~~~~~~~~~~~~
 
-Not available (as of v0.5.0): the optional ``evojump[gpu]`` extra installs
+Not available (as of v0.5.2): the optional ``evojump[gpu]`` extra installs
 ``cupy``, but no code path in the package uses it. Trajectory generation
 runs on the CPU and scales with ``n_samples``:
 
@@ -128,7 +128,8 @@ Advanced Statistical Methods
 Bayesian Analysis
 ~~~~~~~~~~~~~~~~~
 
-Advanced Bayesian inference:
+Bayesian linear regression with a caller-chosen sample count and seed (the
+prior specification itself is fixed inside ``BayesianAnalyzer``):
 
 .. code-block:: python
 
@@ -136,17 +137,11 @@ Advanced Bayesian inference:
 
    analytics = ej.AnalyticsEngine(data_core)
 
-   # Custom prior specification
-   custom_priors = {
-       'location': {'mean': 10.0, 'precision': 0.1},
-       'scale': {'shape': 2.0, 'rate': 1.0}
-   }
-
-   # Bayesian analysis with custom priors
+   # Bayesian linear regression of the second variable on the first
    bayes_result = analytics.bayesian_analysis(
        'phenotype1', 'phenotype2',
        n_samples=5000,
-       priors=custom_priors
+       seed=42
    )
 
    # Model comparison
@@ -186,7 +181,8 @@ Advanced network analysis techniques:
 Causal Inference
 ~~~~~~~~~~~~~~~~
 
-Advanced causal discovery methods:
+Granger causality testing up to a caller-chosen lag (there is no method
+argument and no mediation analysis):
 
 .. code-block:: python
 
@@ -194,26 +190,22 @@ Advanced causal discovery methods:
 
    analytics = ej.AnalyticsEngine(data_core)
 
-   # Multiple lag analysis
+   # Granger causality, tested over lags 1..10
    causal_result = analytics.causal_inference(
        'cause_variable', 'effect_variable',
-       max_lag=10,
-       method='granger'
+       max_lag=10
    )
 
-   # Mediation analysis
-   mediation_result = analytics.causal_inference(
-       'treatment', 'outcome',
-       mediator='intermediate_variable'
-   )
-
-   # Sensitivity analysis
-   sensitivity = causal_result.sensitivity_analysis
+   # Per-lag statistics and the best lag come back in the result dictionary
+   print(causal_result['significant_causality'], causal_result['best_lag'])
 
 Dimensionality Reduction
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-Advanced dimensionality reduction techniques:
+Only two reducers are wired up: ``'tsne'`` (which reads ``perplexity`` and
+``learning_rate``) and ``'fastica'`` (the default; any other ``method`` value
+logs a warning and falls back to FastICA). UMAP and diffusion maps are not
+implemented:
 
 .. code-block:: python
 
@@ -221,65 +213,58 @@ Advanced dimensionality reduction techniques:
 
    analytics = ej.AnalyticsEngine(data_core)
 
-   # Custom t-SNE parameters
+   # t-SNE with custom perplexity and learning rate
    tsne_result = analytics.advanced_dimensionality_reduction(
        method='tsne',
        n_components=3,
        perplexity=50,
-       learning_rate=500,
-       n_iter=2000
+       learning_rate=500
    )
 
-   # UMAP embedding
-   umap_result = analytics.advanced_dimensionality_reduction(
-       method='umap',
-       n_components=2,
-       n_neighbors=15,
-       min_dist=0.1
-   )
-
-   # Diffusion maps
-   diffusion_result = analytics.advanced_dimensionality_reduction(
-       method='diffusion_maps',
-       n_components=2,
-       alpha=1.0,
-       n_neighbors=10
+   # FastICA
+   fastica_result = analytics.advanced_dimensionality_reduction(
+       method='fastica',
+       n_components=2
    )
 
 Time Series Analysis
 ~~~~~~~~~~~~~~~~~~~~
 
-Advanced time series methods:
+``analytics.analyze_time_series()`` runs the full trend, seasonality,
+change-point and forecast pass; the individual methods below take the column
+to analyze:
 
 .. code-block:: python
 
    import evojump as ej
+   import numpy as np
 
    analytics = ej.AnalyticsEngine(data_core)
 
    # Wavelet analysis
-   wavelet_result = analytics.advanced_time_series_analysis(
-       method='wavelet',
+   wavelet_result = analytics.wavelet_analysis(
+       'phenotype1',
        wavelet='morl',
        scales=np.arange(1, 128)
    )
 
-   # State space modeling
-   ssm_result = analytics.advanced_time_series_analysis(
-       method='state_space',
-       order=(2, 1, 1)  # ARIMA order
+   # Regime (state) switching
+   ssm_result = analytics.regime_switching_analysis(
+       'phenotype1',
+       n_regimes=2
    )
 
-   # Change point detection with multiple methods
-   changes = analytics.detect_changes(
-       method='multiple',
-       methods=['cusum', 'bayesian', 'information']
-   )
+   # Change point detection, one method per call
+   for method in ['statistical', 'bayesian', 'information']:
+       changes = analytics.detect_changes(method=method)
 
 Robust Statistics
 ~~~~~~~~~~~~~~~~~
 
-Advanced robust statistical methods:
+``robust_statistical_analysis`` takes a single column and returns robust
+location estimates (median, trimmed mean, Huber, Tukey biweight) plus robust
+scale estimates (MAD, IQR, Sn). There is no regression, outlier-detection or
+influence-analysis mode:
 
 .. code-block:: python
 
@@ -287,25 +272,10 @@ Advanced robust statistical methods:
 
    analytics = ej.AnalyticsEngine(data_core)
 
-   # Robust regression
-   robust_result = analytics.robust_statistical_analysis(
-       'response_variable',
-       method='robust_regression',
-       robust_method='huber'
-   )
-
-   # Outlier detection
-   outlier_result = analytics.robust_statistical_analysis(
-       'data_column',
-       method='outlier_detection',
-       contamination=0.1
-   )
-
-   # Influence analysis
-   influence_result = analytics.robust_statistical_analysis(
-       'data_column',
-       method='influence_analysis'
-   )
+   # Robust location and scale for one column, in a single call
+   robust_result = analytics.robust_statistical_analysis('response_variable')
+   print(robust_result['location_estimates'])
+   print(robust_result['scale_estimates'])
 
 Machine Learning Integration
 ----------------------------
@@ -346,27 +316,25 @@ Integrate with PyTorch/TensorFlow:
 Ensemble Methods
 ~~~~~~~~~~~~~~~~
 
-Advanced ensemble modeling:
+``predictive_modeling`` trains each model named in a list of strings drawn
+from ``analytics.predictive_modeler.models`` and returns one result per model.
+EvoJump does not build a stacked or voting ensemble itself, so combine the
+per-model predictions yourself if you need one:
 
 .. code-block:: python
 
    import evojump as ej
-   from sklearn.ensemble import StackingRegressor, VotingRegressor
 
    analytics = ej.AnalyticsEngine(data_core)
 
-   # Custom ensemble
-   base_models = [
-       ('rf', ej.PredictiveModeler.models['random_forest']),
-       ('gb', ej.PredictiveModeler.models['gradient_boosting']),
-       ('nn', ej.PredictiveModeler.models['neural_network'])
-   ]
+   # Available model names
+   print(list(analytics.predictive_modeler.models))
 
-   ensemble = VotingRegressor(base_models)
+   # Train several base learners in one call
    ensemble_result = analytics.predictive_modeling(
        'target',
        feature_variables=['feature1', 'feature2'],
-       models={'ensemble': ensemble}
+       models=['random_forest', 'gradient_boosting', 'neural_network']
    )
 
 Feature Engineering

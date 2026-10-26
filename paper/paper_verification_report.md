@@ -1,4 +1,4 @@
-> Note: v0.2.0-era verification snapshot (2026-08-30). Superseded by v0.3.0-v0.5.0 passes — current state: v0.5.0, 684 tests passing, 99% coverage (95% floor).
+> Note: v0.2.0-era verification snapshot (2026-08-30). Superseded by v0.3.0-v0.5.2 passes — latest verified state: v0.5.2, 684 tests passing, 99% coverage (95% floor).
 
 # EvoJump Paper Build Verification Report
 

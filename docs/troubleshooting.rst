@@ -20,11 +20,13 @@ Installation Issues
 
       pip list | grep evojump
 
-   If not found, reinstall:
+   If not found, reinstall from the repository root (EvoJump is not on PyPI):
 
    .. code-block:: bash
 
-      pip install evojump
+      git clone https://github.com/docxology/EvoJump.git
+      cd EvoJump
+      uv sync
 
 2. **Check Python Path**
 
@@ -68,11 +70,10 @@ Installation Issues
       import evojump
       print(evojump.__version__)
 
-3. **Use Requirements File**
+3. **Install Declared Dependencies**
 
-   .. code-block:: bash
-
-      pip install -r requirements.txt
+   There is no ``requirements.txt``; the single source of truth is
+   ``pyproject.toml`` (sync it with ``uv sync``).
 
 **Permission denied during installation**
 
@@ -88,19 +89,18 @@ Installation Issues
 
       python -m venv evojump_env
       source evojump_env/bin/activate
-      pip install evojump
+      pip install "git+https://github.com/docxology/EvoJump.git"
 
 2. **Install for Current User**
 
    .. code-block:: bash
 
-      pip install --user evojump
+      pip install --user "git+https://github.com/docxology/EvoJump.git"
 
-3. **Use sudo (not recommended)**
+3. **Never use sudo**
 
-   .. code-block:: bash
-
-      sudo pip install evojump
+   ``sudo pip install`` writes into the system Python and is not
+   supported for any step of installing EvoJump.
 
 Data Loading Issues
 -------------------
@@ -222,12 +222,23 @@ Model Fitting Issues
       # Try Ornstein-Uhlenbeck instead of jump-diffusion
       model = ej.JumpRope.fit(data_core, model_type='ornstein-uhlenbeck')
 
-4. **Adjust Optimization Parameters**
+4. **Set Model Parameters Directly**
+
+   ``JumpRope.fit`` has no optimizer settings; extra keyword arguments are
+   forwarded to ``ModelParameters``, whose fields are ``drift``, ``diffusion``,
+   ``jump_intensity``, ``jump_mean``, ``jump_std``, ``equilibrium``,
+   ``reversion_speed``, ``bounds`` and ``correlation_matrix``:
 
    .. code-block:: python
 
-      # Custom optimization settings
-      model = ej.JumpRope.fit(data_core, max_iter=10000, tolerance=1e-8)
+      # Custom model parameters
+      model = ej.JumpRope.fit(
+          data_core,
+          model_type='jump-diffusion',
+          drift=0.1,
+          diffusion=0.5,
+          jump_intensity=0.05
+      )
 
 **Poor model fit**
 
@@ -285,14 +296,7 @@ Model Fitting Issues
           chunk = data.iloc[i:i+chunk_size]
           # Process chunk...
 
-3. **Enable Memory-Efficient Algorithms**
-
-   .. code-block:: python
-
-      # Use memory-efficient fitting
-      model = ej.JumpRope.fit(data_core, memory_efficient=True)
-
-4. **Increase System Memory**
+3. **Increase System Memory**
 
    Close other applications or upgrade system memory.
 
@@ -425,8 +429,7 @@ Visualization Issues
       # Reduce number of frames
       anim = visualizer.create_animation(
           model,
-          n_frames=20,  # Reduced from default
-          fps=10        # Reduced from default
+          n_frames=20  # Reduced from default
       )
 
 2. **Use Alternative Writers**
@@ -495,14 +498,7 @@ Performance Issues
       profiler.disable()
       profiler.print_stats()
 
-2. **Use Faster Algorithms**
-
-   .. code-block:: python
-
-      # Use analytical fitting when possible
-      model = ej.JumpRope.fit(data_core, method='analytical')
-
-3. **Reduce Data Size**
+2. **Reduce Data Size**
 
    .. code-block:: python
 
@@ -679,9 +675,7 @@ When reporting bugs or issues:
 **Support Channels**
 
 * **GitHub Issues**: https://github.com/docxology/EvoJump/issues
-* **Discussions**: https://github.com/docxology/EvoJump/discussions
-* **Documentation**: https://evojump.readthedocs.io/
-* **Email**: support@evojump.org
+* **Documentation**: https://github.com/docxology/EvoJump/tree/main/docs
 
 **Verified v0.2.0 Gotchas (2026-08-30 audit pass)**
 

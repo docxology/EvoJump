@@ -9,6 +9,8 @@ examples/archive/ and are skipped automatically.
 Usage:
     python run_all_examples.py [--timeout N] [--verbose] [--fail-fast]
 """
+from __future__ import annotations
+
 import argparse
 import subprocess
 import sys

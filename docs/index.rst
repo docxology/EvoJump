@@ -9,10 +9,6 @@ EvoJump Documentation
    :target: https://opensource.org/licenses/Apache-2.0
    :alt: License
 
-.. image:: https://readthedocs.org/projects/evojump/badge/?version=latest
-   :target: https://evojump.readthedocs.io/
-   :alt: Documentation Status
-
 A Comprehensive Framework for Evolutionary Ontogenetic Analysis
 ----------------------------------------------------------------
 
@@ -73,9 +69,11 @@ Quick Start
 Installation
 ~~~~~~~~~~~~
 
+EvoJump is not published on PyPI; install it from the repository:
+
 .. code-block:: bash
 
-   pip install evojump
+   pip install "git+https://github.com/docxology/EvoJump.git"
 
 For development:
 

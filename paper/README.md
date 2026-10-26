@@ -119,8 +119,10 @@ The paper includes comprehensive auto-numbering:
 - Example: `$$dX_t = \mu dt + \sigma dW_t \label{eq:sde}$$`
 
 ### Figures
-- Use custom `\figref{name}` command
-- Label figures with `\label{fig:unique_name}`
+- Label figures with `\label{fig:unique_name}` inside the markdown image alt
+  text, e.g. `![caption.\label{fig:name}](figures/file.png){ width=85% }`
+- Refer to them in prose as `Figure N` (as the sections do); no custom
+  `\figref` macro is defined by the build
 - Figures stored in `figures/` directory
 
 ## Editing Guidelines
@@ -129,7 +131,8 @@ When editing section files:
 
 1. **Mathematical notation**: Use LaTeX syntax within `$...$` (inline) or `$$...$$` (display)
 2. **Equation labels**: Add `\label{eq:name}` to all important equations
-3. **Figure references**: Use `\figref{name}` for cross-references
+3. **Figure references**: put `\label{fig:name}` in the image alt text and
+   cite the figure as `Figure N` in prose (`\figref` does not exist)
 4. **Citations**: Use Author (Year) format, e.g., `(Smith 2020)`
 5. **Code blocks**: Use triple backticks with language specification
 6. **Tables**: Use markdown table syntax
