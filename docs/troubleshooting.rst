@@ -708,7 +708,8 @@ When reporting bugs or issues:
 
 **Large Dataset Performance**
   * Datasets > 1M samples may require chunked processing
-  * GPU acceleration recommended for intensive computations
+  * Parallel worker processes help for independent fits (the package has no GPU
+    code path; the ``gpu`` extra only installs CuPy on Linux x86_64)
   * Consider using Dask for distributed processing
 
 **Statistical Test Assumptions**

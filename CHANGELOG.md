@@ -27,10 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (releases are tagged and deposited to Zenodo); README status block, test
   coverage entry and technical-specifications note moved from v0.5.0 to
   v0.5.2; README docs tree listing completed (`index.rst`, `changelog.rst`);
-  `paper/build_paper.sh` and `paper/author_info.tex` no longer stamp the
-  wrong DOI (10.5281/zenodo.17229925 → 10.5281/zenodo.22664675) or the
-  September 2025 date; `docs/README.md` no longer claims a Read the Docs
-  publication.
+  `paper/build_paper.sh` and `paper/author_info.tex` DOI/date verified against
+  Zenodo and left unchanged: `10.5281/zenodo.17229925` is the paper's own
+  deposit (2025-09-30, "EvoJump: A Unified Framework for Stochastic Modeling
+  of Evolutionary Ontogenetic Trajectories"), distinct from the software
+  concept DOI `10.5281/zenodo.22664675`; `docs/README.md` no longer claims a
+  Read the Docs publication.
 - `docs/advanced_usage.rst` and `docs/troubleshooting.rst` code examples
   rewritten against the real API: `bayesian_analysis` (no `priors=`),
   `causal_inference` (no `method=`/mediation), dimensionality reduction
@@ -39,6 +41,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `predictive_modeling(models=[...])`, `visualizer.create_animation` (no
   `fps`), and `JumpRope.fit` kwargs (forwarded to `ModelParameters` fields —
   `max_iter`, `tolerance`, `memory_efficient`, `method` do not exist).
+- `docs/examples.rst` and `docs/troubleshooting.rst` performance advice no
+  longer recommends GPU acceleration (there is no GPU code path in the
+  package; the `gpu` extra only installs CuPy on Linux x86_64), matching the
+  corrected statements in `docs/api_reference.rst` / `docs/architecture.rst`.
 
 ### Changed
 - CI: `actions/checkout` v4 → v7 and `actions/setup-python` v5 → v7 (current

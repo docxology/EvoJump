@@ -566,10 +566,10 @@ Best Practices
   * Create comprehensive visualizations
 
 **Performance Optimization**
-  * Use parallel processing for large datasets
+  * Run independent fits in parallel worker processes
   * Enable caching for repeated analyses
-  * Consider GPU acceleration for intensive computations
-  * Break large analyses into smaller chunks
+  * Break large analyses into smaller chunks (no GPU code path ships in the
+    package — the ``gpu`` extra only installs CuPy on Linux x86_64)
 
 **Reproducibility**
   * Set random seeds for reproducible results
