@@ -8,4 +8,4 @@ do not hand-edit.
 ## Children
 - `data/` — synthetic developmental data CSV.
 - `figures/` — matplotlib figure PNGs.
-Repo-wide policy: see `/Volumes/external_drive/Git/template/projects/ongoing/AGENTS.md`.
+Repo-wide policy: the shared policy for template projects is maintained in the template repository, not restated here.

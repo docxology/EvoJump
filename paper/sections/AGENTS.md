@@ -9,4 +9,4 @@ rendered to `../output/evojump_paper.pdf|.html` (unverified — build not run).
 ## Gotchas
 - `06a_drosophila_case_study.md` inserts between 06 and 07.
 - Keep figure references consistent with `../figures/`.
-Repo-wide policy: see `/Volumes/external_drive/Git/template/projects/ongoing/AGENTS.md`.
+Repo-wide policy: the shared policy for template projects is maintained in the template repository, not restated here.

@@ -15,4 +15,4 @@ The `evojump` package. Module map (verified on disk 2026-08-29):
 ## Gotchas
 - `__pycache__/` is generated; ignore it.
 - Keep public API in sync with `docs/api_reference.rst` and root README.
-Repo-wide policy: see `/Volumes/external_drive/Git/template/projects/ongoing/AGENTS.md`.
+Repo-wide policy: the shared policy for template projects is maintained in the template repository, not restated here.
