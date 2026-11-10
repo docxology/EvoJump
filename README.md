@@ -1,6 +1,6 @@
 # EvoJump: A Comprehensive Framework for Evolutionary Ontogenetic Analysis
 
-[![Python Version](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://python.org)
+[![Python Version](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22664675.svg)](https://doi.org/10.5281/zenodo.22664675)
 
@@ -74,7 +74,7 @@ Verified 2026-09-08 on this checkout — re-verify with the commands shown.
 ## 📦 Installation
 
 ### Requirements
-- Python 3.9 or higher (packaging bounds `requires-python` to `>=3.9,<3.15`)
+- Python 3.11 or higher (packaging bounds `requires-python` to `>=3.11,<3.15`)
 - NumPy ≥ 1.21.0
 - SciPy ≥ 1.7.0
 - Pandas ≥ 1.3.0
