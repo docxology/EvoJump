@@ -124,6 +124,14 @@ class TimeSeriesAnalyzer:
                 logger.warning(f"Skipping non-numeric column: {col}")
                 continue
 
+            # Complex dtypes pass the numeric gate but are invalid for
+            # regression; fail explicitly so the section records an error
+            # instead of depending on the installed scipy version.
+            if np.iscomplexobj(series_data.values):
+                raise ValueError(
+                    f"Column {col} is complex-valued; trend analysis requires real values"
+                )
+
             if method == 'linear':
                 # Linear regression
                 time_numeric = np.arange(len(series_data))
