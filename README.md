@@ -38,7 +38,7 @@ Verified 2026-09-08 on this checkout — re-verify with the commands shown.
 - [Architecture](#%EF%B8%8F-architecture)
 - [Gallery](#gallery)
 - [Testing](#-testing)
-- [Documentation](#-documentation--examples)
+- [Documentation](#-documentation)
 - [Contributing](#-contributing)
 - [License](#-license)
 - [Citation](#-citation)
@@ -434,6 +434,7 @@ if missing:
 else:
     print('All modules have docstrings!')
 "
+```
 
 ## 📚 Documentation
 
