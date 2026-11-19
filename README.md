@@ -35,7 +35,7 @@ Verified 2026-09-08 on this checkout — re-verify with the commands shown.
 - [Advanced Features](#-advanced-features)
 - [Command Line Interface](#-command-line-interface)
 - [Applications and Use Cases](#-applications-and-use-cases)
-- [Architecture](#-architecture)
+- [Architecture](#%EF%B8%8F-architecture)
 - [Gallery](#gallery)
 - [Testing](#-testing)
 - [Documentation](#-documentation)
@@ -434,6 +434,7 @@ if missing:
 else:
     print('All modules have docstrings!')
 "
+```
 
 ## 📚 Documentation
 
