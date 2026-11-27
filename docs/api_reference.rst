@@ -11,6 +11,7 @@ DataCore Module
 
 .. automodule:: evojump.datacore
    :members:
+   :exclude-members: DataCore, MetadataManager, TimeSeriesData
    :undoc-members:
    :show-inheritance:
 
@@ -19,6 +20,7 @@ JumpRope Engine
 
 .. automodule:: evojump.jumprope
    :members:
+   :exclude-members: CompoundPoisson, CoxIngersollRoss, FractionalBrownianMotion, GeometricJumpDiffusion, JumpRope, LevyProcess, ModelParameters, OrnsteinUhlenbeckJump, StochasticProcess
    :undoc-members:
    :show-inheritance:
 
@@ -27,6 +29,7 @@ LaserPlane Analyzer
 
 .. automodule:: evojump.laserplane
    :members:
+   :exclude-members: CrossSectionResult, DistributionComparer, DistributionComparison, DistributionFitter, LaserPlaneAnalyzer, MomentAnalyzer
    :undoc-members:
    :show-inheritance:
 
@@ -35,6 +38,7 @@ Trajectory Visualizer
 
 .. automodule:: evojump.trajectory_visualizer
    :members:
+   :exclude-members: AnimationController, AnimationFrame, PlotConfig, TrajectoryVisualizer
    :undoc-members:
    :show-inheritance:
 
@@ -43,6 +47,7 @@ Evolution Sampler
 
 .. automodule:: evojump.evolution_sampler
    :members:
+   :exclude-members: EvolutionSampler, PhylogeneticAnalyzer, PopulationModel, PopulationStatistics, QuantitativeGenetics, SampleResult
    :undoc-members:
    :show-inheritance:
 
@@ -51,6 +56,7 @@ Analytics Engine
 
 .. automodule:: evojump.analytics_engine
    :members:
+   :exclude-members: AnalyticsEngine, BayesianResult, CausalResult, DimensionalityResult, InformationResult, NetworkResult, NonlinearResult, PredictiveModelResult, RobustResult, SpatialResult, SpectralResult, SurvivalResult, TimeSeriesResult
    :undoc-members:
    :show-inheritance:
 
@@ -72,12 +78,6 @@ DataCore
    :members:
    :undoc-members:
    :show-inheritance:
-
-   .. automethod:: load_from_csv
-   .. automethod:: load_from_hdf5
-   .. automethod:: preprocess_data
-   .. automethod:: validate_data_quality
-   .. automethod:: save_processed_data
 
 TimeSeriesData
 ~~~~~~~~~~~~~~
@@ -102,13 +102,6 @@ JumpRope
    :members:
    :undoc-members:
    :show-inheritance:
-
-   .. automethod:: fit
-   .. automethod:: generate_trajectories
-   .. automethod:: compute_cross_sections
-   .. automethod:: estimate_jump_times
-   .. automethod:: save
-   .. automethod:: load
 
 ModelParameters
 ~~~~~~~~~~~~~~~
@@ -182,10 +175,6 @@ LaserPlaneAnalyzer
    :undoc-members:
    :show-inheritance:
 
-   .. automethod:: analyze_cross_section
-   .. automethod:: compare_distributions
-   .. automethod:: generate_summary_report
-
 CrossSectionResult
 ~~~~~~~~~~~~~~~~~~
 
@@ -233,7 +222,6 @@ MomentAnalyzer
    :undoc-members:
    :show-inheritance:
 
-
 TrajectoryVisualizer
 ~~~~~~~~~~~~~~~~~~~~
 
@@ -241,15 +229,6 @@ TrajectoryVisualizer
    :members:
    :undoc-members:
    :show-inheritance:
-
-   .. automethod:: plot_trajectories
-   .. automethod:: plot_cross_sections
-   .. automethod:: plot_landscapes
-   .. automethod:: plot_heatmap
-   .. automethod:: plot_violin
-   .. automethod:: plot_ridge
-   .. automethod:: plot_phase_portrait
-   .. automethod:: create_animation
 
 PlotConfig
 ~~~~~~~~~~
@@ -285,11 +264,6 @@ EvolutionSampler
    :undoc-members:
    :show-inheritance:
 
-   .. automethod:: sample
-   .. automethod:: analyze_evolutionary_patterns
-   .. automethod:: cluster_individuals
-
-   .. automethod:: seed
       :no-index:
 
 PopulationStatistics
@@ -344,28 +318,9 @@ AnalyticsEngine
    :undoc-members:
    :show-inheritance:
 
-   .. automethod:: analyze_time_series
-   .. automethod:: analyze_multivariate
-   .. automethod:: detect_changes
       :no-index:
-   .. automethod:: predictive_modeling
-   .. automethod:: survival_analysis
       :no-index:
-   .. automethod:: bayesian_analysis
-   .. automethod:: advanced_dimensionality_reduction
       :no-index:
-   .. automethod:: network_analysis
-   .. automethod:: causal_inference
-   .. automethod:: wavelet_analysis
-   .. automethod:: copula_analysis
-   .. automethod:: extreme_value_analysis
-   .. automethod:: regime_switching_analysis
-   .. automethod:: spectral_analysis
-   .. automethod:: nonlinear_dynamics_analysis
-   .. automethod:: information_theory_analysis
-   .. automethod:: robust_statistical_analysis
-   .. automethod:: spatial_analysis
-   .. automethod:: comprehensive_analysis_report
 
 TimeSeriesResult
 ~~~~~~~~~~~~~~~~

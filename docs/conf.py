@@ -20,8 +20,8 @@ copyright = '2026, EvoJump Development Team'
 author = 'EvoJump Development Team'
 
 # The full version, including alpha/beta/rc tags
-release = '0.5.2'
-version = '0.5.2'
+release = '0.6.0'
+version = '0.6.0'
 
 
 # -- General configuration ---------------------------------------------------
@@ -74,7 +74,7 @@ html_static_path = []
 html_theme_options = {
     'canonical_url': '',
     'analytics_id': '',
-    'display_version': True,
+
     'prev_next_buttons_location': 'bottom',
     'style_external_links': False,
     'vcs_pageview_mode': '',

@@ -1,9 +1,5 @@
-# AGENTS.md — `EvoJump/docs/manuscript/`
+# Manuscript maintenance
 
-Holds only `MANUSCRIPT_STATUS.md` (verified 2026-08-29): status notes for the
-EvoJump manuscript. The manuscript sections themselves live in `../../paper/sections/`
-and the rendered paper in `../../paper/output/`.
-
-## Gotchas
-- Do not confuse this with `../../paper/` — this folder tracks status only.
-Repo-wide policy: see `../../AGENTS.md`.
+The numbered methods sections use the pinned renderer and local numerical
+fixture. Preserve the original article's section text, figures, attribution,
+and native reader files in the linked research edition. [Render and reproduce](README.md)

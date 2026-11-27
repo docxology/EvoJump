@@ -1,7 +1,7 @@
 EvoJump Documentation
 =====================
 
-.. image:: https://img.shields.io/badge/python-3.9+-blue.svg
+.. image:: https://img.shields.io/badge/python-3.11_to_3.14-blue.svg
    :target: https://python.org
    :alt: Python Version
 
@@ -49,22 +49,16 @@ Quick Start
 
 .. code-block:: python
 
-   import evojump as ej
-   import pandas as pd
+   import numpy as np
+   from evojump.jumprope import ModelParameters, OrnsteinUhlenbeckJump
 
-   # Load developmental data
-   data = ej.DataCore.load_from_csv("developmental_data.csv", time_column='time')
+   parameters = ModelParameters(diffusion=0.15, equilibrium=0.5)
+   process = OrnsteinUhlenbeckJump(parameters, rng=np.random.default_rng(27))
+   paths = process.simulate(2.0, np.linspace(0.0, 2.0, 21), n_paths=8)
+   print(paths.shape)
 
-   # Fit jump-diffusion model
-   model = ej.JumpRope.fit(data, model_type='jump-diffusion')
-
-   # Analyze cross-sections
-   analyzer = ej.LaserPlaneAnalyzer(model)
-   results = analyzer.analyze_cross_section(time_point=10.0)
-
-   # Create visualizations
-   visualizer = ej.TrajectoryVisualizer()
-   visualizer.plot_trajectories(model)
+The complete experiment and publication source are in the
+`manuscript directory <https://github.com/docxology/EvoJump/tree/main/docs/manuscript>`_.
 
 Installation
 ~~~~~~~~~~~~

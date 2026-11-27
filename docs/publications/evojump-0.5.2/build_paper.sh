@@ -31,7 +31,7 @@ COMBINED_MD="$OUTPUT_DIR/combined_paper.md"
 
 # Resolve the Python interpreter: prefer the project's uv-managed .venv
 # (override by setting PYTHON=... when invoking this script).
-PY="${PYTHON:-$PAPER_DIR/../.venv/bin/python}"
+PY="${PYTHON:-$PAPER_DIR/../../../.venv/bin/python}"
 if [ ! -x "$PY" ]; then
     PY="$(command -v python3 || true)"
 fi
