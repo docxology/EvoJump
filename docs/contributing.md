@@ -314,7 +314,7 @@ python run_tests.py --quick
 .venv/bin/python -m pytest tests/test_datacore.py -v
 
 # Specific test method
-.venv/bin/python -m pytest tests/test_jumprope.py::TestJumpRope::test_fit_model -v
+.venv/bin/python -m pytest tests/test_jumprope.py::TestJumpRope::test_fit_model_jump_diffusion -v
 ```
 
 ## Release Process
