@@ -5,7 +5,7 @@ This document tracks changes, improvements, and bug fixes across EvoJump
 versions.
 
 .. note::
-   The authoritative changelog is ``CHANGELOG.md`` at the repository root;
+   The authoritative changelog is ``docs/releases/CHANGELOG.md``;
    this page is a synced snapshot for the Sphinx docs. Edit ``CHANGELOG.md``
    and re-sync here at release time.
 

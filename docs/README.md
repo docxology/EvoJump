@@ -24,5 +24,4 @@ laser" sweep of phenotypic distributions — see root `README.md`.
 The root `pyproject.toml` declares the package and its dev dependencies
 (including pytest). Build the Sphinx docs with `sphinx-build` against this
 directory (conf.py is the config); test the package with `pytest tests/`.
-The publication-track paper source lives separately in `../paper/` —
-see `manuscript/MANUSCRIPT_STATUS.md` in this folder.
+The [manuscript directory](manuscript/README.md) contains the current replay and the authored edition. The native source is under `publications/evojump-0.5.2/`.

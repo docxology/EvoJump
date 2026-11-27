@@ -18,7 +18,7 @@ import os
 from dataclasses import dataclass
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "src"))
 
 # Import EvoJump components
 import evojump as ej

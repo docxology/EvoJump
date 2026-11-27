@@ -26,7 +26,7 @@ htmlcov/
 docs/_build/
 
 # Paper build products (regenerate via paper/build_paper.sh)
-paper/output/
+docs/publications/evojump-0.5.2/output/
 
 # Generated plots
 plots/

@@ -1,0 +1,19 @@
+paper:
+  title: "Replaying stochastic trajectories and cross-sections with EvoJump"
+  subtitle: "A deterministic recurrence and a seeded numerical fixture"
+  version: "0.6.0"
+authors:
+  - name: EvoJump Contributors
+publication:
+  github_repository: docxology/EvoJump
+  repository_url: https://github.com/docxology/EvoJump
+metadata:
+  license: Apache-2.0
+  language: en
+render:
+  formats:
+    pdf: true
+    html: true
+    slides: false
+    docx: false
+    epub: false

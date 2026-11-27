@@ -31,7 +31,7 @@ import argparse
 from typing import Dict, List, Optional, Tuple
 
 # Add src directory to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "src"))
 
 from evojump.datacore import DataCore, TimeSeriesData
 from evojump.jumprope import JumpRope
