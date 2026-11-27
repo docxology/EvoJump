@@ -1,5 +1,10 @@
 # EvoJump Testing Framework Documentation
 
+For package setup, use the [package guide](docs/package-guide.md). For the
+paper, use the [local numerical fixture workflow](docs/manuscript/README.md).
+That workflow verifies the documented fixture and render. Use a separate
+current test receipt for full-suite coverage claims.
+
 ## Overview
 
 This document outlines the comprehensive testing framework for the EvoJump project, ensuring high-quality, reliable, and maintainable code through rigorous test-driven development (TDD) practices.
